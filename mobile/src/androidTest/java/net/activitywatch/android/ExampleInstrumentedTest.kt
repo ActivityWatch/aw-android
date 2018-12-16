@@ -1,4 +1,4 @@
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
 import android.support.test.InstrumentationRegistry
 import android.support.test.runner.AndroidJUnit4

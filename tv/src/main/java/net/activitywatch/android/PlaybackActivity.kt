@@ -12,18 +12,20 @@
  * the License.
  */
 
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
-import android.app.Activity
 import android.os.Bundle
+import android.support.v4.app.FragmentActivity
 
-/**
- * Loads [MainFragment].
- */
-class MainActivity : Activity() {
+/** Loads [PlaybackVideoFragment]. */
+class PlaybackActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(android.R.id.content, PlaybackVideoFragment())
+                .commit()
+        }
     }
 }

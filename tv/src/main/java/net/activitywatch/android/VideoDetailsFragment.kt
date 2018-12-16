@@ -12,7 +12,7 @@
  * the License.
  */
 
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
 import android.content.Context
 import android.content.Intent

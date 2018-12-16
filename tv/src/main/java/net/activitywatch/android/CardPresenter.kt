@@ -12,7 +12,7 @@
  * the License.
  */
 
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
 import android.graphics.drawable.Drawable
 import android.support.v17.leanback.widget.ImageCardView

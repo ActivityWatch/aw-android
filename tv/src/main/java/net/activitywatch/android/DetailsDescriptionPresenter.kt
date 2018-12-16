@@ -12,23 +12,20 @@
  * the License.
  */
 
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
-import android.app.Activity
-import android.os.Bundle
+import android.support.v17.leanback.widget.AbstractDetailsDescriptionPresenter
 
-/**
- * Details activity class that loads [VideoDetailsFragment] class.
- */
-class DetailsActivity : Activity() {
+class DetailsDescriptionPresenter : AbstractDetailsDescriptionPresenter() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_details)
-    }
+    override fun onBindDescription(
+        viewHolder: AbstractDetailsDescriptionPresenter.ViewHolder,
+        item: Any
+    ) {
+        val movie = item as Movie
 
-    companion object {
-        const val SHARED_ELEMENT_NAME = "hero"
-        const val MOVIE = "Movie"
+        viewHolder.title.text = movie.title
+        viewHolder.subtitle.text = movie.studio
+        viewHolder.body.text = movie.description
     }
 }

@@ -1,4 +1,4 @@
-package net.activitywatch.aw_android
+package net.activitywatch.android
 
 import android.os.Bundle
 import android.support.design.widget.Snackbar
