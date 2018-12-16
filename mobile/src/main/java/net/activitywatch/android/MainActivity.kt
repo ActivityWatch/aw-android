@@ -1,18 +1,29 @@
 package net.activitywatch.android
 
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
+import android.content.Context
 import android.os.Bundle
-import android.support.design.widget.CoordinatorLayout
 import android.support.design.widget.Snackbar
 import android.support.design.widget.NavigationView
 import android.support.v4.view.GravityCompat
 import android.support.v7.app.ActionBarDrawerToggle
 import android.support.v7.app.AppCompatActivity
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
+import android.content.pm.PackageManager
+import android.app.AppOpsManager
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.provider.Settings
+import kotlinx.android.synthetic.main.content_main.*
+
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
+    private val TAG = "MainActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,6 +37,55 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         toggle.syncState()
 
         nav_view.setNavigationItemSelectedListener(this)
+
+        button.setOnClickListener {
+            queryUsage()
+        }
+    }
+
+    private fun queryUsage() {
+        val usageIsAllowed = isUsageAllowed()
+
+        if (usageIsAllowed) {
+            // Get UsageStatsManager stuff
+            val usm: UsageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+
+            // Print per application
+            val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0, Long.MAX_VALUE)
+            Log.i(TAG, "usageStats.size=${usageStats.size}")
+            for(e in usageStats) {
+                Log.i(TAG, "${e.packageName}: ${e.totalTimeInForeground/1000}")
+            }
+
+            // Print each event
+            val usageEvents = usm.queryEvents(0, Long.MAX_VALUE)
+            val eventOut = UsageEvents.Event()
+            while(usageEvents.hasNextEvent()) {
+                usageEvents.getNextEvent(eventOut)
+                Log.i(TAG, "timestamp=${eventOut.timeStamp}, ${eventOut.eventType}, ${eventOut.className}")
+            }
+        } else {
+            Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        }
+    }
+
+    private fun isUsageAllowed(): Boolean {
+        // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
+        val applicationInfo: ApplicationInfo = try {
+            packageManager.getApplicationInfo(packageName, 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.e(TAG, e.toString())
+            return false
+        }
+
+        val appOpsManager = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = appOpsManager.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            applicationInfo.uid,
+            applicationInfo.packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     override fun onBackPressed() {
