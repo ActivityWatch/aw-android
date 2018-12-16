@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.os.Bundle
+import android.support.design.widget.CoordinatorLayout
 import android.support.design.widget.Snackbar
 import android.support.design.widget.NavigationView
 import android.support.v4.view.GravityCompat
@@ -17,11 +18,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
-
-        fab.setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                .setAction("Action", null).show()
-        }
 
         val toggle = ActionBarDrawerToggle(
             this, drawer_layout, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close
@@ -51,7 +47,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
         when (item.itemId) {
-            R.id.action_settings -> return true
+            R.id.action_settings -> {
+                Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
+                return true
+            }
             else -> return super.onOptionsItemSelected(item)
         }
     }
@@ -59,23 +59,21 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
         // Handle navigation view item clicks here.
         when (item.itemId) {
-            R.id.nav_camera -> {
-                // Handle the camera action
+            R.id.nav_dashboard -> {
+                Snackbar.make(coordinator_layout, "The dashboard button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
             }
-            R.id.nav_gallery -> {
-
-            }
-            R.id.nav_slideshow -> {
-
-            }
-            R.id.nav_manage -> {
-
+            R.id.nav_settings -> {
+                Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
             }
             R.id.nav_share -> {
-
+                Snackbar.make(coordinator_layout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
             }
             R.id.nav_send -> {
-
+                Snackbar.make(coordinator_layout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
             }
         }
 

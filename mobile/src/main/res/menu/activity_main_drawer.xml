@@ -5,33 +5,32 @@
 
     <group android:checkableBehavior="single">
         <item
-                android:id="@+id/nav_camera"
-                android:icon="@drawable/ic_menu_camera"
-                android:title="Import"/>
-        <item
-                android:id="@+id/nav_gallery"
-                android:icon="@drawable/ic_menu_gallery"
-                android:title="Gallery"/>
-        <item
-                android:id="@+id/nav_slideshow"
+                android:id="@+id/nav_dashboard"
                 android:icon="@drawable/ic_menu_slideshow"
-                android:title="Slideshow"/>
-        <item
-                android:id="@+id/nav_manage"
-                android:icon="@drawable/ic_menu_manage"
-                android:title="Tools"/>
+                android:title="Dashboard"/>
     </group>
 
-    <item android:title="Communicate">
+    <item android:title="Misc">
         <menu>
-            <item
-                    android:id="@+id/nav_share"
-                    android:icon="@drawable/ic_menu_share"
-                    android:title="Share"/>
-            <item
-                    android:id="@+id/nav_send"
-                    android:icon="@drawable/ic_menu_send"
-                    android:title="Send"/>
+            <group
+            >
+                <item
+                        android:id="@+id/nav_settings"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="Settings"/>
+                <item
+                        android:id="@+id/nav_devices"
+                        android:icon="@drawable/ic_menu_slideshow"
+                        android:title="Devices"/>
+                <item
+                        android:id="@+id/nav_share"
+                        android:icon="@drawable/ic_menu_share"
+                        android:title="Share"/>
+                <item
+                        android:id="@+id/nav_send"
+                        android:icon="@drawable/ic_menu_send"
+                        android:title="Report bugs"/>
+            </group>
         </menu>
     </item>
 
