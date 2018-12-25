@@ -20,10 +20,16 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.provider.Settings
 import kotlinx.android.synthetic.main.content_main.*
+import android.widget.TextView
+
 
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
     private val TAG = "MainActivity"
+
+    init {
+        System.loadLibrary("aw_server");
+    }
 
     fun getVersion(): String {
         return packageManager.getPackageInfo(packageName, 0).versionName;
@@ -45,6 +51,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         button.setOnClickListener {
             queryUsage()
         }
+
+
+        val g = RustGreetings()
+        val r = g.sayHello("world")
+        Log.w(TAG, r)
     }
 
     private fun queryUsage() {
