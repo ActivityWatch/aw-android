@@ -50,12 +50,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         button.setOnClickListener {
             queryUsage()
+            testRust()
         }
+    }
 
-
-        val g = RustGreetings()
-        val r = g.sayHello("world")
-        Log.w(TAG, r)
+    private fun testRust() {
+        RustGreetings(applicationContext).test()
     }
 
     private fun queryUsage() {
