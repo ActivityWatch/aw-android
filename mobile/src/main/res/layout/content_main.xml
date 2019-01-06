@@ -9,38 +9,9 @@
         tools:showIn="@layout/app_bar_main"
         tools:context=".MainActivity">
 
-    <LinearLayout
-            android:orientation="vertical"
+    <fragment
             android:layout_width="match_parent"
-            android:layout_height="match_parent" tools:layout_editor_absoluteY="0dp"
-            tools:layout_editor_absoluteX="0dp">
-        <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Hello World!"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintLeft_toLeftOf="parent"
-                app:layout_constraintRight_toRightOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                android:textAppearance="@style/TextAppearance.AppCompat.Display1" android:textAlignment="center"/>
-        <TextView
-                android:text="This is a test"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:id="@+id/textView2" android:textAlignment="center"/>
-        <Space
-                android:layout_width="match_parent"
-                android:layout_height="40dp"/>
-        <Button
-                android:text="Click me to log stuff"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:id="@+id/button"/>
-        <Space
-                android:layout_width="match_parent"
-                android:layout_height="40dp"/>
-        <android.support.v7.widget.RecyclerView
-                android:layout_width="match_parent"
-                android:layout_height="match_parent">
-        </android.support.v7.widget.RecyclerView>
-    </LinearLayout>
+            android:layout_height="wrap_content" android:name="net.activitywatch.android.fragments.TestFragment"
+            android:id="@+id/fragment"/>
 
 </android.support.constraint.ConstraintLayout>

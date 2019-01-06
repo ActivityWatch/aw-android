@@ -8,6 +8,7 @@
                 android:id="@+id/nav_dashboard"
                 android:icon="@drawable/ic_menu_slideshow"
                 android:title="Dashboard"/>
+        <item android:title="Buckets" android:id="@+id/nav_buckets" android:icon="?attr/actionModeCopyDrawable"/>
     </group>
 
     <item android:title="Misc">

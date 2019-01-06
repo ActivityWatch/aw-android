@@ -19,20 +19,35 @@ import android.app.AppOpsManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.provider.Settings
+import android.support.v4.app.Fragment
 import kotlinx.android.synthetic.main.content_main.*
-import android.widget.TextView
+import net.activitywatch.android.fragments.Bucket
+import net.activitywatch.android.fragments.BucketFragment
+import net.activitywatch.android.fragments.TestFragment
+import kotlin.reflect.KClass
 
 
+class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, BucketFragment.OnListFragmentInteractionListener {
 
-class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
     private val TAG = "MainActivity"
 
     init {
         System.loadLibrary("aw_server");
     }
 
-    fun getVersion(): String {
-        return packageManager.getPackageInfo(packageName, 0).versionName;
+    val version: String
+        get() {
+            return packageManager.getPackageInfo(packageName, 0).versionName
+        }
+
+    override fun onListFragmentInteraction(item: Bucket?) {
+        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+    }
+
+    override fun onAttachFragment(fragment: Fragment) {
+        if (fragment is BucketFragment) {
+            fragment.onAttach(this)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,60 +62,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         toggle.syncState()
 
         nav_view.setNavigationItemSelectedListener(this)
-
-        button.setOnClickListener {
-            queryUsage()
-            testRust()
-        }
-    }
-
-    private fun testRust() {
-        RustGreetings(applicationContext).test()
-    }
-
-    private fun queryUsage() {
-        val usageIsAllowed = isUsageAllowed()
-
-        if (usageIsAllowed) {
-            // Get UsageStatsManager stuff
-            val usm: UsageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-
-            // Print per application
-            val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0, Long.MAX_VALUE)
-            Log.i(TAG, "usageStats.size=${usageStats.size}")
-            for(e in usageStats) {
-                Log.i(TAG, "${e.packageName}: ${e.totalTimeInForeground/1000}")
-            }
-
-            // Print each event
-            val usageEvents = usm.queryEvents(0, Long.MAX_VALUE)
-            val eventOut = UsageEvents.Event()
-            while(usageEvents.hasNextEvent()) {
-                usageEvents.getNextEvent(eventOut)
-                Log.i(TAG, "timestamp=${eventOut.timeStamp}, ${eventOut.eventType}, ${eventOut.className}")
-            }
-        } else {
-            Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
-            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-        }
-    }
-
-    private fun isUsageAllowed(): Boolean {
-        // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
-        val applicationInfo: ApplicationInfo = try {
-            packageManager.getApplicationInfo(packageName, 0)
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(TAG, e.toString())
-            return false
-        }
-
-        val appOpsManager = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOpsManager.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            applicationInfo.uid,
-            applicationInfo.packageName
-        )
-        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     override fun onBackPressed() {
@@ -132,11 +93,16 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
+        var fragmentClass: Class<out Fragment>? = null
         // Handle navigation view item clicks here.
         when (item.itemId) {
             R.id.nav_dashboard -> {
+                fragmentClass = TestFragment::class.java
                 Snackbar.make(coordinator_layout, "The dashboard button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
+            }
+            R.id.nav_buckets -> {
+                fragmentClass = BucketFragment::class.java
             }
             R.id.nav_settings -> {
                 Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
@@ -150,6 +116,19 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 Snackbar.make(coordinator_layout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
             }
+        }
+
+        val fragment: Fragment? = try {
+            fragmentClass?.newInstance()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+
+        if(fragment != null) {
+            // Insert the fragment by replacing any existing fragment
+            val fragmentManager = supportFragmentManager
+            fragmentManager.beginTransaction().replace(R.id.fragment, fragment).commit()
         }
 
         drawer_layout.closeDrawer(GravityCompat.START)
