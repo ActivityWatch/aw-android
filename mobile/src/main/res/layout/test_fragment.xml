@@ -11,6 +11,7 @@
         android:layout_height="40dp" />
 
     <TextView
+        android:id="@+id/welcome_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/welcome_title_text"
@@ -22,7 +23,7 @@
         android:layout_height="40dp" />
 
     <TextView
-        android:id="@+id/textView2"
+        android:id="@+id/welcome_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/text_margin"

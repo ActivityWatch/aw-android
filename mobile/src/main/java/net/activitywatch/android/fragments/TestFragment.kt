@@ -4,10 +4,12 @@ import android.arch.lifecycle.ViewModelProviders
 import android.os.Bundle
 import android.support.design.widget.Snackbar
 import android.support.v4.app.Fragment
+import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.TextView
 import kotlinx.android.synthetic.main.activity_main.*
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
@@ -27,7 +29,13 @@ class TestFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.test_fragment, container, false)
+        val view = inflater.inflate(R.layout.test_fragment, container, false)
+
+        val textView: TextView = view.findViewById(R.id.welcome_text)
+        textView.isClickable = true
+        textView.movementMethod = LinkMovementMethod.getInstance()
+
+        return view
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
@@ -41,17 +49,10 @@ class TestFragment : Fragment() {
             if(context != null) {
                 val usw = UsageStatsWatcher(context)
                 val eventsSent = usw.sendHeartbeats()
-                Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!", Snackbar.LENGTH_LONG)
+                Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!${if (eventsSent >= 100) " (max 100 events saved at a time, spamming the button is not recommended)" else ""}", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
             }
             //testRust()
-        }
-    }
-
-    private fun testRust() {
-        val ctx = activity
-        if(ctx != null) {
-            RustInterface(ctx).test()
         }
     }
 }

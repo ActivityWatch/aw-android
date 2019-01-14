@@ -66,14 +66,6 @@ class UsageStatsWatcher constructor(val context: Context) {
             for(e in usageStats) {
                 Log.i(TAG, "${e.packageName}: ${e.totalTimeInForeground/1000}")
             }
-
-            // Print each event
-            val usageEvents = usm.queryEvents(0, Long.MAX_VALUE)
-            val eventOut = UsageEvents.Event()
-            while(usageEvents.hasNextEvent()) {
-                usageEvents.getNextEvent(eventOut)
-                Log.i(TAG, "timestamp=${eventOut.timeStamp}, ${eventOut.eventType}, ${eventOut.className}")
-            }
         }
     }
 
@@ -153,10 +145,12 @@ class UsageStatsWatcher constructor(val context: Context) {
         var eventsSent = 0
         for(e in getNewEvents()) {
             val awEvent = createEventFromUsageEvent(e)
-            Log.i(TAG, awEvent.toString())
             // TODO: Use correct pulsetime, with long pulsetime if event was of some types (such as application close)
             ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data)
             eventsSent++
+            if(eventsSent >= 100) {
+                break
+            }
         }
         return eventsSent
     }
