@@ -35,6 +35,7 @@ object BucketsContent {
     }
 
     fun reload() {
+        Log.i(TAG, "Reloading buckets")
         ITEMS.clear()
         ITEM_MAP.clear()
         val ri = RustInterface()

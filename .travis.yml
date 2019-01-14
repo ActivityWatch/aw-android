@@ -14,5 +14,6 @@ before_install:
 
 script:
  - ./gradlew clean lint test
+ - ./gradlew connectedAndroidTest || true
 
 

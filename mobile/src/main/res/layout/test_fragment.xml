@@ -7,30 +7,37 @@
         tools:context=".fragments.TestFragment" android:orientation="vertical">
 
     <Space
-            android:layout_width="match_parent"
-            android:layout_height="40dp"/>
+        android:layout_width="match_parent"
+        android:layout_height="40dp" />
+
     <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Hello World!"
-            android:textAppearance="@style/TextAppearance.AppCompat.Display1" android:textAlignment="center"/>
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/welcome_title_text"
+        android:textAlignment="center"
+        android:textAppearance="@style/TextAppearance.AppCompat.Display1" />
+
     <Space
-            android:layout_width="match_parent"
-            android:layout_height="40dp"/>
+        android:layout_width="match_parent"
+        android:layout_height="40dp" />
+
+    <TextView
+        android:id="@+id/textView2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/text_margin"
+        android:layout_marginEnd="@dimen/text_margin"
+        android:text="@string/welcome_text"
+        android:textAppearance="@style/TextAppearance.AppCompat.Subhead" />
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="40dp" />
+
     <Button
-            android:text="Click me to log stuff"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:id="@+id/button"/>
-    <Space
-            android:layout_width="match_parent"
-            android:layout_height="40dp"/>
-    <TextView
-            android:text="This is a test"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:id="@+id/textView2" android:textAlignment="center"/>
-    <android.support.v7.widget.RecyclerView
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
-    </android.support.v7.widget.RecyclerView>
+        android:id="@+id/button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/button_log_text" />
 
 </LinearLayout>

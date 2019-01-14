@@ -143,16 +143,22 @@ class UsageStatsWatcher constructor(val context: Context) {
         return newUsageEvents
     }
 
-    fun sendHeartbeats() {
+    /***
+     * Returns the number of events sent
+     */
+    fun sendHeartbeats(): Int {
         // Ensure bucket exists
         ri.createBucketHelper(bucket_id, "test")
 
+        var eventsSent = 0
         for(e in getNewEvents()) {
             val awEvent = createEventFromUsageEvent(e)
             Log.i(TAG, awEvent.toString())
             // TODO: Use correct pulsetime, with long pulsetime if event was of some types (such as application close)
             ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data)
+            eventsSent++
         }
+        return eventsSent
     }
 
 }

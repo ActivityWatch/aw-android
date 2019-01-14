@@ -11,6 +11,7 @@ import android.view.MenuItem
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
 import android.support.v4.app.Fragment
+import android.util.Log
 import net.activitywatch.android.fragments.Bucket
 import net.activitywatch.android.fragments.BucketListFragment
 import net.activitywatch.android.fragments.TestFragment
@@ -26,7 +27,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
     override fun onListFragmentInteraction(item: Bucket?) {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        Log.w(TAG, "Bucket onInteraction listener not implemented")
     }
 
     override fun onAttachFragment(fragment: Fragment) {
@@ -51,8 +52,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val firstFragment = TestFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
-
-        RustInterface(context=this)
     }
 
     override fun onBackPressed() {

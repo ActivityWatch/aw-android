@@ -2,11 +2,13 @@ package net.activitywatch.android.fragments
 
 import android.arch.lifecycle.ViewModelProviders
 import android.os.Bundle
+import android.support.design.widget.Snackbar
 import android.support.v4.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import kotlinx.android.synthetic.main.activity_main.*
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.UsageStatsWatcher
@@ -38,8 +40,9 @@ class TestFragment : Fragment() {
             val context = activity
             if(context != null) {
                 val usw = UsageStatsWatcher(context)
-                //usw.queryUsage()
-                usw.sendHeartbeats()
+                val eventsSent = usw.sendHeartbeats()
+                Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show()
             }
             //testRust()
         }

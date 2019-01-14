@@ -35,6 +35,8 @@ class BucketListFragment : Fragment() {
         arguments?.let {
             columnCount = it.getInt(ARG_COLUMN_COUNT)
         }
+
+        BucketsContent.reload()
     }
 
     override fun onCreateView(

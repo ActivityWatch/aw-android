@@ -48,7 +48,11 @@ class RustInterface constructor(context: Context? = null) {
 
     fun getBucketsJSON(): JSONObject {
         // TODO: Handle errors
-        return JSONObject(getBuckets())
+        val json = JSONObject(getBuckets())
+        if(json.length() <= 0) {
+            Log.w(TAG, "Length: ${json.length()}")
+        }
+        return json
     }
 
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {

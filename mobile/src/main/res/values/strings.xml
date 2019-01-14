@@ -96,4 +96,14 @@
         "For example, position the FAB to one side of stream of a cards so the FAB won’t interfere "
         "when a user tries to pick up one of cards.\n\n"
     </string>
+    <string name="welcome_title_text">Welcome, early user!</string>
+    <string name="welcome_text">
+        "There really isn't much to see here, yet. But we appreciate you taking the time to try it out, "
+        "and we hope to be able to give you something more substantial \"soon\"."
+
+        "\n\n<b>Our focus</b> is currently to get basic data collection to work, and to then implement export functionality so we can import the data to the full desktop-version of ActivityWatch (where we currently focus most of our visualization work)."
+
+        "\n<b>In the meantime</b>, check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>, or try clicking the button below and see how the app doesn\'t (hopefully) crash and successfully logs data!"
+    </string>
+    <string name="button_log_text">Click me to log data!</string>
 </resources>
