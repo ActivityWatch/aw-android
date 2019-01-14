@@ -1,39 +1,24 @@
 package net.activitywatch.android
 
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
-import android.content.Context
 import android.os.Bundle
 import android.support.design.widget.Snackbar
 import android.support.design.widget.NavigationView
 import android.support.v4.view.GravityCompat
 import android.support.v7.app.ActionBarDrawerToggle
 import android.support.v7.app.AppCompatActivity
-import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
-import android.content.pm.PackageManager
-import android.app.AppOpsManager
-import android.content.Intent
-import android.content.pm.ApplicationInfo
-import android.provider.Settings
 import android.support.v4.app.Fragment
-import kotlinx.android.synthetic.main.content_main.*
 import net.activitywatch.android.fragments.Bucket
-import net.activitywatch.android.fragments.BucketFragment
+import net.activitywatch.android.fragments.BucketListFragment
 import net.activitywatch.android.fragments.TestFragment
-import kotlin.reflect.KClass
 
 
-class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, BucketFragment.OnListFragmentInteractionListener {
+class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, BucketListFragment.OnListFragmentInteractionListener {
 
     private val TAG = "MainActivity"
-
-    init {
-        System.loadLibrary("aw_server");
-    }
 
     val version: String
         get() {
@@ -45,7 +30,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     override fun onAttachFragment(fragment: Fragment) {
-        if (fragment is BucketFragment) {
+        if (fragment is BucketListFragment) {
             fragment.onAttach(this)
         }
     }
@@ -62,6 +47,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         toggle.syncState()
 
         nav_view.setNavigationItemSelectedListener(this)
+
+        val firstFragment = TestFragment()
+        supportFragmentManager.beginTransaction()
+            .add(R.id.fragment_container, firstFragment).commit()
+
+        RustInterface(context=this)
     }
 
     override fun onBackPressed() {
@@ -98,11 +89,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         when (item.itemId) {
             R.id.nav_dashboard -> {
                 fragmentClass = TestFragment::class.java
-                Snackbar.make(coordinator_layout, "The dashboard button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
             }
             R.id.nav_buckets -> {
-                fragmentClass = BucketFragment::class.java
+                fragmentClass = BucketListFragment::class.java
             }
             R.id.nav_settings -> {
                 Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
@@ -128,7 +117,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         if(fragment != null) {
             // Insert the fragment by replacing any existing fragment
             val fragmentManager = supportFragmentManager
-            fragmentManager.beginTransaction().replace(R.id.fragment, fragment).commit()
+            fragmentManager.beginTransaction().replace(R.id.fragment_container, fragment).commit()
         }
 
         drawer_layout.closeDrawer(GravityCompat.START)

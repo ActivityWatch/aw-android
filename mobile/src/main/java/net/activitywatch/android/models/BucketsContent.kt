@@ -1,5 +1,7 @@
 package net.activitywatch.android.models
 
+import android.util.Log
+import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 import java.util.ArrayList
 import java.util.HashMap
@@ -24,22 +26,29 @@ object BucketsContent {
      */
     val ITEM_MAP: MutableMap<String, Bucket> = HashMap()
 
+    val TAG = "BucketsContent"
+
     private val COUNT = 25
 
     init {
-        // Add some sample items.
-        for (i in 1..COUNT) {
-            addItem(
-                createDummyItem(
-                    i
-                )
-            )
-        }
+        reload()
     }
 
-    private fun addItem(item: Bucket) {
+    fun reload() {
+        ITEMS.clear()
+        ITEM_MAP.clear()
+        val ri = RustInterface()
+        val buckets = ri.getBucketsJSON()
+        for(bid in buckets.keys()) {
+            addItem(buckets[bid] as JSONObject)
+        }
+        ITEMS.sortBy { it.getString("created") }
+        ITEMS.reverse()
+    }
+
+    fun addItem(item: Bucket) {
         ITEMS.add(item)
-        ITEM_MAP.put(item.getString("id"), item)
+        ITEM_MAP[item.getString("id")] = item
     }
 
     private fun createDummyItem(position: Int): Bucket {
@@ -49,7 +58,7 @@ object BucketsContent {
     private fun makeDetails(position: Int): String {
         val builder = StringBuilder()
         builder.append("Details about Item: ").append(position)
-        for (i in 0..position - 1) {
+        for (i in 0 until position) {
             builder.append("\nMore details information here.")
         }
         return builder.toString()

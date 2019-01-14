@@ -35,9 +35,13 @@ class TestFragment : Fragment() {
 
         val button = view?.findViewById(R.id.button) as Button
         button.setOnClickListener {
-            val ctx = activity
-            if(ctx != null) UsageStatsWatcher(ctx).queryUsage()
-            testRust()
+            val context = activity
+            if(context != null) {
+                val usw = UsageStatsWatcher(context)
+                //usw.queryUsage()
+                usw.sendHeartbeats()
+            }
+            //testRust()
         }
     }
 

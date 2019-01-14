@@ -7,11 +7,15 @@ import android.view.ViewGroup
 import android.widget.TextView
 
 
-import net.activitywatch.android.fragments.BucketFragment.OnListFragmentInteractionListener
+import net.activitywatch.android.fragments.BucketListFragment.OnListFragmentInteractionListener
 
 import kotlinx.android.synthetic.main.fragment_bucket.view.*
 import net.activitywatch.android.R
 import org.json.JSONObject
+import org.threeten.bp.DateTimeUtils
+import org.threeten.bp.Instant
+import org.threeten.bp.temporal.ChronoUnit
+import java.text.SimpleDateFormat
 
 typealias Bucket = JSONObject
 
@@ -43,9 +47,10 @@ class MyBucketRecyclerViewAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'")
         val item = mValues[position]
         holder.mIdView.text = item.getString("id")
-        holder.mContentView.text = item.getString("created")
+        holder.mContentView.text = DateTimeUtils.toInstant(isoFormatter.parse(item.getString("created"))).truncatedTo(ChronoUnit.DAYS).toString().subSequence(0, 10)
 
         with(holder.mView) {
             tag = item
