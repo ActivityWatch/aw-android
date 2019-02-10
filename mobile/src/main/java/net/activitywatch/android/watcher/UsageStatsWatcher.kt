@@ -1,4 +1,4 @@
-package net.activitywatch.android
+package net.activitywatch.android.watcher
 
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
@@ -7,14 +7,20 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.AsyncTask
 import android.provider.Settings
+import android.support.design.widget.Snackbar
 import android.util.Log
+import net.activitywatch.android.R
+import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
-import java.sql.Timestamp
+import java.net.URL
 import java.text.ParseException
+
+
 
 
 class UsageStatsWatcher constructor(val context: Context) {
@@ -84,7 +90,11 @@ class UsageStatsWatcher constructor(val context: Context) {
         } catch(e: PackageManager.NameNotFoundException) {
             "Unknown"
         }
-        return Event(timestamp = timestamp, duration = 0.0, data = JSONObject("""{"app": "$appName", "package": "${uevent.packageName}", "classname": "${uevent.className}"}"""))
+        return Event(
+            timestamp = timestamp,
+            duration = 0.0,
+            data = JSONObject("""{"app": "$appName", "package": "${uevent.packageName}", "classname": "${uevent.className}"}""")
+        )
     }
 
     private fun getLastEvent(): JSONObject? {
@@ -135,24 +145,56 @@ class UsageStatsWatcher constructor(val context: Context) {
         return newUsageEvents
     }
 
+    private inner class SendHeartbeatsTask : AsyncTask<URL, Pair<Int, Instant>, Int>() {
+        override fun doInBackground(vararg urls: URL): Int? {
+            /*
+            val count = urls.size
+            var totalSize: Long = 0
+            for (i in 0 until count) {
+                totalSize += Downloader.downloadFile(urls[i])
+                publishProgress((i / count.toFloat() * 100).toInt())
+                // Escape early if cancel() is called
+                if (isCancelled()) break
+            }
+            return totalSize
+            */
+
+            // Ensure bucket exists
+            ri.createBucketHelper(bucket_id, "test")
+
+            var eventsSent = 0
+            for(e in getNewEvents()) {
+                val awEvent = createEventFromUsageEvent(e)
+                Log.w(TAG, awEvent.toString())
+                // TODO: Use correct pulsetime, with long pulsetime if event was of some types (such as application close)
+                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data)
+                publishProgress(Pair(eventsSent, awEvent.timestamp))
+                if(eventsSent >= 1000) {
+                    break
+                }
+                eventsSent++
+            }
+            return eventsSent
+        }
+
+        override fun onProgressUpdate(vararg progress: Pair<Int, Instant>) {
+            val eventCount = progress[0].first
+            val timestamp = progress[0].second
+            Log.i(TAG, "Progress: ($eventCount/1000) $timestamp")
+            //Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!${if (eventsSent >= 100) " (max 100 events saved at a time, spamming the button is not recommended)" else ""}", Snackbar.LENGTH_LONG)
+            //    .setAction("Action", null).show()
+        }
+
+        override fun onPostExecute(result: Int?) {
+            //showDialog("Downloaded $result bytes")
+        }
+    }
+
     /***
      * Returns the number of events sent
      */
-    fun sendHeartbeats(): Int {
-        // Ensure bucket exists
-        ri.createBucketHelper(bucket_id, "test")
-
-        var eventsSent = 0
-        for(e in getNewEvents()) {
-            val awEvent = createEventFromUsageEvent(e)
-            // TODO: Use correct pulsetime, with long pulsetime if event was of some types (such as application close)
-            ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data)
-            eventsSent++
-            if(eventsSent >= 100) {
-                break
-            }
-        }
-        return eventsSent
+    fun sendHeartbeats() {
+        SendHeartbeatsTask().execute()
     }
 
 }

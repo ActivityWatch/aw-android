@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.content.Context
+import android.os.AsyncTask
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONException
@@ -9,18 +10,21 @@ import org.threeten.bp.Instant
 import java.lang.Exception
 
 class RustInterface constructor(context: Context? = null) {
-    private val TAG = "RustGreetings"
+    private val TAG = "RustInterface"
 
     init {
         System.loadLibrary("aw_server")
 
+        initialize()
         if(context != null) {
-            setAndroidDataDir(context.filesDir.absolutePath)
+            setDataDir(context.filesDir.absolutePath)
         }
     }
 
-    external fun greeting(pattern: String): String
-    external fun setAndroidDataDir(path: String)
+    private external fun initialize(): String
+    private external fun greeting(pattern: String): String
+    private external fun startServer(assetDir: String)
+    private external fun setDataDir(path: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String): String
@@ -28,6 +32,20 @@ class RustInterface constructor(context: Context? = null) {
 
     fun sayHello(to: String): String {
         return greeting(to)
+    }
+
+    fun startServerTask(assetDir: String) {
+        ServerTask().execute(assetDir)
+        Log.w(TAG, "Server started")
+    }
+
+    // TODO: This probably shouldn't be an AsyncTask
+    private inner class ServerTask : AsyncTask<String, Nothing, Unit>() {
+        override fun doInBackground(vararg inputs: String) {
+            Log.w(TAG, "Starting server...")
+            val assetDir = inputs[0]
+            startServer(assetDir)
+        }
     }
 
     fun createBucketHelper(bucket_id: String, type: String, hostname: String = "unknown", client: String = "aw-android") {

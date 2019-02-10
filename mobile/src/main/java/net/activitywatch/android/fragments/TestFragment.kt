@@ -10,10 +10,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
-import kotlinx.android.synthetic.main.activity_main.*
 import net.activitywatch.android.R
-import net.activitywatch.android.RustInterface
-import net.activitywatch.android.UsageStatsWatcher
+import net.activitywatch.android.watcher.UsageStatsWatcher
 import net.activitywatch.android.models.TestViewModel
 
 
@@ -48,11 +46,8 @@ class TestFragment : Fragment() {
             val context = activity
             if(context != null) {
                 val usw = UsageStatsWatcher(context)
-                val eventsSent = usw.sendHeartbeats()
-                Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!${if (eventsSent >= 100) " (max 100 events saved at a time, spamming the button is not recommended)" else ""}", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                usw.sendHeartbeats()
             }
-            //testRust()
         }
     }
 }

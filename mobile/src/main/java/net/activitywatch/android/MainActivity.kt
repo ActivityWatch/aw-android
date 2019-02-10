@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import android.net.Uri
 import android.os.Bundle
 import android.support.design.widget.Snackbar
 import android.support.design.widget.NavigationView
@@ -15,10 +16,11 @@ import android.util.Log
 import net.activitywatch.android.fragments.Bucket
 import net.activitywatch.android.fragments.BucketListFragment
 import net.activitywatch.android.fragments.TestFragment
+import net.activitywatch.android.fragments.WebUIFragment
 
 
-class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, BucketListFragment.OnListFragmentInteractionListener {
-
+class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
+    BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
     private val TAG = "MainActivity"
 
     val version: String
@@ -28,6 +30,10 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onListFragmentInteraction(item: Bucket?) {
         Log.w(TAG, "Bucket onInteraction listener not implemented")
+    }
+
+    override fun onFragmentInteraction(item: Uri) {
+        Log.w(TAG, "URI onInteraction listener not implemented")
     }
 
     override fun onAttachFragment(fragment: Fragment) {
@@ -91,6 +97,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_buckets -> {
                 fragmentClass = BucketListFragment::class.java
+            }
+            R.id.nav_webui -> {
+                fragmentClass = WebUIFragment::class.java
             }
             R.id.nav_settings -> {
                 Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)

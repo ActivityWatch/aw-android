@@ -5,10 +5,17 @@
 
     <group android:checkableBehavior="single">
         <item
-                android:id="@+id/nav_dashboard"
-                android:icon="@drawable/ic_menu_slideshow"
-                android:title="Dashboard"/>
-        <item android:title="Buckets" android:id="@+id/nav_buckets" android:icon="?attr/actionModeCopyDrawable"/>
+            android:id="@+id/nav_dashboard"
+            android:icon="@drawable/ic_menu_slideshow"
+            android:title="Dashboard" />
+        <item
+            android:id="@+id/nav_buckets"
+            android:icon="?attr/actionModeCopyDrawable"
+            android:title="Buckets" />
+        <item
+            android:id="@+id/nav_webui"
+            android:icon="?attr/actionModeCopyDrawable"
+            android:title="Web UI" />
     </group>
 
     <item android:title="Misc">
