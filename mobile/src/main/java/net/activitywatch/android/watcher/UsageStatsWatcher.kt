@@ -9,10 +9,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.AsyncTask
 import android.provider.Settings
-import android.support.design.widget.Snackbar
 import android.util.Log
-import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
+import net.activitywatch.android.models.Event
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import org.threeten.bp.DateTimeUtils
@@ -75,28 +74,6 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    // TODO: Move to seperate file in ./models/
-    data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: JSONObject) {
-        override fun toString(): String {
-            return """{"timestamp": "$timestamp", "duration": $duration, "data": $data}"""
-        }
-    }
-
-    private fun createEventFromUsageEvent(uevent: UsageEvents.Event): Event {
-        val timestamp = DateTimeUtils.toInstant(java.util.Date(uevent.timeStamp))
-        val pm = context.packageManager
-        val appName = try {
-            pm.getApplicationLabel(pm.getApplicationInfo(uevent.packageName, PackageManager.GET_META_DATA))
-        } catch(e: PackageManager.NameNotFoundException) {
-            "Unknown"
-        }
-        return Event(
-            timestamp = timestamp,
-            duration = 0.0,
-            data = JSONObject("""{"app": "$appName", "package": "${uevent.packageName}", "classname": "${uevent.className}"}""")
-        )
-    }
-
     private fun getLastEvent(): JSONObject? {
         val events = ri.getEventsJSON(bucket_id, limit=1)
         return if (events.length() > 0) {
@@ -147,32 +124,33 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     private inner class SendHeartbeatsTask : AsyncTask<URL, Pair<Int, Instant>, Int>() {
         override fun doInBackground(vararg urls: URL): Int? {
-            /*
-            val count = urls.size
-            var totalSize: Long = 0
-            for (i in 0 until count) {
-                totalSize += Downloader.downloadFile(urls[i])
-                publishProgress((i / count.toFloat() * 100).toInt())
-                // Escape early if cancel() is called
-                if (isCancelled()) break
-            }
-            return totalSize
-            */
-
+            Log.i(TAG, "Starting to send heartbeats...")
             // Ensure bucket exists
-            ri.createBucketHelper(bucket_id, "test")
+            // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
+            ri.createBucketHelper(bucket_id, "currentwindow")
 
             var eventsSent = 0
             for(e in getNewEvents()) {
-                val awEvent = createEventFromUsageEvent(e)
+                val awEvent = Event.fromUsageEvent(e, context)
                 Log.w(TAG, awEvent.toString())
-                // TODO: Use correct pulsetime, with long pulsetime if event was of some types (such as application close)
-                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data)
+                Log.w(TAG, "Event type: ${e.eventType}")
+
+                // TODO: Set pulsetime correctly for the different event types
+                val pulsetime: Double = if (e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    10e6
+                } else {
+                    60.0
+                }
+
+                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 publishProgress(Pair(eventsSent, awEvent.timestamp))
                 if(eventsSent >= 1000) {
                     break
                 }
                 eventsSent++
+
+                // FIXME: Not including this sometimes (often) causes crashes from locked database not correctly handled in aw-server-rust
+                Thread.sleep(100)
             }
             return eventsSent
         }

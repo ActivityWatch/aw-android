@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.support.design.widget.Snackbar
 import android.support.v4.app.Fragment
 import android.text.method.LinkMovementMethod
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +15,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import net.activitywatch.android.models.TestViewModel
 
+private const val TAG = "TestFragment"
 
 class TestFragment : Fragment() {
 
@@ -43,6 +45,7 @@ class TestFragment : Fragment() {
 
         val button = view?.findViewById(R.id.button) as Button
         button.setOnClickListener {
+            Log.w(TAG, "log data button clicked")
             val context = activity
             if(context != null) {
                 val usw = UsageStatsWatcher(context)

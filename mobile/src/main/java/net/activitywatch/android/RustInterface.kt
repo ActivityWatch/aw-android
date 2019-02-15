@@ -28,7 +28,7 @@ class RustInterface constructor(context: Context? = null) {
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String): String
-    external fun heartbeat(bucket_id: String, event: String): String
+    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
 
     fun sayHello(to: String): String {
         return greeting(to)
@@ -60,7 +60,7 @@ class RustInterface constructor(context: Context? = null) {
     // TODO: Implement handling of pulsetime
     fun heartbeatHelper(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double = 60.0) {
         val event = """{"timestamp": "$timestamp", "duration": $duration, "data": $data}"""
-        val msg = heartbeat(bucket_id, event)
+        val msg = heartbeat(bucket_id, event, pulsetime)
         Log.w(TAG, msg)
     }
 
@@ -92,7 +92,7 @@ class RustInterface constructor(context: Context? = null) {
 
         val event = """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}"""
         Log.w(TAG, event)
-        Log.w(TAG, heartbeat("test", event))
+        Log.w(TAG, heartbeat("test", event, 60.0))
         Log.w(TAG, getBucketsJSON().toString(2))
         Log.w(TAG, getEventsJSON("test").toString(2))
     }
