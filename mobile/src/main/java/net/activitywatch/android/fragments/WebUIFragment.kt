@@ -56,15 +56,6 @@ class WebUIFragment : Fragment() {
         // Inflate the layout for this fragment
         val view = inflater.inflate(R.layout.fragment_web_ui, container, false)
 
-        // TODO: Extract assets recursively instead
-        AssetExtractor.extractAssets("webui", view.context)
-        AssetExtractor.extractAssets("webui/static", view.context)
-        AssetExtractor.extractAssets("webui/static/js", view.context)
-        AssetExtractor.extractAssets("webui/static/fonts", view.context)
-
-        val ri = RustInterface(view.context)
-        ri.startServerTask(view.context.cacheDir.path + File.separator + "webui")
-
         // Enables WebView debugging, in testing builds
         // https://developers.google.com/web/tools/chrome-devtools/remote-debugging/webviews
         if (0 != view.context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) {

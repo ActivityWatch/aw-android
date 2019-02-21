@@ -55,6 +55,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         nav_view.setNavigationItemSelectedListener(this)
 
+        val ri = RustInterface(this)
+        ri.startServerTask(this)
+
         val firstFragment = TestFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()

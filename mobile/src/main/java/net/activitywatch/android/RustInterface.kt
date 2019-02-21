@@ -7,10 +7,11 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.Instant
-import java.lang.Exception
+import java.io.File
+
+private const val TAG = "RustInterface"
 
 class RustInterface constructor(context: Context? = null) {
-    private val TAG = "RustInterface"
 
     init {
         System.loadLibrary("aw_server")
@@ -19,6 +20,10 @@ class RustInterface constructor(context: Context? = null) {
         if(context != null) {
             setDataDir(context.filesDir.absolutePath)
         }
+    }
+
+    companion object {
+        var serverStarted = false
     }
 
     private external fun initialize(): String
@@ -34,16 +39,26 @@ class RustInterface constructor(context: Context? = null) {
         return greeting(to)
     }
 
-    fun startServerTask(assetDir: String) {
-        ServerTask().execute(assetDir)
-        Log.w(TAG, "Server started")
+    fun startServerTask(context: Context) {
+        if(!serverStarted) {
+            serverStarted = true
+            ServerTask(context).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR)
+            Log.w(TAG, "Server started")
+        }
     }
 
     // TODO: This probably shouldn't be an AsyncTask
-    private inner class ServerTask : AsyncTask<String, Nothing, Unit>() {
+    private inner class ServerTask(val context: Context) : AsyncTask<String, Nothing, Unit>() {
         override fun doInBackground(vararg inputs: String) {
+            val assetDir = context.cacheDir.path + File.separator + "webui"
+
+            // TODO: Extract assets recursively instead
+            AssetExtractor.extractAssets("webui", context)
+            AssetExtractor.extractAssets("webui/static", context)
+            AssetExtractor.extractAssets("webui/static/js", context)
+            AssetExtractor.extractAssets("webui/static/fonts", context)
+
             Log.w(TAG, "Starting server...")
-            val assetDir = inputs[0]
             startServer(assetDir)
         }
     }
@@ -57,11 +72,10 @@ class RustInterface constructor(context: Context? = null) {
         }
     }
 
-    // TODO: Implement handling of pulsetime
     fun heartbeatHelper(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double = 60.0) {
         val event = """{"timestamp": "$timestamp", "duration": $duration, "data": $data}"""
         val msg = heartbeat(bucket_id, event, pulsetime)
-        Log.w(TAG, msg)
+        //Log.w(TAG, msg)
     }
 
     fun getBucketsJSON(): JSONObject {

@@ -133,7 +133,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             for(e in getNewEvents()) {
                 val awEvent = Event.fromUsageEvent(e, context)
                 Log.w(TAG, awEvent.toString())
-                Log.w(TAG, "Event type: ${e.eventType}")
+                //Log.w(TAG, "Event type: ${e.eventType}")
 
                 // TODO: Set pulsetime correctly for the different event types
                 val pulsetime: Double = if (e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
@@ -148,9 +148,6 @@ class UsageStatsWatcher constructor(val context: Context) {
                     break
                 }
                 eventsSent++
-
-                // FIXME: Not including this sometimes (often) causes crashes from locked database not correctly handled in aw-server-rust
-                Thread.sleep(100)
             }
             return eventsSent
         }
@@ -159,12 +156,10 @@ class UsageStatsWatcher constructor(val context: Context) {
             val eventCount = progress[0].first
             val timestamp = progress[0].second
             Log.i(TAG, "Progress: ($eventCount/1000) $timestamp")
-            //Snackbar.make(context.findViewById(R.id.coordinator_layout), "Successfully saved $eventsSent new events to the database!${if (eventsSent >= 100) " (max 100 events saved at a time, spamming the button is not recommended)" else ""}", Snackbar.LENGTH_LONG)
-            //    .setAction("Action", null).show()
         }
 
         override fun onPostExecute(result: Int?) {
-            //showDialog("Downloaded $result bytes")
+            Log.w(TAG, "Finished SendHeartbeatTask")
         }
     }
 
@@ -172,6 +167,7 @@ class UsageStatsWatcher constructor(val context: Context) {
      * Returns the number of events sent
      */
     fun sendHeartbeats() {
+        Log.w(TAG, "Starting SendHeartbeatTask")
         SendHeartbeatsTask().execute()
     }
 

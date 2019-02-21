@@ -25,7 +25,7 @@ object AssetExtractor {
             }
             // Check that it hasn't already been extracted, and that it's not a folder (ugly hack)
             if ((!f.exists() or overwrite) && f.path.substringAfterLast("/").contains(".")) {
-                Log.w(TAG, "$sourcePath -> $destPath")
+                // Log.w(TAG, "$sourcePath -> $destPath")
                 try {
                     val asset = context.assets.open(sourcePath)
                     val size = asset.available()
