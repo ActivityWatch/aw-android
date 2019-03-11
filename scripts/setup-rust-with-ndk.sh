@@ -32,7 +32,7 @@ linker = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-clang'
 [target.i686-linux-android]
 ar = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-ar'
 linker = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-clang'
-" > ~/.cargo/config
+" > aw-server-rust/.cargo/config
 
 rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
 

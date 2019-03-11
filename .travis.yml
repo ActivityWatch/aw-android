@@ -10,7 +10,7 @@ android:
     - 'google-gdk-license-.+'
 
 env:
- - TRAVIS_NODE_VERSION=10 TRAVIS_RUBY_VERSION=2.6.0
+ - TRAVIS_NODE_VERSION=10 TRAVIS_RUBY_VERSION=2.6.0 RUST_TOOLCHAIN=nightly
 
 cache:
  - bundler
@@ -21,7 +21,7 @@ before_install:
  - yes | sdkmanager "ndk-bundle"
  - rm -rf ~/.nvm && git clone https://github.com/creationix/nvm.git ~/.nvm && (cd ~/.nvm && git checkout `git describe --abbrev=0 --tags`) && source ~/.nvm/nvm.sh && nvm install $TRAVIS_NODE_VERSION;
  - rvm install $TRAVIS_RUBY_VERSION && rvm use $TRAVIS_RUBY_VERSION && gem update --system && gem install bundle && bundle install
- - curl https://sh.rustup.rs -sSf > install_rustup.sh && sh install_rustup.sh -y && source $HOME/.cargo/env && rustup install nightly && rustup default nightly
+ - curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUST_TOOLCHAIN && source $HOME/.cargo/env
  - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
  - ./scripts/setup-rust-with-ndk.sh
 
