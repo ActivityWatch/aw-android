@@ -18,8 +18,6 @@ $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm64
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $ANDROID_NDK_HOME/arm
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $ANDROID_NDK_HOME/x86
 
-
-# TODO: Check first that ~/.cargo/config doesn't already exist
 echo "
 [target.aarch64-linux-android]
 ar = '$ANDROID_NDK_HOME/arm64/bin/aarch64-linux-android-ar'
