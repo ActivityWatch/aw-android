@@ -2,8 +2,12 @@
 
 # Based on https://mozilla.github.io/firefox-browser-architecture/experiments/2017-09-21-rust-on-android.html
 
+set -e
+
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-project_path="$script_dir/../"
+project_path="$(readlink -f "$script_dir/..")"
+
+echo $project_path
 
 export ANDROID_HOME=/home/$USER/Android/Sdk
 export NDK_HOME=$ANDROID_HOME/ndk-bundle
@@ -17,8 +21,6 @@ ${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --insta
 
 
 # TODO: Check first that ~/.cargo/config doesn't already exist
-# TODO:
-project_path='/home/erb/Programming/activitywatch/other/aw-android'
 echo "
 [target.aarch64-linux-android]
 ar = '$project_path/NDK/arm64/bin/aarch64-linux-android-ar'
