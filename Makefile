@@ -2,8 +2,10 @@
 
 aw-server-rust:
 	cd aw-server-rust && bash compile-android.sh
+	mkdir -p mobile/src/main/jniLibs/arm64-v8a/
 	ln -sfn $$(pwd)/aw-server-rust/target/aarch64-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
 	        mobile/src/main/jniLibs/arm64-v8a/libaw_server.so
+	mkdir -p mobile/src/main/jniLibs/x86/
 	ln -sfn $$(pwd)/aw-server-rust/target/i686-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
 	        mobile/src/main/jniLibs/x86/libaw_server.so
 
