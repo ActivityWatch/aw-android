@@ -22,10 +22,10 @@ before_install:
 #- bundle update --bundler
  - bundle install
  - curl https://sh.rustup.rs -sSf > install_rustup.sh && sh install_rustup.sh -y
- - ./scripts/setup-rust-with-ndk.sh
  - yes | sdkmanager "platforms;android-27"
  - yes | sdkmanager "ndk-bundle"
  - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
+ - ./scripts/setup-rust-with-ndk.sh
 
 script:
  - ./gradlew clean lint test
