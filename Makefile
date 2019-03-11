@@ -1,7 +1,7 @@
 .PHONY: aw-server-rust aw-webui
 
 aw-server-rust:
-	make --directory=aw-server-rust android
+	cd aw-server-rust && bash compile-android.sh
 
 aw-webui:
 	make --directory=aw-server-rust/aw-webui build
