@@ -9,6 +9,9 @@ android:
     - 'android-sdk-license-.+'
     - 'google-gdk-license-.+'
 
+cache:
+ - bundler
+
 before_install:
  - openssl aes-256-cbc -K $encrypted_aac99b59139e_key -iv $encrypted_aac99b59139e_iv -in android.jks.enc -out android.jks -d
  - openssl aes-256-cbc -K $encrypted_c39c3bebf85c_key -iv $encrypted_c39c3bebf85c_iv -in fastlane/api-8546008605074111507-287154-450dc77b365f.json.enc -out fastlane/api-8546008605074111507-287154-450dc77b365f.json -d
