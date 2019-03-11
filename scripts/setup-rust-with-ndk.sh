@@ -9,15 +9,15 @@ project_path="$(readlink -f "$script_dir/..")"
 
 if [ -z "$ANDROID_HOME" ]; then
     export ANDROID_HOME=/home/$USER/Android/Sdk
+    export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
 fi
-export NDK_HOME=$ANDROID_HOME/ndk-bundle
 
 # curl https://sh.rustup.rs -sSf | sh
 
 mkdir -p NDK
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $project_path/NDK/arm64
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $project_path/NDK/arm
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $project_path/NDK/x86
+${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $project_path/NDK/arm64
+${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $project_path/NDK/arm
+${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $project_path/NDK/x86
 
 
 # TODO: Check first that ~/.cargo/config doesn't already exist
