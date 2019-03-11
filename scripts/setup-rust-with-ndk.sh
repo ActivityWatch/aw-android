@@ -2,7 +2,8 @@
 
 # Based on https://mozilla.github.io/firefox-browser-architecture/experiments/2017-09-21-rust-on-android.html
 
-project_path="/home/erb/Programming/activitywatch/other/aw-android/"
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+project_path="$script_dir/../"
 
 export ANDROID_HOME=/home/$USER/Android/Sdk
 export NDK_HOME=$ANDROID_HOME/ndk-bundle
