@@ -10,7 +10,7 @@ android:
     - 'google-gdk-license-.+'
 
 env:
- - TRAVIS_NODE_VERSION=10 TRAVIS_RUBY_VERSION=2.6.0 RUST_TOOLCHAIN=nightly
+ - TRAVIS_NODE_VERSION=10 TRAVIS_RUBY_VERSION=2.6.0 RUST_TOOLCHAIN=nightly RELEASE=false
 
 cache:
  - bundler
