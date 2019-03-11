@@ -14,25 +14,24 @@ fi
 
 # curl https://sh.rustup.rs -sSf | sh
 
-mkdir -p NDK
-${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $project_path/NDK/arm64
-${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $project_path/NDK/arm
-${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $project_path/NDK/x86
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $ANDROID_NDK_HOME/arm64
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $ANDROID_NDK_HOME/arm
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $ANDROID_NDK_HOME/x86
 
 
 # TODO: Check first that ~/.cargo/config doesn't already exist
 echo "
 [target.aarch64-linux-android]
-ar = '$project_path/NDK/arm64/bin/aarch64-linux-android-ar'
-linker = '$project_path/NDK/arm64/bin/aarch64-linux-android-clang'
+ar = '$ANDROID_NDK_HOME/arm64/bin/aarch64-linux-android-ar'
+linker = '$ANDROID_NDK_HOME/arm64/bin/aarch64-linux-android-clang'
 
 [target.armv7-linux-androideabi]
-ar = '$project_path/NDK/arm/bin/arm-linux-androideabi-ar'
-linker = '$project_path/NDK/arm/bin/arm-linux-androideabi-clang'
+ar = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-ar'
+linker = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-clang'
 
 [target.i686-linux-android]
-ar = '$project_path/NDK/x86/bin/i686-linux-android-ar'
-linker = '$project_path/NDK/x86/bin/i686-linux-android-clang'
+ar = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-ar'
+linker = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-clang'
 " > ~/.cargo/config
 
 rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
