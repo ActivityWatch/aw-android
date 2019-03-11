@@ -17,7 +17,7 @@ before_install:
  - gem install bundle
 #- bundle update --bundler
  - bundle install
- - curl https://sh.rustup.rs -sSf | sh
+ - curl https://sh.rustup.rs -sSf > install_rustup.sh && sh install_rustup.sh -y
  - ./scripts/setup-rust-with-ndk.sh
  - yes | sdkmanager "platforms;android-27"
 
