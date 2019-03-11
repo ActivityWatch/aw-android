@@ -11,6 +11,7 @@ android:
 
 cache:
  - bundler
+ - cargo
 
 before_install:
  - openssl aes-256-cbc -K $encrypted_aac99b59139e_key -iv $encrypted_aac99b59139e_iv -in android.jks.enc -out android.jks -d

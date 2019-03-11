@@ -7,9 +7,9 @@ set -e
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 project_path="$(readlink -f "$script_dir/..")"
 
-echo $project_path
-
-export ANDROID_HOME=/home/$USER/Android/Sdk
+if [ -z "$ANDROID_HOME" ]; then
+    export ANDROID_HOME=/home/$USER/Android/Sdk
+fi
 export NDK_HOME=$ANDROID_HOME/ndk-bundle
 
 # curl https://sh.rustup.rs -sSf | sh
