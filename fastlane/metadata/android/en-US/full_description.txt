@@ -1,0 +1,5 @@
+NOTE: ActivityWatch for Android is in an early stage of development and is NOT READY for general use.
+
+ActivityWatch is an open-source cross-platform application that tracks how you spend time on your devices and keeps you in control of your data.
+
+You can find the source of ActivityWatch for Android on GitHub: https://github.com/ActivityWatch/aw-android

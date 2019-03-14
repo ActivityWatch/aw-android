@@ -1,0 +1,2 @@
+json_key_file("fastlane/api-8546008605074111507-287154-450dc77b365f.json") # Path to the json secret file - Follow https://docs.fastlane.tools/actions/supply/#setup to get one
+package_name("net.activitywatch.android") # e.g. com.krausefx.app

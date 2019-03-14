@@ -2,35 +2,35 @@
 
 # Based on https://mozilla.github.io/firefox-browser-architecture/experiments/2017-09-21-rust-on-android.html
 
-project_path="/home/erb/Programming/activitywatch/other/aw-android/"
+set -e
 
-export ANDROID_HOME=/home/$USER/Android/Sdk
-export NDK_HOME=$ANDROID_HOME/ndk-bundle
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+project_path="$(readlink -f "$script_dir/..")"
+
+if [ -z "$ANDROID_HOME" ]; then
+    export ANDROID_HOME=/home/$USER/Android/Sdk
+    export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
+fi
 
 # curl https://sh.rustup.rs -sSf | sh
 
-mkdir -p NDK
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $project_path/NDK/arm64
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $project_path/NDK/arm
-${NDK_HOME}/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $project_path/NDK/x86
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $ANDROID_NDK_HOME/arm64
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $ANDROID_NDK_HOME/arm
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $ANDROID_NDK_HOME/x86
 
-
-# TODO: Check first that ~/.cargo/config doesn't already exist
-# TODO:
-project_path='/home/erb/Programming/activitywatch/other/aw-android'
 echo "
 [target.aarch64-linux-android]
-ar = '$project_path/NDK/arm64/bin/aarch64-linux-android-ar'
-linker = '$project_path/NDK/arm64/bin/aarch64-linux-android-clang'
+ar = '$ANDROID_NDK_HOME/arm64/bin/aarch64-linux-android-ar'
+linker = '$ANDROID_NDK_HOME/arm64/bin/aarch64-linux-android-clang'
 
 [target.armv7-linux-androideabi]
-ar = '$project_path/NDK/arm/bin/arm-linux-androideabi-ar'
-linker = '$project_path/NDK/arm/bin/arm-linux-androideabi-clang'
+ar = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-ar'
+linker = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-clang'
 
 [target.i686-linux-android]
-ar = '$project_path/NDK/x86/bin/i686-linux-android-ar'
-linker = '$project_path/NDK/x86/bin/i686-linux-android-clang'
-" > ~/.cargo/config
+ar = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-ar'
+linker = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-clang'
+" > aw-server-rust/.cargo/config
 
 rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
 

@@ -42,7 +42,7 @@ class ExampleInstrumentedTest {
         val ri = RustInterface(appContext)
         val bucketId = "test-${Math.random()}"
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")
-        ri.heartbeat(bucketId, """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}""")
+        ri.heartbeat(bucketId, """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}""", 1.0)
         sleep(10)
         assertEquals(1, ri.getEventsJSON(bucketId).length())
     }
