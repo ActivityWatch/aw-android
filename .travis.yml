@@ -36,14 +36,24 @@ script:
 before_deploy:
  - openssl aes-256-cbc -K $encrypted_aac99b59139e_key -iv $encrypted_aac99b59139e_iv -in android.jks.enc -out android.jks -d
  - openssl aes-256-cbc -K $encrypted_c39c3bebf85c_key -iv $encrypted_c39c3bebf85c_iv -in fastlane/api-8546008605074111507-287154-450dc77b365f.json.enc -out fastlane/api-8546008605074111507-287154-450dc77b365f.json -d
+ - bash scripts/build_apk.sh
 
 deploy:
  # Production version
  - provider: script
-   script: bash scripts/deploy.sh
+   script: bundle exec fastlane supply run -b aw-android*.apk
    skip_cleanup: true
    on:
      tags: true
+ - provider: releases
+   file: aw-android*.apk
+   file_glob: true
+   skip_cleanup: true
+   on:
+     tags: true
+     repo: ActivityWatch/aw-android
+   api_key:
+     secure: Z57ZwaWli8p8CN8VPeEWcOR1toG3rxNQfKhtdy5E7OWQnpTiurJgAUVwv1gn19rn+Ma3exzC0Qfne/APiIDNj5wmiGKIvxC8uVNO93Ta3OgJsXQie2UCIcNfZBLgWCNXssIijWz3d7J2xwNU8cBGz/F9wY0vVl5+TkEOrwJY2fjHJEsfGNF5zGgpsjJ6+FE2PBKKNhbdKk0SLKttmD6xJn77EsODS3pr8Xc1Q1FAm8uF+uPN4sOzdIgQINYQNEUHX9oB/Ejx+3LndQqijggl3MiVP3MIDwIV7kZjH0gDh4Yy4r26BGaRF8VQ9E0jKW/Rs98kMG+nwGdG/+UQA/887+PtPlT5V6XMUT5YmG/knV9CLZlxWqcNAt/mAQs1sKh5FXA0U8U2Q3E23LfTmoz0V3w67J+0XZYLS3PTN8H/vhTZUcQaobt+hWKvRDQ5q9pGfJknVtEaMfBxeYF6KJ03PdCJQOsa/AQtvsZeK6MkEESs2qVqfs86MRoqchA4o0QH2wx5Q6lZZghLEeBkVpU6qFBCRM29e3AlqJhjKT7c8jYg8IkZy5auuqIQoboRfNq+hKJEqnHClq5c52uM7ISRMapU2cOQZUpbOlzGP7I7E/eACRfDnLi2IdeKUd9xspEXf4r1j0sVhvlxl/bwLDhIhreySMTnWhT0qfFY7bVxIJM=
  # Open beta (nightlys)
 #- provider: script
 #  script: bash scripts/deploy.sh
