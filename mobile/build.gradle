@@ -10,8 +10,8 @@ android {
         applicationId "net.activitywatch.android"
         minSdkVersion 24
         targetSdkVersion 28
-        versionCode 8
-        versionName "0.3.1"
+        versionCode 9
+        versionName "0.4.0"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
