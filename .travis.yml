@@ -10,7 +10,7 @@ android:
     - 'google-gdk-license-.+'
 
 env:
- - TRAVIS_NODE_VERSION=10 TRAVIS_RUBY_VERSION=2.6.2 RUST_TOOLCHAIN=nightly RELEASE=false
+ - TRAVIS_NODE_VERSION=10 RUST_TOOLCHAIN=nightly RELEASE=false
 
 cache:
  - bundler
@@ -20,7 +20,7 @@ before_install:
  - yes | sdkmanager "platforms;android-27"
  - yes | sdkmanager "ndk-bundle"
  - rm -rf ~/.nvm && git clone https://github.com/creationix/nvm.git ~/.nvm && (cd ~/.nvm && git checkout `git describe --abbrev=0 --tags`) && source ~/.nvm/nvm.sh && nvm install $TRAVIS_NODE_VERSION;
- - rvm install $TRAVIS_RUBY_VERSION && rvm use --default $TRAVIS_RUBY_VERSION && gem update --system && gem install bundle && bundle install
+ - gem update --system && gem install bundle && bundle install
  - curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUST_TOOLCHAIN && source $HOME/.cargo/env
  - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
  - ./scripts/setup-rust-with-ndk.sh
@@ -41,7 +41,7 @@ before_deploy:
 deploy:
  # Production version
  - provider: script
-   script: rvm use $TRAVIS_RUBY_VERSION && bundle exec fastlane supply run -b aw-android*.apk
+   script: bundle exec fastlane supply run -b aw-android*.apk
    skip_cleanup: true
    on:
      tags: true
