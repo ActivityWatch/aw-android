@@ -4,6 +4,8 @@ NDK
 mobile/src/main/assets/webui
 *.jks
 fastlane/*.json
+.bundle
+vendor
 
 
 # All below taken from: https://github.com/github/gitignore/blob/13c64104e96bbadc8c81b5e499386af443cca66b/Android.gitignore

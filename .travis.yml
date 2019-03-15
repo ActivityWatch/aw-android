@@ -38,9 +38,16 @@ before_deploy:
  - openssl aes-256-cbc -K $encrypted_c39c3bebf85c_key -iv $encrypted_c39c3bebf85c_iv -in fastlane/api-8546008605074111507-287154-450dc77b365f.json.enc -out fastlane/api-8546008605074111507-287154-450dc77b365f.json -d
 
 deploy:
+ # Production version
  - provider: script
    script: bash scripts/deploy.sh
+   skip_cleanup: true
+   on:
+     tags: true
+ # Open beta (nightlys)
+ - provider: script
+   script: true # bash scripts/deploy.sh
+   skip_cleanup: true
    on:
      branch: master
-       #tags: true
 
