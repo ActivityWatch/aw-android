@@ -65,15 +65,13 @@ class UsageStatsWatcher constructor(val context: Context) {
     }
 
     fun queryUsage() {
-        val usm = getUSM()
+        val usm = getUSM()!!
 
-        if(usm != null) {
-            // Print per application
-            val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0, Long.MAX_VALUE)
-            Log.i(TAG, "usageStats.size=${usageStats.size}")
-            for(e in usageStats) {
-                Log.i(TAG, "${e.packageName}: ${e.totalTimeInForeground/1000}")
-            }
+        // Print per application
+        val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0, Long.MAX_VALUE)
+        Log.i(TAG, "usageStats.size=${usageStats.size}")
+        for(e in usageStats) {
+            Log.i(TAG, "${e.packageName}: ${e.totalTimeInForeground/1000}")
         }
     }
 
@@ -108,18 +106,14 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
         override fun doInBackground(vararg urls: URL): Int? {
-            Log.i(TAG, "Starting to send heartbeats...")
-            // Ensure bucket exists
+            Log.i(TAG, "Sending heartbeats...")
+
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
-
-            val usm = getUSM()!!
-
-            if(lastUpdated == null) {
-                lastUpdated = getLastEventTime()
-            }
+            lastUpdated = getLastEventTime()
 
             var heartbeatsSent = 0
+            val usm = getUSM()!!
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
             while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
