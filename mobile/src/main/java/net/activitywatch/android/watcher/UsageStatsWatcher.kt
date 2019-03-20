@@ -86,43 +86,24 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    private fun getNewEvents(limit: Int = 100): List<UsageEvents.Event> {
-        val usm = getUSM()
-
-        // TODO: Get end time of last heartbeat
+    // TODO: Maybe return end of event instead of start?
+    private fun getLastEventTime(): Instant? {
         val lastEvent = getLastEvent()
         Log.w(TAG, "Last event: $lastEvent")
 
-        val since: Long = if(lastEvent != null) {
+        return if(lastEvent != null) {
             val timestampString = lastEvent.getString("timestamp")
             // Instant.parse("2014-10-23T00:35:14.800Z").toEpochMilli()
             try {
                 val timeCreatedDate = isoFormatter.parse(timestampString)
-                DateTimeUtils.toInstant(timeCreatedDate).toEpochMilli()
+                DateTimeUtils.toInstant(timeCreatedDate)
             } catch (e: ParseException) {
                 Log.e(TAG, "Unable to parse timestamp")
-                0L
+                null
             }
         } else {
-            0L
+            null
         }
-
-        if(since == 0L) {
-            Log.e(TAG, "Since was 0, this should only happen on a fresh install")
-        }
-
-        Log.d(TAG, "Since: $since")
-
-        val newUsageEvents = mutableListOf<UsageEvents.Event>()
-        if (usm != null) {
-            val usageEvents = usm.queryEvents(since, Long.MAX_VALUE)
-            while(usageEvents.hasNextEvent() && newUsageEvents.size < limit) {
-                val eventOut = UsageEvents.Event()
-                usageEvents.getNextEvent(eventOut)
-                newUsageEvents.add(eventOut)
-            }
-        }
-        return newUsageEvents
     }
 
     private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
@@ -132,31 +113,43 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
 
-            for(e in getNewEvents(limit=1000)) {
-                val awEvent = Event.fromUsageEvent(e, context)
+            val usm = getUSM()!!
+
+            if(lastUpdated == null) {
+                lastUpdated = getLastEventTime()
+            }
+
+            var heartbeatsSent = 0
+            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            while(usageEvents.hasNextEvent()) {
+                val event = UsageEvents.Event()
+                usageEvents.getNextEvent(event)
+
+                val awEvent = Event.fromUsageEvent(event, context)
                 //Log.d(TAG, awEvent.toString())
                 //Log.w(TAG, "Event type: ${e.eventType}")
 
                 // TODO: Set pulsetime correctly for the different event types
-                val pulsetime: Double = if (e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND || e.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
+                val pulsetime: Double = if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND || event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
                     // MOVE_TO_BACKGROUND: Activity was moved to background
                     // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
                     24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                } else if (e.eventType == UsageEvents.Event.SCREEN_INTERACTIVE || e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                } else if (event.eventType == UsageEvents.Event.SCREEN_INTERACTIVE || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
                     // MOVE_TO_FOREGROUND: New Activity was opened
                     0.0
                 } else {
                     // Not sure which events are triggered here, so we use a (probably safe) fallback
-                    Log.w(TAG, "Rare eventType: ${e.eventType}, defaulting to pulsetime of 1h")
+                    Log.w(TAG, "Rare eventType: ${event.eventType}, defaulting to pulsetime of 1h")
                     60 * 60.0
                 }
-                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
 
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 publishProgress(awEvent.timestamp)
+                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
+                heartbeatsSent++
             }
-            return null
+            return heartbeatsSent
         }
 
         override fun onProgressUpdate(vararg progress: Instant) {
@@ -165,7 +158,7 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
 
         override fun onPostExecute(result: Int?) {
-            Log.w(TAG, "Finished SendHeartbeatTask")
+            Log.w(TAG, "Finished SendHeartbeatTask, sent $result events")
         }
     }
 
