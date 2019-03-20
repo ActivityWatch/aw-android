@@ -16,6 +16,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
+import java.lang.Thread.sleep
 import java.net.URL
 import java.text.ParseException
 
@@ -28,6 +29,8 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     private val ri = RustInterface(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+
+    var lastUpdated: Instant? = null
 
     private fun isUsageAllowed(): Boolean {
         // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
@@ -83,7 +86,7 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    private fun getNewEvents(): List<UsageEvents.Event> {
+    private fun getNewEvents(limit: Int = 100): List<UsageEvents.Event> {
         val usm = getUSM()
 
         // TODO: Get end time of last heartbeat
@@ -108,12 +111,12 @@ class UsageStatsWatcher constructor(val context: Context) {
             Log.e(TAG, "Since was 0, this should only happen on a fresh install")
         }
 
-        Log.w(TAG, "Since: $since")
+        Log.d(TAG, "Since: $since")
 
         val newUsageEvents = mutableListOf<UsageEvents.Event>()
         if (usm != null) {
             val usageEvents = usm.queryEvents(since, Long.MAX_VALUE)
-            while(usageEvents.hasNextEvent()) {
+            while(usageEvents.hasNextEvent() && newUsageEvents.size < limit) {
                 val eventOut = UsageEvents.Event()
                 usageEvents.getNextEvent(eventOut)
                 newUsageEvents.add(eventOut)
@@ -122,40 +125,43 @@ class UsageStatsWatcher constructor(val context: Context) {
         return newUsageEvents
     }
 
-    private inner class SendHeartbeatsTask : AsyncTask<URL, Pair<Int, Instant>, Int>() {
+    private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
         override fun doInBackground(vararg urls: URL): Int? {
             Log.i(TAG, "Starting to send heartbeats...")
             // Ensure bucket exists
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
 
-            var eventsSent = 0
-            for(e in getNewEvents()) {
+            for(e in getNewEvents(limit=1000)) {
                 val awEvent = Event.fromUsageEvent(e, context)
-                Log.w(TAG, awEvent.toString())
+                //Log.d(TAG, awEvent.toString())
                 //Log.w(TAG, "Event type: ${e.eventType}")
 
                 // TODO: Set pulsetime correctly for the different event types
-                val pulsetime: Double = if (e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
-                    10e6
+                val pulsetime: Double = if (e.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND || e.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
+                    // MOVE_TO_BACKGROUND: Activity was moved to background
+                    // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
+                    24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                } else if (e.eventType == UsageEvents.Event.SCREEN_INTERACTIVE || e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
+                    // MOVE_TO_FOREGROUND: New Activity was opened
+                    0.0
                 } else {
-                    60.0
+                    // Not sure which events are triggered here, so we use a (probably safe) fallback
+                    Log.w(TAG, "Rare eventType: ${e.eventType}, defaulting to pulsetime of 1h")
+                    60 * 60.0
                 }
+                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
 
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                publishProgress(Pair(eventsSent, awEvent.timestamp))
-                if(eventsSent >= 1000) {
-                    break
-                }
-                eventsSent++
+                publishProgress(awEvent.timestamp)
             }
-            return eventsSent
+            return null
         }
 
-        override fun onProgressUpdate(vararg progress: Pair<Int, Instant>) {
-            val eventCount = progress[0].first
-            val timestamp = progress[0].second
-            Log.i(TAG, "Progress: ($eventCount/1000) $timestamp")
+        override fun onProgressUpdate(vararg progress: Instant) {
+            lastUpdated = progress[0]
+            Log.i(TAG, "Progress: ${lastUpdated.toString()}")
         }
 
         override fun onPostExecute(result: Int?) {

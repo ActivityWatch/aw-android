@@ -14,6 +14,7 @@ import android.widget.TextView
 import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import net.activitywatch.android.models.TestViewModel
+import java.lang.Exception
 
 private const val TAG = "TestFragment"
 
@@ -43,14 +44,17 @@ class TestFragment : Fragment() {
         viewModel = ViewModelProviders.of(this).get(TestViewModel::class.java)
         // TODO: Use the ViewModel
 
+        val context = this.context
+        val usw = if(context != null) {
+            UsageStatsWatcher(context)
+        } else {
+            throw Exception()
+        }
+
         val button = view?.findViewById(R.id.button) as Button
         button.setOnClickListener {
             Log.w(TAG, "log data button clicked")
-            val context = activity
-            if(context != null) {
-                val usw = UsageStatsWatcher(context)
-                usw.sendHeartbeats()
-            }
+            usw.sendHeartbeats()
         }
     }
 }
