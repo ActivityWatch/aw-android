@@ -10,7 +10,7 @@ android:
     - 'google-gdk-license-.+'
 
 env:
- - TRAVIS_NODE_VERSION=10 RUST_TOOLCHAIN=nightly RELEASE=false
+ - TRAVIS_NODE_VERSION=10 RUST_TOOLCHAIN=nightly
 
 cache:
  - bundler
@@ -26,16 +26,17 @@ before_install:
  - ./scripts/setup-rust-with-ndk.sh
 
 install:
- - make aw-server-rust
+ - env RELEASE=false make aw-server-rust
  - make aw-webui
 
 script:
  - ./gradlew clean lint test
- - ./gradlew connectedAndroidTest || true
+#- ./gradlew connectedAndroidTest || true
 
 before_deploy:
  - openssl aes-256-cbc -K $encrypted_aac99b59139e_key -iv $encrypted_aac99b59139e_iv -in android.jks.enc -out android.jks -d
  - openssl aes-256-cbc -K $encrypted_c39c3bebf85c_key -iv $encrypted_c39c3bebf85c_iv -in fastlane/api-8546008605074111507-287154-450dc77b365f.json.enc -out fastlane/api-8546008605074111507-287154-450dc77b365f.json -d
+ - env RELEASE=true make aw-server-rust
  - bash scripts/build_apk.sh
 
 deploy:
@@ -45,6 +46,7 @@ deploy:
    skip_cleanup: true
    on:
      tags: true
+     repo: ActivityWatch/aw-android
  - provider: releases
    file: aw-android*.apk
    file_glob: true
