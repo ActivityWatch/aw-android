@@ -126,15 +126,13 @@ class UsageStatsWatcher constructor(val context: Context) {
                 usageEvents.getNextEvent(event)
 
                 val awEvent = Event.fromUsageEvent(event, context)
-                //Log.d(TAG, awEvent.toString())
-                //Log.w(TAG, "Event type: ${e.eventType}")
-
-                // TODO: Set pulsetime correctly for the different event types
-                val pulsetime: Double = if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND || event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
+                val pulsetime: Double = if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+                                         || event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
                     // MOVE_TO_BACKGROUND: Activity was moved to background
                     // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
                     24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                } else if (event.eventType == UsageEvents.Event.SCREEN_INTERACTIVE || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                } else if (event.eventType == UsageEvents.Event.SCREEN_INTERACTIVE
+                        || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
                     // MOVE_TO_FOREGROUND: New Activity was opened
                     0.0
@@ -144,9 +142,9 @@ class UsageStatsWatcher constructor(val context: Context) {
                     60 * 60.0
                 }
 
+                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 publishProgress(awEvent.timestamp)
-                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
                 heartbeatsSent++
             }
             return heartbeatsSent

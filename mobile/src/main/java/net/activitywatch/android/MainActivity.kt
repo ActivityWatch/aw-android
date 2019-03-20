@@ -20,9 +20,9 @@ import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
-
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
     BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
+
     private val TAG = "MainActivity"
 
     val version: String
