@@ -115,25 +115,27 @@ class UsageStatsWatcher constructor(val context: Context) {
             var heartbeatsSent = 0
             val usm = getUSM()!!
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
-            while(usageEvents.hasNextEvent()) {
+            nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
 
                 val awEvent = Event.fromUsageEvent(event, context)
-                val pulsetime: Double = if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
-                                         || event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
-                    // MOVE_TO_BACKGROUND: Activity was moved to background
-                    // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
-                    24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                } else if (event.eventType == UsageEvents.Event.SCREEN_INTERACTIVE
-                        || event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                    // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
-                    // MOVE_TO_FOREGROUND: New Activity was opened
-                    0.0
-                } else {
-                    // Not sure which events are triggered here, so we use a (probably safe) fallback
-                    Log.w(TAG, "Rare eventType: ${event.eventType}, defaulting to pulsetime of 1h")
-                    60 * 60.0
+                val pulsetime: Double = when(event.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND or UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                        // MOVE_TO_FOREGROUND: New Activity was opened
+                        // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
+                        0.0
+                    }
+                    UsageEvents.Event.MOVE_TO_BACKGROUND or UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                        // MOVE_TO_BACKGROUND: Activity was moved to background
+                        // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
+                        24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                    }
+                    else -> {
+                        // Not sure which events are triggered here, so we use a (probably safe) fallback
+                        Log.w(TAG, "Rare eventType: ${event.eventType}, skipping")
+                        continue@nextEvent
+                    }
                 }
 
                 sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
