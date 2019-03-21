@@ -76,8 +76,10 @@ class UsageStatsWatcher constructor(val context: Context) {
     }
 
     private fun getLastEvent(): JSONObject? {
+        // FIXME: For some reason doesn't return last event, always 2h behind (so probably a timezone issue)
         val events = ri.getEventsJSON(bucket_id, limit=1)
         return if (events.length() > 0) {
+            //Log.d(TAG, events[0].toString())
             events[0] as JSONObject
         } else {
             null
@@ -96,7 +98,7 @@ class UsageStatsWatcher constructor(val context: Context) {
                 val timeCreatedDate = isoFormatter.parse(timestampString)
                 DateTimeUtils.toInstant(timeCreatedDate)
             } catch (e: ParseException) {
-                Log.e(TAG, "Unable to parse timestamp")
+                Log.e(TAG, "Unable to parse timestamp: $timestampString")
                 null
             }
         } else {
@@ -111,6 +113,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
             lastUpdated = getLastEventTime()
+            Log.w(TAG, "lastUpdated: ${lastUpdated.toString()}")
 
             var heartbeatsSent = 0
             val usm = getUSM()!!
@@ -121,13 +124,19 @@ class UsageStatsWatcher constructor(val context: Context) {
 
                 val awEvent = Event.fromUsageEvent(event, context)
                 val pulsetime: Double = when(event.eventType) {
-                    UsageEvents.Event.MOVE_TO_FOREGROUND or UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                         // MOVE_TO_FOREGROUND: New Activity was opened
+                        0.0
+                    }
+                    UsageEvents.Event.SCREEN_INTERACTIVE -> {
                         // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
                         0.0
                     }
-                    UsageEvents.Event.MOVE_TO_BACKGROUND or UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                         // MOVE_TO_BACKGROUND: Activity was moved to background
+                        24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                    }
+                    UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                         // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
                         24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
