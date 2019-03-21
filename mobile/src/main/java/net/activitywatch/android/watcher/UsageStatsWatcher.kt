@@ -124,19 +124,13 @@ class UsageStatsWatcher constructor(val context: Context) {
 
                 val awEvent = Event.fromUsageEvent(event, context)
                 val pulsetime: Double = when(event.eventType) {
-                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND, UsageEvents.Event.SCREEN_INTERACTIVE -> {
                         // MOVE_TO_FOREGROUND: New Activity was opened
-                        0.0
-                    }
-                    UsageEvents.Event.SCREEN_INTERACTIVE -> {
                         // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
                         0.0
                     }
-                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    UsageEvents.Event.MOVE_TO_BACKGROUND, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                         // MOVE_TO_BACKGROUND: Activity was moved to background
-                        24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                    }
-                    UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                         // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
                         24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
