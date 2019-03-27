@@ -68,8 +68,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onResume() {
         super.onResume()
 
-        val usw = UsageStatsWatcher(this)
-        usw.sendHeartbeats()
+        // Temporarily disabled until bugs are kinked out
+        //val usw = UsageStatsWatcher(this)
+        //usw.sendHeartbeats()
     }
 
     override fun onBackPressed() {
