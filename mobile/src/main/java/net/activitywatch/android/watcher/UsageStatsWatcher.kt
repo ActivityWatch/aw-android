@@ -113,7 +113,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
             lastUpdated = getLastEventTime()
-            Log.w(TAG, "lastUpdated: ${lastUpdated.toString()}")
+            Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
             var heartbeatsSent = 0
             val usm = getUSM()!!
