@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import android.app.usage.UsageStats
 import android.net.Uri
 import android.os.Bundle
 import android.support.design.widget.Snackbar
@@ -17,10 +18,11 @@ import net.activitywatch.android.fragments.Bucket
 import net.activitywatch.android.fragments.BucketListFragment
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
-
+import net.activitywatch.android.watcher.UsageStatsWatcher
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
     BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
+
     private val TAG = "MainActivity"
 
     val version: String
@@ -61,6 +63,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val firstFragment = TestFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // Temporarily disabled until bugs are kinked out
+        //val usw = UsageStatsWatcher(this)
+        //usw.sendHeartbeats()
     }
 
     override fun onBackPressed() {

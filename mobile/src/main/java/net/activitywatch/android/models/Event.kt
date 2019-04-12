@@ -17,10 +17,17 @@ data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: J
             } catch(e: PackageManager.NameNotFoundException) {
                 "Unknown"
             }
+
+            // Construct the data object in an exception-safe manner
+            val data = JSONObject()
+            data.put("app", appName)
+            data.put("package", usageEvent.packageName)
+            data.put("classname", usageEvent.className)
+
             return Event(
                 timestamp = timestamp,
                 duration = 0.0,
-                data = JSONObject("""{"app": "$appName", "package": "${usageEvent.packageName}", "classname": "${usageEvent.className}"}""")
+                data = data
             )
         }
     }
