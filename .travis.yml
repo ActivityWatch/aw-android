@@ -66,4 +66,5 @@ cache:
    - $TRAVIS_BUILD_DIR/aw-server-rust/target
 
 before_cache:
+ - cargo install cargo-prune --force
  - cargo prune
