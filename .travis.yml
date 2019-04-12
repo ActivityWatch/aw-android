@@ -12,11 +12,6 @@ android:
 env:
  - TRAVIS_NODE_VERSION=10 RUST_TOOLCHAIN=nightly
 
-# I don't think these actually do anything since "language: android", worth setting up caching manually?
-cache:
- - bundler
- - cargo
-
 before_install:
  - yes | sdkmanager "platforms;android-27"
  - yes | sdkmanager "ndk-bundle"
@@ -57,10 +52,18 @@ deploy:
      repo: ActivityWatch/aw-android
    api_key:
      secure: Z57ZwaWli8p8CN8VPeEWcOR1toG3rxNQfKhtdy5E7OWQnpTiurJgAUVwv1gn19rn+Ma3exzC0Qfne/APiIDNj5wmiGKIvxC8uVNO93Ta3OgJsXQie2UCIcNfZBLgWCNXssIijWz3d7J2xwNU8cBGz/F9wY0vVl5+TkEOrwJY2fjHJEsfGNF5zGgpsjJ6+FE2PBKKNhbdKk0SLKttmD6xJn77EsODS3pr8Xc1Q1FAm8uF+uPN4sOzdIgQINYQNEUHX9oB/Ejx+3LndQqijggl3MiVP3MIDwIV7kZjH0gDh4Yy4r26BGaRF8VQ9E0jKW/Rs98kMG+nwGdG/+UQA/887+PtPlT5V6XMUT5YmG/knV9CLZlxWqcNAt/mAQs1sKh5FXA0U8U2Q3E23LfTmoz0V3w67J+0XZYLS3PTN8H/vhTZUcQaobt+hWKvRDQ5q9pGfJknVtEaMfBxeYF6KJ03PdCJQOsa/AQtvsZeK6MkEESs2qVqfs86MRoqchA4o0QH2wx5Q6lZZghLEeBkVpU6qFBCRM29e3AlqJhjKT7c8jYg8IkZy5auuqIQoboRfNq+hKJEqnHClq5c52uM7ISRMapU2cOQZUpbOlzGP7I7E/eACRfDnLi2IdeKUd9xspEXf4r1j0sVhvlxl/bwLDhIhreySMTnWhT0qfFY7bVxIJM=
- # Open beta (nightlys)
+# Open beta (nightlys)
+# TODO: Need to get latest versionCode using fastlane and set it (incremented) in the build.gradle
 #- provider: script
 #  script: bash scripts/deploy.sh
 #  skip_cleanup: true
 #  on:
 #    branch: master
 
+cache:
+  directories:
+   - $HOME/.cargo
+   - $TRAVIS_BUILD_DIR/aw-server-rust/target
+
+before_cache:
+ - cargo prune
