@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.AsyncTask
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
 import org.json.JSONObject
@@ -59,13 +60,14 @@ class UsageStatsWatcher constructor(val context: Context) {
             usm
         } else {
             Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
+            Toast.makeText(context, "Please grant ActivityWatch the Usage permission", Toast.LENGTH_LONG).show()
             context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             null
         }
     }
 
     fun queryUsage() {
-        val usm = getUSM()!!
+        val usm = getUSM() ?: return
 
         // Print per application
         val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0, Long.MAX_VALUE)
@@ -115,8 +117,9 @@ class UsageStatsWatcher constructor(val context: Context) {
             lastUpdated = getLastEventTime()
             Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
+            val usm = getUSM() ?: return 0
+
             var heartbeatsSent = 0
-            val usm = getUSM()!!
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
