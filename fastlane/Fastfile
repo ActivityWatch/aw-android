@@ -25,13 +25,17 @@ platform :android do
   lane :beta do
     gradle(task: "clean assembleRelease")
     crashlytics
-  
+
     # sh "your_script.sh"
     # You can also use other beta testing services here
   end
 
   desc "Deploy a new version to the Google Play"
   lane :deploy do
+    increment_version_code(
+        gradle_file_path: "mobile/build.gradle",
+        version_code: google_play_track_version_codes.max + 1
+    )
     gradle(task: "clean assembleRelease")
     upload_to_play_store
   end
