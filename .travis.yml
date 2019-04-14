@@ -23,7 +23,6 @@ before_install:
 
 install:
  - env RELEASE=false make aw-server-rust
- - make aw-webui
 
 script:
  - ./gradlew clean lint test
@@ -33,6 +32,7 @@ before_deploy:
  - openssl aes-256-cbc -K $encrypted_aac99b59139e_key -iv $encrypted_aac99b59139e_iv -in android.jks.enc -out android.jks -d
  - openssl aes-256-cbc -K $encrypted_c39c3bebf85c_key -iv $encrypted_c39c3bebf85c_iv -in fastlane/api-8546008605074111507-287154-450dc77b365f.json.enc -out fastlane/api-8546008605074111507-287154-450dc77b365f.json -d
  - env RELEASE=true make aw-server-rust  # RUSTFLAGS=-g # The RUSTFLAGS=-g is to keep debug symbols in the build, bloats the binary from 7M -> 60MB. Currently using profile.release.debug in Cargo.toml however as -g didn't work on the first try
+ - make aw-webui
  - bash scripts/build_apk.sh
 
 deploy:
