@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.AsyncTask
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -60,7 +62,13 @@ class UsageStatsWatcher constructor(val context: Context) {
             usm
         } else {
             Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
-            Toast.makeText(context, "Please grant ActivityWatch the Usage permission", Toast.LENGTH_LONG).show()
+
+            // Needed since Toasts can only be created in the UI thread, and getUSM isn't always called in the UI thread
+            Handler(Looper.getMainLooper()).post {
+                run {
+                    Toast.makeText(context, "Please grant ActivityWatch usage access", Toast.LENGTH_LONG).show()
+                }
+            }
             context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             null
         }
