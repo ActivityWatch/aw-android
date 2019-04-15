@@ -1,7 +1,7 @@
 .PHONY: aw-server-rust aw-webui
 
 aw-server-rust:
-	cd aw-server-rust && bash compile-android.sh
+	cd aw-server-rust && env RUSTFLAGS="-C debuginfo=2" bash compile-android.sh  # RUSTFLAGS="-C debuginfo=2" is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
 	mkdir -p mobile/src/main/jniLibs/arm64-v8a/
 	ln -sfnv $$(pwd)/aw-server-rust/target/aarch64-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
 	        mobile/src/main/jniLibs/arm64-v8a/libaw_server.so
