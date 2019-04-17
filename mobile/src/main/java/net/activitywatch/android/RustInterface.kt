@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.os.AsyncTask
+import android.system.Os
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONException
@@ -14,6 +15,10 @@ private const val TAG = "RustInterface"
 class RustInterface constructor(context: Context? = null) {
 
     init {
+        //Os.setenv("RUST_BACKTRACE", "1", true)
+        if(context != null) {
+            Os.setenv("SQLITE_TMPDIR", context.cacheDir.absolutePath, true)
+        }
         System.loadLibrary("aw_server")
 
         initialize()
