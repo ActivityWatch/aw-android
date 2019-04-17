@@ -22,7 +22,8 @@ before_install:
  - ./scripts/setup-rust-with-ndk.sh
 
 install:
- - env RELEASE=false make aw-server-rust
+ # Build release build straight away if on a tagged commit, to avoid building twice
+ - env RELEASE=$([ $TRAVIS_TAG ] && echo "true" || echo "false") make aw-server-rust
 
 script:
  - bundle exec fastlane test
