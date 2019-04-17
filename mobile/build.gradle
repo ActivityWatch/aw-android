@@ -10,8 +10,9 @@ android {
         applicationId "net.activitywatch.android"
         minSdkVersion 24
         targetSdkVersion 28
+        // versionCode and versionName updated automatically in deploy script
         versionCode 14
-        versionName "0.4.4"
+        versionName "0.4-dev"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
