@@ -33,6 +33,10 @@ data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: J
     }
 
     override fun toString(): String {
-        return """{"timestamp": "$timestamp", "duration": $duration, "data": $data}"""
+        val event = JSONObject()
+        event.put("timestamp", timestamp)
+        event.put("duration", duration)
+        event.put("data", data)
+        return event.toString()
     }
 }

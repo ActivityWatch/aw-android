@@ -65,7 +65,7 @@ class WebUIFragment : Fragment() {
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
 
         myWebView.settings.javaScriptEnabled = true
-        myWebView.loadUrl("http://localhost:5600")
+        myWebView.loadUrl("http://127.0.0.1:5600")
 
         return view
     }

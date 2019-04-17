@@ -132,6 +132,11 @@ class UsageStatsWatcher constructor(val context: Context) {
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
+                if(event.eventType !in arrayListOf(UsageEvents.Event.MOVE_TO_FOREGROUND, UsageEvents.Event.MOVE_TO_BACKGROUND, UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.SCREEN_NON_INTERACTIVE)) {
+                    // Not sure which events are triggered here, so we use a (probably safe) fallback
+                    //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
+                    continue@nextEvent
+                }
 
                 val awEvent = Event.fromUsageEvent(event, context)
                 val pulsetime: Double = when(event.eventType) {
@@ -146,15 +151,16 @@ class UsageStatsWatcher constructor(val context: Context) {
                         24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
                     else -> {
-                        // Not sure which events are triggered here, so we use a (probably safe) fallback
-                        Log.w(TAG, "Rare eventType: ${event.eventType}, skipping")
+                        Log.w(TAG, "This should never happen!")
                         continue@nextEvent
                     }
                 }
 
-                sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
+                //sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                publishProgress(awEvent.timestamp)
+                if(heartbeatsSent % 100 == 0) {
+                    publishProgress(awEvent.timestamp)
+                }
                 heartbeatsSent++
             }
             return heartbeatsSent

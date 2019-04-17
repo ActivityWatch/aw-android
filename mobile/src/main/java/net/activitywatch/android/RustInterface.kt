@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.AsyncTask
 import android.system.Os
 import android.util.Log
+import net.activitywatch.android.models.Event
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -78,8 +79,8 @@ class RustInterface constructor(context: Context? = null) {
     }
 
     fun heartbeatHelper(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double = 60.0) {
-        val event = """{"timestamp": "$timestamp", "duration": $duration, "data": $data}"""
-        val msg = heartbeat(bucket_id, event, pulsetime)
+        val event = Event(timestamp, duration, data)
+        val msg = heartbeat(bucket_id, event.toString(), pulsetime)
         //Log.w(TAG, msg)
     }
 
@@ -95,10 +96,11 @@ class RustInterface constructor(context: Context? = null) {
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
         // TODO: Handle errors
         // TODO: Use limit
+        val result = getEvents(bucket_id)
         return try {
-            JSONArray(getEvents(bucket_id))
+            JSONArray(result)
         } catch(e: JSONException) {
-            Log.e(TAG, "Error when trying to fetch events from bucket, are you sure it exists?")
+            Log.e(TAG, "Error when trying to fetch events from bucket: $result")
             JSONArray()
         }
     }

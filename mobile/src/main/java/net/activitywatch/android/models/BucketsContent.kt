@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.util.ArrayList
 import java.util.HashMap
 
-typealias Bucket = JSONObject
+typealias BucketObj = JSONObject
 
 /**
  * Helper class for providing sample content for user interfaces created by
@@ -19,12 +19,12 @@ object BucketsContent {
     /**
      * An array of sample (dummy) items.
      */
-    val ITEMS: MutableList<Bucket> = ArrayList()
+    val ITEMS: MutableList<BucketObj> = ArrayList()
 
     /**
      * A map of sample (dummy) items, by ID.
      */
-    val ITEM_MAP: MutableMap<String, Bucket> = HashMap()
+    val ITEM_MAP: MutableMap<String, BucketObj> = HashMap()
 
     val TAG = "BucketsContent"
 
@@ -47,13 +47,13 @@ object BucketsContent {
         ITEMS.reverse()
     }
 
-    fun addItem(item: Bucket) {
+    fun addItem(item: BucketObj) {
         ITEMS.add(item)
         ITEM_MAP[item.getString("id")] = item
     }
 
-    private fun createDummyItem(position: Int): Bucket {
-        return Bucket("""{"id": "test $position", "created": "2019-01-01T16:20:00.1"}""")
+    private fun createDummyItem(position: Int): BucketObj {
+        return BucketObj("""{"id": "test $position", "created": "2019-01-01T16:20:00.1"}""")
     }
 
     private fun makeDetails(position: Int): String {
