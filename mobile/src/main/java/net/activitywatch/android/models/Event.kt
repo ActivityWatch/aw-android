@@ -9,7 +9,7 @@ import org.threeten.bp.Instant
 
 data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: JSONObject) {
     companion object {
-        fun fromUsageEvent(usageEvent: UsageEvents.Event, context: Context): Event {
+        fun fromUsageEvent(usageEvent: UsageEvents.Event, context: Context, includeClassname: Boolean = true): Event {
             val timestamp = DateTimeUtils.toInstant(java.util.Date(usageEvent.timeStamp))
             val pm = context.packageManager
             val appName = try {
@@ -22,7 +22,9 @@ data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: J
             val data = JSONObject()
             data.put("app", appName)
             data.put("package", usageEvent.packageName)
-            data.put("classname", usageEvent.className)
+            if(includeClassname) {
+                data.put("classname", usageEvent.className)
+            }
 
             return Event(
                 timestamp = timestamp,

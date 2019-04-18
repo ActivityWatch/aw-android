@@ -138,17 +138,18 @@ class UsageStatsWatcher constructor(val context: Context) {
                     continue@nextEvent
                 }
 
-                val awEvent = Event.fromUsageEvent(event, context)
-                val pulsetime: Double = when(event.eventType) {
+                val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
+                val pulsetime: Double
+                when(event.eventType) {
                     UsageEvents.Event.MOVE_TO_FOREGROUND, UsageEvents.Event.SCREEN_INTERACTIVE -> {
                         // MOVE_TO_FOREGROUND: New Activity was opened
                         // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
-                        0.0
+                        pulsetime = 1.0
                     }
                     UsageEvents.Event.MOVE_TO_BACKGROUND, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                         // MOVE_TO_BACKGROUND: Activity was moved to background
                         // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
-                        24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                        pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
                     else -> {
                         Log.w(TAG, "This should never happen!")
@@ -156,7 +157,6 @@ class UsageStatsWatcher constructor(val context: Context) {
                     }
                 }
 
-                //sleep(1)  // might fix crashes on some phones, idk, suspecting a race condition but no proper testing done
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 if(heartbeatsSent % 100 == 0) {
                     publishProgress(awEvent.timestamp)
@@ -169,10 +169,14 @@ class UsageStatsWatcher constructor(val context: Context) {
         override fun onProgressUpdate(vararg progress: Instant) {
             lastUpdated = progress[0]
             Log.i(TAG, "Progress: ${lastUpdated.toString()}")
+            Toast.makeText(context, "Logging data, progress: $lastUpdated", Toast.LENGTH_LONG).show()
         }
 
         override fun onPostExecute(result: Int?) {
             Log.w(TAG, "Finished SendHeartbeatTask, sent $result events")
+            if(result != 0) {
+                Toast.makeText(context, "Completed logging of data! Logged events: $result", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
