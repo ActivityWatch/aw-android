@@ -95,7 +95,7 @@ class RustInterface constructor(context: Context? = null) {
 
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
         // TODO: Handle errors
-        // TODO: Use limit
+        // FIXME: Use limit (will have major performance benefits)
         val result = getEvents(bucket_id)
         return try {
             JSONArray(result)

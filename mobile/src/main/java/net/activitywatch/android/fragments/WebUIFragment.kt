@@ -1,6 +1,7 @@
 package net.activitywatch.android.fragments
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
@@ -18,7 +19,8 @@ import android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE
 import android.os.Build
 import android.os.Build.VERSION_CODES.KITKAT
 import android.os.Build.VERSION.SDK_INT
-
+import android.content.Intent.ACTION_VIEW
+import android.webkit.DownloadListener
 
 
 // TODO: Rename parameter arguments, choose names that match
@@ -63,6 +65,12 @@ class WebUIFragment : Fragment() {
         }
 
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
+
+        myWebView.setDownloadListener { url, _, _, _, _ ->
+            val i = Intent(ACTION_VIEW)
+            i.data = Uri.parse(url)
+            startActivity(i)
+        }
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true

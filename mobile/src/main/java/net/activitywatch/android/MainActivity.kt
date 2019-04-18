@@ -108,9 +108,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             R.id.nav_dashboard -> {
                 fragmentClass = TestFragment::class.java
             }
-            R.id.nav_buckets -> {
-                fragmentClass = BucketListFragment::class.java
-            }
             R.id.nav_webui -> {
                 fragmentClass = WebUIFragment::class.java
             }
