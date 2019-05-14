@@ -4,6 +4,7 @@
           package="net.activitywatch.android">
 
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission
             android:name="android.permission.PACKAGE_USAGE_STATS"
             tools:ignore="ProtectedPermissions"/>
@@ -27,6 +28,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-    </application>
 
+        <receiver
+                android:name=".watcher.AlarmReceiver"
+                android:enabled="true"
+            >
+            <intent-filter>
+                <action android:name="net.activitywatch.android.watcher.LOG_DATA"/>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

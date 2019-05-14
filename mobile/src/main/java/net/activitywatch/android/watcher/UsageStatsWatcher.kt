@@ -1,6 +1,8 @@
 package net.activitywatch.android.watcher
 
+import android.app.AlarmManager
 import android.app.AppOpsManager
+import android.app.PendingIntent
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -10,6 +12,7 @@ import android.content.pm.PackageManager
 import android.os.AsyncTask
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -35,7 +38,7 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     var lastUpdated: Instant? = null
 
-    private fun isUsageAllowed(): Boolean {
+    fun isUsageAllowed(): Boolean {
         // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
         val applicationInfo: ApplicationInfo = try {
             context.packageManager.getApplicationInfo(context.packageName, 0)
@@ -73,6 +76,26 @@ class UsageStatsWatcher constructor(val context: Context) {
             null
         }
     }
+
+    private var alarmMgr: AlarmManager? = null
+    private lateinit var alarmIntent: PendingIntent
+
+    fun setupAlarm() {
+        alarmMgr = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmIntent = Intent(context, AlarmReceiver::class.java).let { intent ->
+            intent.action = "net.activitywatch.android.watcher.LOG_DATA"
+            PendingIntent.getBroadcast(context, 0, intent, 0)
+        }
+
+        val interval = AlarmManager.INTERVAL_HOUR   // Or if testing: AlarmManager.INTERVAL_HOUR / 60
+        alarmMgr?.setInexactRepeating(
+            AlarmManager.ELAPSED_REALTIME,
+            SystemClock.elapsedRealtime() + interval,
+            interval,
+            alarmIntent
+        )
+    }
+
 
     fun queryUsage() {
         val usm = getUSM() ?: return
@@ -169,14 +192,18 @@ class UsageStatsWatcher constructor(val context: Context) {
         override fun onProgressUpdate(vararg progress: Instant) {
             lastUpdated = progress[0]
             Log.i(TAG, "Progress: ${lastUpdated.toString()}")
-            Toast.makeText(context, "Logging data, progress: $lastUpdated", Toast.LENGTH_LONG).show()
+            // The below is useful in testing, but otherwise just noisy.
+            //Toast.makeText(context, "Logging data, progress: $lastUpdated", Toast.LENGTH_LONG).show()
         }
 
         override fun onPostExecute(result: Int?) {
             Log.w(TAG, "Finished SendHeartbeatTask, sent $result events")
+            // The below is useful in testing, but otherwise just noisy.
+            /*
             if(result != 0) {
                 Toast.makeText(context, "Completed logging of data! Logged events: $result", Toast.LENGTH_LONG).show()
             }
+            */
         }
     }
 
