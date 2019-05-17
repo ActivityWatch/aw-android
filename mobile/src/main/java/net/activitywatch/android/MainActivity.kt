@@ -60,6 +60,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val ri = RustInterface(this)
         ri.startServerTask(this)
 
+        val usw = UsageStatsWatcher(this)
+        usw.setupAlarm()
+
         val firstFragment = TestFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
@@ -68,9 +71,10 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onResume() {
         super.onResume()
 
-        // Temporarily disabled until bugs are kinked out
-        //val usw = UsageStatsWatcher(this)
-        //usw.sendHeartbeats()
+        // Ensures data is always fresh when app is opened,
+        // even if it was up to an hour since the last logging-alarm was triggered.
+        val usw = UsageStatsWatcher(this)
+        usw.sendHeartbeats()
     }
 
     override fun onBackPressed() {
