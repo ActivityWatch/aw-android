@@ -17,6 +17,7 @@ fi
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $ANDROID_NDK_HOME/arm64
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $ANDROID_NDK_HOME/arm
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $ANDROID_NDK_HOME/x86
+$ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86_64 --install-dir $ANDROID_NDK_HOME/x86_64
 
 echo "
 [target.aarch64-linux-android]
@@ -30,11 +31,16 @@ linker = '$ANDROID_NDK_HOME/arm/bin/arm-linux-androideabi-clang'
 [target.i686-linux-android]
 ar = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-ar'
 linker = '$ANDROID_NDK_HOME/x86/bin/i686-linux-android-clang'
+
+[target.x86_64-linux-android]
+ar = '$ANDROID_NDK_HOME/x86_64/bin/x86_64-linux-android-ar'
+linker = '$ANDROID_NDK_HOME/x86_64/bin/x86_64-linux-android-clang'
 " > aw-server-rust/.cargo/config
 
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
 mkdir -p $project_path/mobile/src/main/jniLibs/x86
+mkdir -p $project_path/mobile/src/main/jniLibs/x86_64
 mkdir -p $project_path/mobile/src/main/jniLibs/arm64
 mkdir -p $project_path/mobile/src/main/jniLibs/armeabi
 
