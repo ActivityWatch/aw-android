@@ -8,6 +8,9 @@ aw-server-rust:
 	mkdir -p mobile/src/main/jniLibs/x86/
 	ln -sfnv $$(pwd)/aw-server-rust/target/i686-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
 	        mobile/src/main/jniLibs/x86/libaw_server.so
+	mkdir -p mobile/src/main/jniLibs/x86_64/
+	ln -sfnv $$(pwd)/aw-server-rust/target/x86_64-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
+	        mobile/src/main/jniLibs/x86_64/libaw_server.so
 	ls -lL mobile/src/main/jniLibs/*/*
 
 aw-webui:
