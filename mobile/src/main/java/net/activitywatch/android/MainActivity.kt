@@ -63,6 +63,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val usw = UsageStatsWatcher(this)
         usw.setupAlarm()
 
+        if (savedInstanceState != null) {
+            return
+        }
         val firstFragment = TestFragment()
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()

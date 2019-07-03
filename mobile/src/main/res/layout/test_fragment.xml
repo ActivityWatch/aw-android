@@ -45,7 +45,8 @@
             android:id="@+id/button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/button_log_text" />
+            android:text="@string/button_log_text"
+            android:visibility="invisible" />
 
     </LinearLayout>
 </ScrollView>

@@ -98,12 +98,14 @@
     </string>
     <string name="welcome_title_text">Welcome, early user!</string>
     <string name="welcome_text">
-        "There really isn't much to see here, yet. But we appreciate you taking the time to try it out, "
-        "and we hope to be able to give you something more substantial \"soon\"."
+        "Thanks for trying out ActivityWatch for Android!"
+        "It\'s not quite as matured as ActivityWatch on other platforms, but it\'s a great step in the right direction and we think it's ready enough to put out there!"
 
-        "\n\n<b>Our focus</b> is currently to get basic data collection to work, and to then implement export functionality so we can import the data to the full desktop-version of ActivityWatch (where we currently focus most of our visualization work)."
+        "\n\n<b>To get started</b>, open the drawer menu in the top left and click on "Web UI".
 
-        "\n<b>In the meantime</b>, check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>, or try clicking the button below and see how the app doesn\'t (hopefully) crash and successfully logs data!"
+        "\n\n<b>The next step for us</b> is to get cross-device synchronization in place, but it might take a while since we really want to get it right."
+
+        "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
     </string>
     <string name="button_log_text">Click me to log data!</string>
 
