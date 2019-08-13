@@ -10,10 +10,15 @@ android {
         applicationId "net.activitywatch.android"
         minSdkVersion 24
         targetSdkVersion 28
-        // versionCode and versionName updated automatically in deploy script
+        // versionCode and versionName are updated automatically in deploy script
         versionCode 14
         versionName "0.4-dev"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+
+        // WARNING: Never commit this uncommented!
+        //packagingOptions {
+        //    doNotStrip '**/*.so'
+        //}
     }
     buildTypes {
         release {
@@ -22,6 +27,13 @@ android {
         }
         debug {
             applicationIdSuffix ".debug"
+        }
+    }
+
+    // Never got this to work...
+    if (project.hasProperty("doNotStrip")) {
+        packagingOptions {
+            doNotStrip '**/*.so'
         }
     }
 
