@@ -108,6 +108,7 @@
         "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
     </string>
     <string name="button_log_text">Click me to log data!</string>
+    <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
 
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
