@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Based on https://mozilla.github.io/firefox-browser-architecture/experiments/2017-09-21-rust-on-android.html
+# TODO: Merge with aw-server-rust/install-ndk.sh
 
 set -e
 
@@ -8,12 +9,14 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 project_path="$(readlink -f "$script_dir/..")"
 
 if [ -z "$ANDROID_HOME" ]; then
+    # TODO: Remove this, bad practice
     export ANDROID_HOME=/home/$USER/Android/Sdk
     export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
 fi
 
 # curl https://sh.rustup.rs -sSf | sh
 
+# TODO: Remove this, bad practice
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm64 --install-dir $ANDROID_NDK_HOME/arm64
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch arm --install-dir $ANDROID_NDK_HOME/arm
 $ANDROID_NDK_HOME/build/tools/make_standalone_toolchain.py --api 28 --arch x86 --install-dir $ANDROID_NDK_HOME/x86
