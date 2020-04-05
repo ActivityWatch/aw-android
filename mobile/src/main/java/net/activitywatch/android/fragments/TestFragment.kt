@@ -1,9 +1,9 @@
 package net.activitywatch.android.fragments
 
-import android.arch.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProviders
 import android.os.Bundle
-import android.support.design.widget.Snackbar
-import android.support.v4.app.Fragment
+import com.google.android.material.snackbar.Snackbar
+import androidx.fragment.app.Fragment
 import android.text.method.LinkMovementMethod
 import android.util.Log
 import android.view.LayoutInflater

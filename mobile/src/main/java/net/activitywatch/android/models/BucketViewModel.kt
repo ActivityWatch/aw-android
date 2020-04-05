@@ -1,6 +1,6 @@
 package net.activitywatch.android.models
 
-import android.arch.lifecycle.ViewModel;
+import androidx.lifecycle.ViewModel;
 import org.json.JSONObject
 
 class BucketViewModel(val json: JSONObject) : ViewModel() {
