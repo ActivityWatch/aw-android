@@ -1,6 +1,5 @@
 package net.activitywatch.android
 
-import android.app.usage.UsageStats
 import android.net.Uri
 import android.os.Bundle
 import com.google.android.material.snackbar.Snackbar
@@ -20,10 +19,11 @@ import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
+private const val TAG = "MainActivity"
+
+
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
     BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
-
-    private val TAG = "MainActivity"
 
     val version: String
         get() {
@@ -98,13 +98,13 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
-        when (item.itemId) {
+        return when (item.itemId) {
             R.id.action_settings -> {
                 Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
-                return true
+                true
             }
-            else -> return super.onOptionsItemSelected(item)
+            else -> super.onOptionsItemSelected(item)
         }
     }
 

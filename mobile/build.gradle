@@ -8,7 +8,7 @@ android {
     compileSdkVersion 29
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 24
+        minSdkVersion 23
         targetSdkVersion 29
         // versionCode and versionName are updated automatically in deploy script
         versionCode 14
