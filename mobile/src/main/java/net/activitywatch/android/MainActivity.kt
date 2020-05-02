@@ -110,17 +110,24 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
         var fragmentClass: Class<out Fragment>? = null
+        var url: String? = null
+        val base = "http://127.0.0.1:5600"
         // Handle navigation view item clicks here.
         when (item.itemId) {
             R.id.nav_dashboard -> {
                 fragmentClass = TestFragment::class.java
             }
-            R.id.nav_webui -> {
+            R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
+                url = "$base/#/activity/unknown/"
+            }
+            R.id.nav_buckets -> {
+                fragmentClass = WebUIFragment::class.java
+                url = "$base/#/buckets/"
             }
             R.id.nav_settings -> {
-                Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                fragmentClass = WebUIFragment::class.java
+                url = "$base/#/settings/"
             }
             R.id.nav_share -> {
                 Snackbar.make(coordinator_layout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
@@ -133,7 +140,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
         val fragment: Fragment? = try {
-            fragmentClass?.newInstance()
+            if (fragmentClass === WebUIFragment::class.java && url != null) {
+                WebUIFragment.newInstance(url)
+            } else {
+                fragmentClass?.newInstance()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
