@@ -36,13 +36,13 @@ before_deploy:
  - env RELEASE=true make aw-server-rust  # RUSTFLAGS=-g # The RUSTFLAGS=-g is to keep debug symbols in the build, bloats the binary from 7M -> 60MB. Currently using profile.release.debug in Cargo.toml however as -g didn't work on the first try
  - make aw-webui
  - sed -i "s/versionName \".*\"/versionName \"$(echo $TRAVIS_TAG | tail -c +2 -)\"/g" mobile/build.gradle  # Sets versionName, tail used to skip "v" at start of tag name
- - env SUPPLY_TRACK=production bundle exec fastlane update_version
+ - env SUPPLY_TRACK=beta bundle exec fastlane update_version
  - bash scripts/build_apk.sh
 
 deploy:
  # Production version
  - provider: script
-   script: bundle exec fastlane supply run --apk aw-android*.apk --track production
+   script: bundle exec fastlane supply run --apk aw-android*.apk --track beta
    skip_cleanup: true
    on:
      tags: true
