@@ -19,7 +19,7 @@ before_install:
  - gem update --system && gem install bundle && bundle install
  - curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUST_TOOLCHAIN && source $HOME/.cargo/env
  - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
- - ./scripts/setup-rust-with-ndk.sh
+ - ./aw-server-rust/install-ndk.sh
 
 install:
  # Build release build straight away if on a tagged commit, to avoid building twice

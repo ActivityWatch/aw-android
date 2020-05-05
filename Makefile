@@ -1,33 +1,79 @@
-.PHONY: aw-server-rust aw-webui
+.PHONY: aw-webui
 
-build: aw-server-rust aw-webui
+# We should probably do this the "Android way" (would also help with getting it on FDroid):
+#  - https://developer.android.com/studio/projects/gradle-external-native-builds
+#  - https://developer.android.com/ndk/guides/android_mk
 
-aw-server-rust:
-	cd aw-server-rust && env RUSTFLAGS="-C debuginfo=2" bash compile-android.sh  # RUSTFLAGS="-C debuginfo=2" is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
-	# arm64
-	mkdir -p mobile/src/main/jniLibs/arm64-v8a/
-	ln -sfnv $$(pwd)/aw-server-rust/target/aarch64-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
-	        mobile/src/main/jniLibs/arm64-v8a/libaw_server.so
-	# armv7
-	mkdir -p mobile/src/main/jniLibs/armeabi-v7a/
-	ln -sfnv $$(pwd)/aw-server-rust/target/armv7-linux-androideabi/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
-	        mobile/src/main/jniLibs/armeabi-v7a/libaw_server.so
-	# x86
-	mkdir -p mobile/src/main/jniLibs/x86/
-	ln -sfnv $$(pwd)/aw-server-rust/target/i686-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
-	        mobile/src/main/jniLibs/x86/libaw_server.so
-	# x86_64
-	mkdir -p mobile/src/main/jniLibs/x86_64/
-	ln -sfnv $$(pwd)/aw-server-rust/target/x86_64-linux-android/$$($$RELEASE && echo 'release' || echo 'debug')/libaw_server.so \
-	        mobile/src/main/jniLibs/x86_64/libaw_server.so
-	# Check that symlinks are valid
-	ls -lL mobile/src/main/jniLibs/*/*
+RELEASE = $(shell $$RELEASE && echo 'release' || echo 'debug')
 
-aw-webui:
-	make --directory=aw-server-rust/aw-webui build
+JNILIBS := mobile/src/main/jniLibs
+JNI_arm8 := $(JNILIBS)/arm64-v8a
+JNI_arm7 := $(JNILIBS)/armeabi-v7a
+JNI_x86 := $(JNILIBS)/x86
+JNI_x64 := $(JNILIBS)/x86_64
+
+TARGET := aw-server-rust/target
+TARGET_arm7 := $(TARGET)/armv7-linux-androideabi
+TARGET_arm8 := $(TARGET)/aarch64-linux-android
+TARGET_x64 := $(TARGET)/x86_64-linux-android
+TARGET_x86 := $(TARGET)/i686-linux-android
+
+# Main targets
+all: aw-server-rust aw-webui
+build: all
+aw-server-rust: $(JNILIBS)
+aw-webui: $(WEBUI_OUTDIR)
+
+
+# aw-server-rust stuff
+
+RS_SRCDIR := aw-server-rust
+RS_OUTDIR := $(JNILIBS)
+RS_SOURCES := $(shell find $(RS_SRCDIR)/aw-* -type f -name '*.rs')
+
+.PHONY: $(JNILIBS)
+$(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/libaw_server.so $(JNI_x64)/libaw_server.so
+	ls -lL $@/*/*  # Check that symlinks are valid
+
+# There must be a better way to do this without repeating almost the same rule over and over?
+$(JNI_arm7)/libaw_server.so: $(TARGET_arm7)/$(RELEASE)/libaw_server.so
+	mkdir -p $$(dirname $@)
+	ln -sfnv $$(pwd)/$^ $@
+$(JNI_arm8)/libaw_server.so: $(TARGET_arm8)/$(RELEASE)/libaw_server.so
+	mkdir -p $$(dirname $@)
+	ln -sfnv $$(pwd)/$^ $@
+$(JNI_x86)/libaw_server.so: $(TARGET_x86)/$(RELEASE)/libaw_server.so
+	mkdir -p $$(dirname $@)
+	ln -sfnv $$(pwd)/$^ $@
+$(JNI_x64)/libaw_server.so: $(TARGET_x64)/$(RELEASE)/libaw_server.so
+	mkdir -p $$(dirname $@)
+	ln -sfnv $$(pwd)/$^ $@
+
+# This target runs multiple times because it's matched multiple times, not sure how to fix
+$(RS_SRCDIR)/target/*/$(RELEASE)/libaw_server.so: $(RS_SOURCES)
+	echo $@
+	cd aw-server-rust && env RUSTFLAGS="-C debuginfo=2 -Awarnings" bash compile-android.sh
+#	Explanation of RUSTFLAGS:
+#	  `-Awarnings` allows all warnings, for cleaner output (warnings should be detected in aw-server-rust CI anyway)
+#     `-C debuginfo=2` is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
+
+
+# aw-webui
+
+WEBUI_SRCDIR := aw-server-rust/aw-webui
+WEBUI_OUTDIR := mobile/src/main/assets/webui
+WEBUI_SOURCES := $(shell find $(RS_SRCDIR) -type f -name *.rs)
+
+.PHONY: $(WEBUI_OUTDIR)
+$(WEBUI_OUTDIR): $(WEBUI_SRCDIR)/dist
 	mkdir -p mobile/src/main/assets/webui
-	cp -r aw-server-rust/aw-webui/dist/* mobile/src/main/assets/webui
+	cp -r $(WEBUI_SRCDIR)/dist/* mobile/src/main/assets/webui
+
+.PHONY: $(WEBUI_SRCDIR)/dist
+$(WEBUI_SRCDIR)/dist:
+	# Ideally this sub-Makefile should not rebuild unless files have changed
+	make --directory=aw-server-rust/aw-webui build
 
 clean:
-	rm -r mobile/src/main/assets/webui
-	rm -r mobile/src/main/jniLibs
+	rm -rf mobile/src/main/assets/webui
+	rm -rf mobile/src/main/jniLibs
