@@ -59,15 +59,10 @@ class RustInterface constructor(context: Context? = null) {
     // TODO: This probably shouldn't be an AsyncTask
     private inner class ServerTask(val context: Context) : AsyncTask<String, Nothing, Unit>() {
         override fun doInBackground(vararg inputs: String) {
-            val assetDir = context.cacheDir.path + File.separator + "webui"
-
-            // TODO: Extract assets recursively instead
             AssetExtractor.extractAssets("webui", context)
-            AssetExtractor.extractAssets("webui/static", context)
-            AssetExtractor.extractAssets("webui/static/js", context)
-            AssetExtractor.extractAssets("webui/static/fonts", context)
 
             Log.w(TAG, "Starting server...")
+            val assetDir = context.cacheDir.path + File.separator + "webui"
             startServer(assetDir)
         }
     }

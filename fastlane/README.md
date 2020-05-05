@@ -25,12 +25,12 @@ Runs all the tests
 ```
 fastlane android beta
 ```
-Submit a new Beta Build to Crashlytics Beta
+Build a new Beta build
 ### android update_version
 ```
 fastlane android update_version
 ```
-
+Update versionCode to be one higher than the latest on Play Store
 ### android deploy
 ```
 fastlane android deploy

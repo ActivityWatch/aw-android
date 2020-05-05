@@ -2,28 +2,41 @@ language: android
 
 android:
   components:
-    - build-tools-28.0.3
-    - android-28
+    - build-tools-29.0.3
+    - android-29
     - extra
   licenses:
     - 'android-sdk-license-.+'
     - 'google-gdk-license-.+'
 
 env:
- - TRAVIS_NODE_VERSION=10 RUST_TOOLCHAIN=nightly
+  global:
+   - TRAVIS_NODE_VERSION=10 \
+   - RUST_TOOLCHAIN=nightly \
+   - SUPPLY_TRACK=production   # used by fastlane to determine track to publish to
 
 before_install:
- - yes | sdkmanager "platforms;android-27"
+ # RELEASE is used by `make aw-server-rust` to determine build profile
+ - export RELEASE=$([ $TRAVIS_TAG ] && echo "true" || echo "false")
+
+ # Install Android SDK/NDK
+ - yes | sdkmanager "platforms;android-29"
  - yes | sdkmanager "ndk-bundle"
+
+ # Setup Node to build aw-webui
  - rm -rf ~/.nvm && git clone https://github.com/creationix/nvm.git ~/.nvm && (cd ~/.nvm && git checkout `git describe --abbrev=0 --tags`) && source ~/.nvm/nvm.sh && nvm install $TRAVIS_NODE_VERSION;
+
+ # Install fastlane
  - gem update --system && gem install bundle && bundle install
+
+ # Setup Rust and NDK and Rust
  - curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUST_TOOLCHAIN && source $HOME/.cargo/env
  - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
- - ./scripts/setup-rust-with-ndk.sh
+ - ./aw-server-rust/install-ndk.sh
 
 install:
  # Build release build straight away if on a tagged commit, to avoid building twice
- - env RELEASE=$([ $TRAVIS_TAG ] && echo "true" || echo "false") make aw-server-rust
+ - env make aw-server-rust
 
 script:
  - bundle exec fastlane test
@@ -36,13 +49,13 @@ before_deploy:
  - env RELEASE=true make aw-server-rust  # RUSTFLAGS=-g # The RUSTFLAGS=-g is to keep debug symbols in the build, bloats the binary from 7M -> 60MB. Currently using profile.release.debug in Cargo.toml however as -g didn't work on the first try
  - make aw-webui
  - sed -i "s/versionName \".*\"/versionName \"$(echo $TRAVIS_TAG | tail -c +2 -)\"/g" mobile/build.gradle  # Sets versionName, tail used to skip "v" at start of tag name
- - env SUPPLY_TRACK=production bundle exec fastlane update_version
+ - bundle exec fastlane update_version
  - bash scripts/build_apk.sh
 
 deploy:
  # Production version
  - provider: script
-   script: bundle exec fastlane supply run --apk aw-android*.apk --track production
+   script: bundle exec fastlane supply run --apk aw-android*.apk
    skip_cleanup: true
    on:
      tags: true

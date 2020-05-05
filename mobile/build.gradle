@@ -5,15 +5,19 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 
 android {
-    compileSdkVersion 28
+    compileSdkVersion 29
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 24
-        targetSdkVersion 28
-        // versionCode and versionName are updated automatically in deploy script
-        versionCode 14
-        versionName "0.4-dev"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        minSdkVersion 23
+        targetSdkVersion 29
+
+        // Set in CI on tagged commit
+        versionName "0.9-dev"
+
+        // Set in CI by `bundle exec fastlane update_version`
+        versionCode 22
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         // WARNING: Never commit this uncommented!
         //packagingOptions {
@@ -29,13 +33,18 @@ android {
             applicationIdSuffix ".debug"
         }
     }
+    compileOptions {
+        sourceCompatibility = "1.8"
+        targetCompatibility = 1.8
+    }
+    buildToolsVersion = '29.0.3'
 
     // Never got this to work...
-    if (project.hasProperty("doNotStrip")) {
-        packagingOptions {
-            doNotStrip '**/*.so'
-        }
-    }
+    //if (project.hasProperty("doNotStrip")) {
+    //    packagingOptions {
+    //        doNotStrip '**/*.so'
+    //    }
+    //}
 
     // Creates a resource versionName with the full version
     // https://stackoverflow.com/a/36468650/965332
@@ -47,15 +56,41 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    implementation 'com.android.support:support-v4:28.0.0'
-    implementation 'com.android.support:design:28.0.0'
-    implementation 'com.android.support:cardview-v7:28.0.0'
-    implementation 'com.android.support.constraint:constraint-layout:1.1.3'
+    implementation 'androidx.appcompat:appcompat:1.1.0'
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+    implementation 'com.google.android.material:material:1.1.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.1.1'
-    implementation 'com.android.support:recyclerview-v7:28.0.0'
-    implementation 'android.arch.lifecycle:extensions:1.1.1'
+    implementation 'androidx.recyclerview:recyclerview:1.1.0'
+    implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'com.android.support.test:runner:1.0.2'
-    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
+}
+
+// Can be used to build with: ./gradlew cargoBuild
+// NOTE: Doesn't work, chokes on building openssl-sys
+apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
+
+cargo {
+    module  = "../aw-server-rust"       // Or whatever directory contains your Cargo.toml
+    libname = "aw_server"          // Or whatever matches Cargo.toml's [package] name.
+    targets = ["arm", "arm64", "x86", "x86_64"]  // See bellow for a longer list of options
+    profile = 'release'  // Selects the Cargo release profile (defaults to 'debug')
+}
+
+tasks.whenTaskAdded { task ->
+    // TODO: Build aw-server lib here instead of in Makefile?
+    // Doesn't work, chokes on building openssl-sys
+    //if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
+    //    task.dependsOn 'cargoBuild'
+    //}
+
+    // TODO: Build aw-webui here?
+    //if (task.name.contains("assembleRelease")) {
+    //    task.getDependsOn().add({
+    //        // add your logic here
+    //    })
+    //}
 }

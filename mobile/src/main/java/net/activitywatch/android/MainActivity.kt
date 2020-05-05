@@ -1,18 +1,17 @@
 package net.activitywatch.android
 
-import android.app.usage.UsageStats
 import android.net.Uri
 import android.os.Bundle
-import android.support.design.widget.Snackbar
-import android.support.design.widget.NavigationView
-import android.support.v4.view.GravityCompat
-import android.support.v7.app.ActionBarDrawerToggle
-import android.support.v7.app.AppCompatActivity
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.navigation.NavigationView
+import androidx.core.view.GravityCompat
+import androidx.appcompat.app.ActionBarDrawerToggle
+import androidx.appcompat.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
-import android.support.v4.app.Fragment
+import androidx.fragment.app.Fragment
 import android.util.Log
 import net.activitywatch.android.fragments.Bucket
 import net.activitywatch.android.fragments.BucketListFragment
@@ -20,10 +19,11 @@ import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
+private const val TAG = "MainActivity"
+
+
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
     BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
-
-    private val TAG = "MainActivity"
 
     val version: String
         get() {
@@ -98,29 +98,36 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
-        when (item.itemId) {
+        return when (item.itemId) {
             R.id.action_settings -> {
                 Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
-                return true
+                true
             }
-            else -> return super.onOptionsItemSelected(item)
+            else -> super.onOptionsItemSelected(item)
         }
     }
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
         var fragmentClass: Class<out Fragment>? = null
+        var url: String? = null
+        val base = "http://127.0.0.1:5600"
         // Handle navigation view item clicks here.
         when (item.itemId) {
             R.id.nav_dashboard -> {
                 fragmentClass = TestFragment::class.java
             }
-            R.id.nav_webui -> {
+            R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
+                url = "$base/#/activity/unknown/"
+            }
+            R.id.nav_buckets -> {
+                fragmentClass = WebUIFragment::class.java
+                url = "$base/#/buckets/"
             }
             R.id.nav_settings -> {
-                Snackbar.make(coordinator_layout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                fragmentClass = WebUIFragment::class.java
+                url = "$base/#/settings/"
             }
             R.id.nav_share -> {
                 Snackbar.make(coordinator_layout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
@@ -133,7 +140,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
         val fragment: Fragment? = try {
-            fragmentClass?.newInstance()
+            if (fragmentClass === WebUIFragment::class.java && url != null) {
+                WebUIFragment.newInstance(url)
+            } else {
+                fragmentClass?.newInstance()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null

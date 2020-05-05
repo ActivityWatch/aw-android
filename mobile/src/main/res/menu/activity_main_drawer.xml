@@ -9,23 +9,22 @@
             android:icon="@drawable/ic_menu_slideshow"
             android:title="Home" />
         <item
-            android:id="@+id/nav_webui"
+            android:id="@+id/nav_activity"
             android:icon="?attr/actionModeCopyDrawable"
-            android:title="Web UI" />
+            android:title="Activity" />
+        <item
+            android:id="@+id/nav_buckets"
+            android:icon="?attr/actionModeCopyDrawable"
+            android:title="Raw Data" />
     </group>
 
     <item android:title="Misc">
         <menu>
-            <group
-            >
+            <group>
                 <item
                         android:id="@+id/nav_settings"
                         android:icon="@drawable/ic_menu_manage"
                         android:title="Settings"/>
-                <item
-                        android:id="@+id/nav_devices"
-                        android:icon="@drawable/ic_menu_slideshow"
-                        android:title="Devices"/>
                 <item
                         android:id="@+id/nav_share"
                         android:icon="@drawable/ic_menu_share"

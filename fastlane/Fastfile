@@ -21,10 +21,10 @@ platform :android do
     gradle(task: "test")
   end
 
-  desc "Submit a new Beta Build to Crashlytics Beta"
+  desc "Build a new Beta build"
   lane :beta do
     gradle(task: "clean assembleRelease")
-    crashlytics
+    #crashlytics
 
     # sh "your_script.sh"
     # You can also use other beta testing services here
