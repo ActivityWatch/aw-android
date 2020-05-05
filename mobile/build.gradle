@@ -10,9 +10,13 @@ android {
         applicationId "net.activitywatch.android"
         minSdkVersion 23
         targetSdkVersion 29
-        // versionCode and versionName are updated automatically in deploy script
-        versionCode 14
-        versionName "0.4-dev"
+
+        // Set in CI on tagged commit
+        versionName "0.9-dev"
+
+        // Set in CI by `bundle exec fastlane update_version`
+        versionCode 22
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         // WARNING: Never commit this uncommented!
