@@ -151,7 +151,11 @@ class UsageStatsWatcher constructor(val context: Context) {
             val usm = getUSM() ?: return 0
 
             var heartbeatsSent = 0
-            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            var fromTime = 0L
+            if(lastUpdated != null){
+                fromTime = lastUpdated!!.toEpochMilli() + 1
+            }
+            val usageEvents = usm.queryEvents(fromTime, Long.MAX_VALUE)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
