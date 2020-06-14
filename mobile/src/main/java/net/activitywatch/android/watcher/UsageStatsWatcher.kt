@@ -140,6 +140,7 @@ class UsageStatsWatcher constructor(val context: Context) {
     }
 
     private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
+        private var heartbeatsSent = 0;
         override fun doInBackground(vararg urls: URL): Int? {
             Log.i(TAG, "Sending heartbeats...")
 
@@ -149,19 +150,32 @@ class UsageStatsWatcher constructor(val context: Context) {
             Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
             val usm = getUSM() ?: return 0
-
-            var heartbeatsSent = 0
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            // App in last loop iteration if it triggered a SCREEN_NON_INTERACTIVE(i.e AFK), otherwise NULL
+            var queuedAfkEvent : Event? = null
+            // App name in last loop iteration if it triggered a MOVE_TO_FOREGROUND/BACKGROUND, otherwise NULL
+            var prevEventAppName: String? = null
+            val lastEvent = getLastEvent()
+            if(lastEvent != null) {
+                var prevEventData = JSONObject(lastEvent.getString("data"))
+                prevEventAppName = prevEventData.getString("app")
+                Log.w(TAG, "lastAppName: ${prevEventAppName}")
+            }
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
                 if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.SCREEN_NON_INTERACTIVE)) {
                     // Not sure which events are triggered here, so we use a (probably safe) fallback
                     //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
+                    // send the previous afk event if there is no event after this
+                    if(!usageEvents.hasNextEvent() && queuedAfkEvent != null){
+                        sendHeartbeatHelper(queuedAfkEvent,24 * 60 * 60.0)
+                        queuedAfkEvent = null
+                    }
                     continue@nextEvent
                 }
 
-                val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
+                val currawEvent = Event.fromUsageEvent(event, context, includeClassname = true)
                 val pulsetime: Double
                 when(event.eventType) {
                     UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.SCREEN_INTERACTIVE -> {
@@ -176,17 +190,81 @@ class UsageStatsWatcher constructor(val context: Context) {
                     }
                     else -> {
                         Log.w(TAG, "This should never happen!")
+                        // send the previous afk event if there is no event after this
+                        if(!usageEvents.hasNextEvent() && queuedAfkEvent != null){
+                            sendHeartbeatHelper(queuedAfkEvent,24 * 60 * 60.0)
+                            queuedAfkEvent = null
+                        }
                         continue@nextEvent
                     }
                 }
+                if(usageEvents.hasNextEvent()){
+                    if(queuedAfkEvent != null){
+                        // there is an event in the queue, so it must be sent in this iteration.
+                        // if prev app name matches the current event name, then send current event first to merge the heartbeats
+                        // Note: Only do this if event is not SCREEN_INTERACTIVE type, SCREEN_INTERACTIVE type needs
+                        // to be in the right order with respect to an AFK event(SCREEN_NON_INTERACTIVE)
+                        if(currawEvent.data.getString(("app")) == prevEventAppName && event.eventType != UsageEvents.Event.SCREEN_INTERACTIVE){
+                            sendHeartbeatHelper(currawEvent, pulsetime)
+                            sendHeartbeatHelper(queuedAfkEvent, pulsetime)
+                            queuedAfkEvent = null
+                            // no need to update prevEventAppName since they're equal
+                        }
+                        // otherwise send the queued event first
+                        else {
+                            sendHeartbeatHelper(queuedAfkEvent, pulsetime)
+                            queuedAfkEvent = null
+                            // if curr event is AFK, queue it instead
+                            if(event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE){
+                                queuedAfkEvent = currawEvent
+                            }
+                            else{ //otherwise send it
+                                sendHeartbeatHelper(currawEvent, pulsetime)
+                                prevEventAppName = currawEvent.data.getString("app")
+                            }
+                        }
+                    }
+                    else{
+                        // there is no AfkEvent queued, therefore we can just look at the current event
 
-                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                if(heartbeatsSent % 100 == 0) {
-                    publishProgress(awEvent.timestamp)
+                        // if current event is noninteractive(i.e AFK), don't send it, queue it instead
+                        if(event.eventType == UsageEvents.Event.SCREEN_NON_INTERACTIVE){
+                            queuedAfkEvent = currawEvent
+                        }
+                        else{ // current event is active, so send it
+                            sendHeartbeatHelper(currawEvent, pulsetime)
+                            prevEventAppName = currawEvent.data.getString("app")
+                        }
+                    }
                 }
-                heartbeatsSent++
+                else{
+                    if(queuedAfkEvent != null){
+                        // there is a queued event, so need to send it in this iteration
+
+                        // if currEvent matches last event, send curr first then the queuedAfkevent
+                        if(currawEvent.data.getString(("app")) == prevEventAppName && event.eventType != UsageEvents.Event.SCREEN_INTERACTIVE){
+                            sendHeartbeatHelper(currawEvent, pulsetime)
+                            sendHeartbeatHelper(queuedAfkEvent, pulsetime)
+                        }
+                        else{ // otherwise send events in normal order
+                            sendHeartbeatHelper(queuedAfkEvent, pulsetime)
+                            sendHeartbeatHelper(currawEvent, pulsetime)
+                        }
+                    }
+                    else{ // no queued event, so send current one
+                        sendHeartbeatHelper(currawEvent, pulsetime)
+                    }
+                }
             }
             return heartbeatsSent
+        }
+        private fun sendHeartbeatHelper(awEvent: Event, pulsetime: Double){
+            Log.w(TAG,awEvent.toString())
+            ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
+            if(heartbeatsSent % 100 == 0) {
+                publishProgress(awEvent.timestamp)
+            }
+            heartbeatsSent++
         }
 
         override fun onProgressUpdate(vararg progress: Instant) {
