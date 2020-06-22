@@ -109,12 +109,12 @@ class UsageStatsWatcher constructor(val context: Context) {
     }
 
     private fun getLastEvent(): JSONObject? {
-        // FIXME: For some reason doesn't return last event, always 2h behind (so probably a timezone issue)
         val events = ri.getEventsJSON(bucket_id, limit=1)
-        return if (events.length() > 0) {
-            //Log.d(TAG, events[0].toString())
+        return if (events.length() == 1) {
+            //Log.d(TAG, "Last event: ${events[0]}")
             events[0] as JSONObject
         } else {
+            Log.w(TAG, "More or less than one event was retrieved when trying to get last event, actual length: ${events.length()}")
             null
         }
     }

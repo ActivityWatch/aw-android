@@ -41,7 +41,7 @@ class RustInterface constructor(context: Context? = null) {
     private external fun setDataDir(path: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
-    external fun getEvents(bucket_id: String): String
+    external fun getEvents(bucket_id: String, limit: Int): String
     external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
 
     fun sayHello(to: String): String {
@@ -93,8 +93,7 @@ class RustInterface constructor(context: Context? = null) {
 
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
         // TODO: Handle errors
-        // FIXME: Use limit (will have major performance benefits)
-        val result = getEvents(bucket_id)
+        val result = getEvents(bucket_id, limit)
         return try {
             JSONArray(result)
         } catch(e: JSONException) {
