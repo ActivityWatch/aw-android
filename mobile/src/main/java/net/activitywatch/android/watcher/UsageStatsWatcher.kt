@@ -109,12 +109,12 @@ class UsageStatsWatcher constructor(val context: Context) {
     }
 
     private fun getLastEvent(): JSONObject? {
-        // FIXME: For some reason doesn't return last event, always 2h behind (so probably a timezone issue)
         val events = ri.getEventsJSON(bucket_id, limit=1)
-        return if (events.length() > 0) {
-            //Log.d(TAG, events[0].toString())
+        return if (events.length() == 1) {
+            //Log.d(TAG, "Last event: ${events[0]}")
             events[0] as JSONObject
         } else {
+            Log.w(TAG, "More or less than one event was retrieved when trying to get last event, actual length: ${events.length()}")
             null
         }
     }
@@ -155,7 +155,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
-                if(event.eventType !in arrayListOf(UsageEvents.Event.MOVE_TO_FOREGROUND, UsageEvents.Event.MOVE_TO_BACKGROUND, UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.SCREEN_NON_INTERACTIVE)) {
+                if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.SCREEN_NON_INTERACTIVE)) {
                     // Not sure which events are triggered here, so we use a (probably safe) fallback
                     //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
                     continue@nextEvent
@@ -164,12 +164,12 @@ class UsageStatsWatcher constructor(val context: Context) {
                 val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
                 val pulsetime: Double
                 when(event.eventType) {
-                    UsageEvents.Event.MOVE_TO_FOREGROUND, UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.SCREEN_INTERACTIVE -> {
                         // MOVE_TO_FOREGROUND: New Activity was opened
                         // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
                         pulsetime = 1.0
                     }
-                    UsageEvents.Event.MOVE_TO_BACKGROUND, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                    UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
                         // MOVE_TO_BACKGROUND: Activity was moved to background
                         // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
                         pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
