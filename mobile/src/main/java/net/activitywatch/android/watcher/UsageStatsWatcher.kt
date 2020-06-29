@@ -157,7 +157,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
-                if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.SCREEN_NON_INTERACTIVE)) {
+                if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
                     if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
                         val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
                         // NOTE: getLastEventTime() returns the last time of an event from  the activity bucket(bucket_id)
@@ -169,18 +169,15 @@ class UsageStatsWatcher constructor(val context: Context) {
                     //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
                     continue@nextEvent
                 }
-
                 val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
                 val pulsetime: Double
                 when(event.eventType) {
-                    UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.SCREEN_INTERACTIVE -> {
-                        // MOVE_TO_FOREGROUND: New Activity was opened
-                        // SCREEN_INTERACTIVE: Screen just became interactive, user was previously therefore not active on the device
+                    UsageEvents.Event.ACTIVITY_RESUMED -> {
+                        // ACTIVITY_RESUMED: Activity was opened/reopened
                         pulsetime = 1.0
                     }
-                    UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
-                        // MOVE_TO_BACKGROUND: Activity was moved to background
-                        // SCREEN_NOT_INTERACTIVE: Screen locked/turned off, user is therefore now AFK, and this is the last event
+                    UsageEvents.Event.ACTIVITY_PAUSED -> {
+                        // ACTIVITY_PAUSED: Activity was moved to background
                         pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
                     else -> {
