@@ -70,7 +70,6 @@ dependencies {
 }
 
 // Can be used to build with: ./gradlew cargoBuild
-// NOTE: Doesn't work, chokes on building openssl-sys
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 cargo {
@@ -82,10 +81,9 @@ cargo {
 
 tasks.whenTaskAdded { task ->
     // TODO: Build aw-server lib here instead of in Makefile?
-    // Doesn't work, chokes on building openssl-sys
-    //if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
-    //    task.dependsOn 'cargoBuild'
-    //}
+    if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
+        task.dependsOn 'cargoBuild'
+    }
 
     // TODO: Build aw-webui here?
     //if (task.name.contains("assembleRelease")) {
