@@ -32,6 +32,7 @@ import java.text.ParseException
 class UsageStatsWatcher constructor(val context: Context) {
     private val TAG = "UsageStatsWatcher"
     private val bucket_id = "aw-watcher-android-test"
+    private val unlock_bucket_id = "aw-watcher-android-unlock"
 
     private val ri = RustInterface(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
@@ -145,6 +146,7 @@ class UsageStatsWatcher constructor(val context: Context) {
 
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
+            ri.createBucketHelper(unlock_bucket_id, "os.lockscreen.unlocks")
             lastUpdated = getLastEventTime()
             Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
@@ -156,11 +158,17 @@ class UsageStatsWatcher constructor(val context: Context) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
                 if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
+                    if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
+                        val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
+                        // NOTE: getLastEventTime() returns the last time of an event from  the activity bucket(bucket_id)
+                        // Therefore, if an unlock happens after last event from main bucket, unlock event will get sent twice.
+                        // Fortunately not an issue because identical events will get merged together (see heartbeats)
+                        ri.heartbeatHelper(unlock_bucket_id, timestamp, 0.0, JSONObject(), 0.0)
+                    }
                     // Not sure which events are triggered here, so we use a (probably safe) fallback
                     //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
                     continue@nextEvent
                 }
-
                 val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
                 val pulsetime: Double
                 when(event.eventType) {
