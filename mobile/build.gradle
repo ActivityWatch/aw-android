@@ -82,6 +82,7 @@ cargo {
 
 tasks.whenTaskAdded { task ->
     // Build aw-server-rust
+    // Doesn't work, chokes on building openssl-sys
     if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
         task.dependsOn 'cargoBuild'
     }
