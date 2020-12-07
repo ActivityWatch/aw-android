@@ -1,0 +1,108 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+
+jobs:
+  build:
+    name: ${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }}
+    runs-on: ${{ matrix.os }}
+    env:
+      # TODO: Set appropriately
+      RELEASE: false
+      SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04]
+        java_version: [1.8]
+        node_version: [12]
+        ruby_version: ['2.7']
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ matrix.java_version }}
+
+    # Android SDK & NDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+    - name: Set up Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r21d
+
+    - name: Set up Node
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ matrix.node_version }}
+    - name: Set up Rust nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+    - name: Set up Ruby
+      uses: actions/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby_version }}
+
+    # Set up caches
+    - name: Get npm cache dir
+      id: npm-cache-dir
+      run: |
+        echo "::set-output name=dir::$(npm config get cache)"
+    - uses: actions/cache@v1
+      name: Cache npm
+      env:
+        cache-name: node
+      with:
+        path: ${{ steps.npm-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.cache-name }}-
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      env:
+        cache-name: cargo-build-target
+      with:
+        path: aw-server-rust/target
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.cache-name }}-
+
+    # Install fastlane
+    - name: Install fastlane
+      run: |
+        gem install bundle
+        bundle install
+
+    # Set up Rust toolchain
+    - name: Set up Rust toolchain for Android NDK
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        ./aw-server-rust/install-ndk.sh
+
+    # Test
+    - name: Test
+      run: |
+        bundle exec fastlane test
+
+    # Build
+    - name: Build
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      run: |
+        make build
+
+    # TODO: Do release stuff
