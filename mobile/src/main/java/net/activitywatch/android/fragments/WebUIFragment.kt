@@ -1,5 +1,6 @@
 package net.activitywatch.android.fragments
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -10,21 +11,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
-import net.activitywatch.android.AssetExtractor
 
-import net.activitywatch.android.R
-import net.activitywatch.android.RustInterface
-import java.io.File
-import android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE
-import android.os.Build
-import android.os.Build.VERSION_CODES.KITKAT
-import android.os.Build.VERSION.SDK_INT
 import android.content.Intent.ACTION_VIEW
-import android.webkit.DownloadListener
+import android.util.Log
+import android.webkit.WebViewClient
+import net.activitywatch.android.R
 
+private const val TAG = "WebUI"
 
-// TODO: Rename parameter arguments, choose names that match
-// the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
 private const val ARG_URL = "url"
 
 /**
@@ -38,16 +32,9 @@ private const val ARG_URL = "url"
  */
 class WebUIFragment : Fragment() {
     // TODO: Rename and change types of parameters
-    private var url: String? = null
     private var listener: OnFragmentInteractionListener? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        arguments?.let {
-            url = it.getString(ARG_URL)
-        }
-    }
-
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -63,6 +50,23 @@ class WebUIFragment : Fragment() {
 
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
 
+        class MyWebViewClient : WebViewClient() {
+            override fun onReceivedError(
+                view: WebView,
+                errorCode: Int,
+                description: String,
+                failingUrl: String
+            ) {
+                // Retry
+                // TODO: Find way to not show the blinking Android error page
+                Log.e(TAG, "WebView received error: $description")
+                arguments?.let {
+                    myWebView.loadUrl(it.getString(ARG_URL))
+                }
+            }
+        }
+        myWebView.webViewClient = MyWebViewClient()
+
         myWebView.setDownloadListener { url, _, _, _, _ ->
             val i = Intent(ACTION_VIEW)
             i.data = Uri.parse(url)
@@ -71,17 +75,11 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
-        //myWebView.loadUrl("http://127.0.0.1:5600")
         arguments?.let {
             myWebView.loadUrl(it.getString(ARG_URL))
         }
 
         return view
-    }
-
-    // TODO: Rename method, update argument and hook method into UI event
-    fun onButtonPressed(uri: Uri) {
-        listener?.onFragmentInteraction(uri)
     }
 
     override fun onAttach(context: Context) {
@@ -115,14 +113,6 @@ class WebUIFragment : Fragment() {
     }
 
     companion object {
-        /**
-         * Use this factory method to create a new instance of
-         * this fragment using the provided parameters.
-         *
-         * @param param1 Parameter 1.
-         * @param param2 Parameter 2.
-         * @return A new instance of fragment WebUIFragment.
-         */
         // TODO: Rename and change types and number of parameters
         @JvmStatic
         fun newInstance(url: String) =

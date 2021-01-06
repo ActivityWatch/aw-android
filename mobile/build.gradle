@@ -12,7 +12,7 @@ android {
         targetSdkVersion 29
 
         // Set in CI on tagged commit
-        versionName "0.9-dev"
+        versionName "0.10-dev"
 
         // Set in CI by `bundle exec fastlane update_version`
         versionCode 22

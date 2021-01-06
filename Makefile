@@ -64,7 +64,7 @@ $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
 WEBUI_SRCDIR := aw-server-rust/aw-webui
 WEBUI_OUTDIR := mobile/src/main/assets/webui
 WEBUI_SOURCES := $(shell find $(RS_SRCDIR) -type f -name *.rs)
-export ON_ANDROID := -- --android # Disable check for updates in aw-webui
+export ON_ANDROID := -- --android  # Build specifically for Android (disabled update check, different default views, etc)
 
 aw-webui: $(WEBUI_OUTDIR)
 

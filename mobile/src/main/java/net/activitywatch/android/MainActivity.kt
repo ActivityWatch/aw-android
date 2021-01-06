@@ -13,40 +13,30 @@ import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
 import androidx.fragment.app.Fragment
 import android.util.Log
-import net.activitywatch.android.fragments.Bucket
-import net.activitywatch.android.fragments.BucketListFragment
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
 
+const val baseURL = "http://127.0.0.1:5600"
 
-class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener,
-    BucketListFragment.OnListFragmentInteractionListener, WebUIFragment.OnFragmentInteractionListener {
+
+class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     val version: String
         get() {
             return packageManager.getPackageInfo(packageName, 0).versionName
         }
 
-    override fun onListFragmentInteraction(item: Bucket?) {
-        Log.w(TAG, "Bucket onInteraction listener not implemented")
-    }
-
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
-    }
-
-    override fun onAttachFragment(fragment: Fragment) {
-        if (fragment is BucketListFragment) {
-            fragment.onAttach(this)
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
         setSupportActionBar(toolbar)
 
         val toggle = ActionBarDrawerToggle(
@@ -54,6 +44,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         )
         drawer_layout.addDrawerListener(toggle)
         toggle.syncState()
+
+        // Hide the top menu/title bar
+        supportActionBar?.hide()
 
         nav_view.setNavigationItemSelectedListener(this)
 
@@ -66,7 +59,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         if (savedInstanceState != null) {
             return
         }
-        val firstFragment = TestFragment()
+        val firstFragment = WebUIFragment.newInstance(baseURL)
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
     }
@@ -111,7 +104,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
         var fragmentClass: Class<out Fragment>? = null
         var url: String? = null
-        val base = "http://127.0.0.1:5600"
+
         // Handle navigation view item clicks here.
         when (item.itemId) {
             R.id.nav_dashboard -> {
@@ -119,15 +112,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$base/#/activity/unknown/"
+                url = "$baseURL/#/activity/unknown/"
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$base/#/buckets/"
+                url = "$baseURL/#/buckets/"
             }
             R.id.nav_settings -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$base/#/settings/"
+                url = "$baseURL/#/settings/"
             }
             R.id.nav_share -> {
                 Snackbar.make(coordinator_layout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
