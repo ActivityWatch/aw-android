@@ -27,7 +27,8 @@ class RustInterface constructor(context: Context? = null) {
 
         initialize()
         if(context != null) {
-            setDataDir(context.filesDir.absolutePath)
+            // See https://developer.android.com/reference/kotlin/android/content/Context#getexternalfilesdir
+            setDataDir(context.externalFilesDir.absolutePath)
         }
     }
 
