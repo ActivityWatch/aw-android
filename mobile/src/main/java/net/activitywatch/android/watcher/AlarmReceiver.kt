@@ -3,7 +3,11 @@ package net.activitywatch.android.watcher
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.appcompat.app.AppCompatActivity
+import net.activitywatch.android.R
+
 
 private const val TAG = "AlarmReceiver"
 
@@ -17,7 +21,13 @@ class AlarmReceiver : BroadcastReceiver() {
             usw.setupAlarm()
         } else if(intent.action == "net.activitywatch.android.watcher.LOG_DATA") {
             Log.w(TAG, "Action ${intent.action}, running sendHeartbeats")
-            if(usw.isUsageAllowed()) {
+            val resources = context.packageManager.getResourcesForApplication("net.activitywatch.android")
+            val sharedPrefsKey: Int = resources.getIdentifier("shared_preferences_key", "string", "net.activitywatch.android")
+            val collectEnabledKey = resources.getIdentifier("collect_enabled_key", "string", "net.activitywatch.android")
+            var sharedPref = context.getSharedPreferences(context.getString(sharedPrefsKey), Context.MODE_PRIVATE)
+            val collectEnabled = sharedPref.getBoolean(context.getString(collectEnabledKey), true)
+
+            if(collectEnabled && usw.isUsageAllowed()) {
                 usw.sendHeartbeats()
             }
         } else {
