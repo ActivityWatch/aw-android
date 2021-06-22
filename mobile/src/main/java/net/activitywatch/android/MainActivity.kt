@@ -13,6 +13,8 @@ import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.app_bar_main.*
 import androidx.fragment.app.Fragment
 import android.util.Log
+import android.widget.CompoundButton
+import androidx.appcompat.widget.SwitchCompat
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
@@ -67,10 +69,17 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onResume() {
         super.onResume()
 
-        // Ensures data is always fresh when app is opened,
-        // even if it was up to an hour since the last logging-alarm was triggered.
-        val usw = UsageStatsWatcher(this)
-        usw.sendHeartbeats()
+        val sharedPrefsKey = getString(R.string.shared_preferences_key)
+        val collectEnabledKey = getString(R.string.collect_enabled_key)
+        val sharedPref = getSharedPreferences(sharedPrefsKey, MODE_PRIVATE)
+        val collectEnabled = sharedPref.getBoolean(collectEnabledKey, true)
+
+        if (collectEnabled) {
+            // Ensures data is always fresh when app is opened,
+            // even if it was up to an hour since the last logging-alarm was triggered.
+            val usw = UsageStatsWatcher(this)
+            usw.sendHeartbeats()
+        }
     }
 
     override fun onBackPressed() {
@@ -84,6 +93,17 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
         menuInflater.inflate(R.menu.main, menu)
+
+        var collectEnabledKey = getString(R.string.collect_enabled_key)
+        val sharedPref = getPreferences(MODE_PRIVATE)
+        val collectEnabled = sharedPref.getBoolean(collectEnabledKey, true)
+
+        var navCollectSwitch = findViewById<SwitchCompat>(R.id.nav_collect)
+        navCollectSwitch.isChecked = collectEnabled
+        navCollectSwitch?.setOnCheckedChangeListener { _: CompoundButton?, isChecked: Boolean -> with (sharedPref.edit()) {
+            putBoolean(collectEnabledKey, isChecked)
+            apply()
+        }}
         return true
     }
 

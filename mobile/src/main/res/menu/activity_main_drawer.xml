@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:app="http://schemas.android.com/apk/res-auto"
       xmlns:tools="http://schemas.android.com/tools"
       tools:showIn="navigation_view">
 
@@ -22,17 +23,23 @@
         <menu>
             <group>
                 <item
-                        android:id="@+id/nav_settings"
-                        android:icon="@drawable/ic_menu_manage"
-                        android:title="Settings"/>
+                    android:id="@+id/nav_settings"
+                    android:icon="@drawable/ic_menu_manage"
+                    android:title="Settings"/>
                 <item
-                        android:id="@+id/nav_share"
-                        android:icon="@drawable/ic_menu_share"
-                        android:title="Share"/>
+                    android:id="@+id/nav_share"
+                    android:icon="@drawable/ic_menu_share"
+                    android:title="Share"/>
                 <item
-                        android:id="@+id/nav_send"
-                        android:icon="@drawable/ic_menu_send"
-                        android:title="Report bugs"/>
+                    android:id="@+id/nav_send"
+                    android:icon="@drawable/ic_menu_send"
+                    android:title="Report bugs"/>
+                <item
+                    android:id="@+id/nav_collect"
+                    android:icon="@drawable/ic_menu_manage"
+                    android:title="Collect Data"
+                    app:actionViewClass="androidx.appcompat.widget.SwitchCompat"
+                    app:showAsAction="always" />
             </group>
         </menu>
     </item>
