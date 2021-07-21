@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ActivityWatch</string>
+    <string name="navigation_drawer_open">Ouvrir panneau de navigation</string>
+    <string name="navigation_drawer_close">Fermer panneau de navigation</string>
+    <string name="nav_header_title">ActivityWatch pour Android</string>
+    <string name="nav_header_subtitle">v0.1.0</string>
+    <string name="nav_header_desc">Entête de navigation</string>
+    <string name="action_settings">Configurations</string>
+    <string name="title_activity_buckets">BucketsActivity</string>
+    <string name="welcome_title_text">Bienvenue, utilisateur bêta!</string>
+    <string name="button_log_text">Cliquez moi pour emregistrer des données!</string>
+    <string name="hello_blank_fragment">Bonjour fragment vide</string>
+    <string name="collect_enabled_key">collect_enabled</string>
+    <string name="welcome_text">
+        "Thanks for trying out ActivityWatch for Android!"
+        "It\'s not quite as matured as ActivityWatch on other platforms, but it\'s a great step in the right direction and we think it's ready enough to put out there!"
+
+        "\n\n<b>To get started</b>, open the drawer menu in the top left and click on "Activity".
+
+        "\n\n<b>The next step for us</b> is to get cross-device synchronization in place, but it might take a while since we really want to get it right."
+
+        "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
+    </string>
+    <string name="shared_preferences_key">net.activitywatch.android.preferences</string>
+</resources>
