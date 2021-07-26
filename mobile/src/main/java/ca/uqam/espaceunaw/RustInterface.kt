@@ -1,10 +1,10 @@
-package net.activitywatch.android
+package ca.uqam.espaceunaw
 
 import android.content.Context
 import android.os.AsyncTask
 import android.system.Os
 import android.util.Log
-import net.activitywatch.android.models.Event
+import ca.uqam.espaceunaw.models.Event
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject

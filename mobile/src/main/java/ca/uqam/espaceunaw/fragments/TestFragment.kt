@@ -1,8 +1,7 @@
-package net.activitywatch.android.fragments
+package ca.uqam.espaceunaw.fragments
 
 import androidx.lifecycle.ViewModelProviders
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
 import androidx.fragment.app.Fragment
 import android.text.method.LinkMovementMethod
 import android.util.Log
@@ -11,10 +10,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
-import net.activitywatch.android.R
-import net.activitywatch.android.watcher.UsageStatsWatcher
-import net.activitywatch.android.models.TestViewModel
-import java.lang.Exception
+import ca.uqam.espaceunaw.R
+import ca.uqam.espaceunaw.watcher.UsageStatsWatcher
+import ca.uqam.espaceunaw.models.TestViewModel
 
 private const val TAG = "TestFragment"
 

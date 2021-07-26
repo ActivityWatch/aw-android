@@ -1,4 +1,4 @@
-package net.activitywatch.android.models
+package ca.uqam.espaceunaw.models
 
 import androidx.lifecycle.ViewModel;
 import org.json.JSONObject

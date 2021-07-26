@@ -5,19 +5,34 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 
 android {
+    signingConfigs {
+        debug {
+            storeFile file('/Users/alex/dev/keystores/upload.jks')
+            storePassword 'QWErty123'
+            keyAlias 'upload'
+            keyPassword 'QWErty123'
+        }
+        release {
+            storeFile file('/Users/alex/dev/keystores/upload.jks')
+            storePassword 'QWErty123'
+            keyAlias 'upload'
+            keyPassword 'QWErty123'
+        }
+    }
     compileSdkVersion 29
     defaultConfig {
-        applicationId "net.activitywatch.android"
+        applicationId "ca.uqam.espaceunaw"
         minSdkVersion 23
         targetSdkVersion 29
 
         // Set in CI on tagged commit
-        versionName "0.10-dev"
+        versionName "0.0.2"
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 22
+        versionCode 2
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        signingConfig signingConfigs.release
 
         // WARNING: Never commit this uncommented!
         //packagingOptions {

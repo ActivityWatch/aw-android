@@ -1,4 +1,4 @@
-package net.activitywatch.android.models
+package ca.uqam.espaceunaw.models
 
 import android.app.usage.UsageEvents
 import android.content.Context

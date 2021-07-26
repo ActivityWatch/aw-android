@@ -1,4 +1,4 @@
-package net.activitywatch.android.watcher
+package ca.uqam.espaceunaw.watcher
 
 import android.app.AlarmManager
 import android.app.AppOpsManager
@@ -16,13 +16,12 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
-import net.activitywatch.android.RustInterface
-import net.activitywatch.android.models.Event
+import ca.uqam.espaceunaw.RustInterface
+import ca.uqam.espaceunaw.models.Event
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
-import java.lang.Thread.sleep
 import java.net.URL
 import java.text.ParseException
 

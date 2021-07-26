@@ -1,12 +1,9 @@
-package net.activitywatch.android.watcher
+package ca.uqam.espaceunaw.watcher
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.util.Log
-import androidx.appcompat.app.AppCompatActivity
-import net.activitywatch.android.R
 
 
 private const val TAG = "AlarmReceiver"

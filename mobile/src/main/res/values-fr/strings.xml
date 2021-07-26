@@ -22,5 +22,5 @@
 
         "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
     </string>
-    <string name="shared_preferences_key">net.activitywatch.android.preferences</string>
+    <string name="shared_preferences_key">ca.uqam.espaceunaw.preferences</string>
 </resources>

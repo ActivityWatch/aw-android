@@ -1,4 +1,4 @@
-package net.activitywatch.android.fragments
+package ca.uqam.espaceunaw.fragments
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,7 +15,7 @@ import android.webkit.WebView
 import android.content.Intent.ACTION_VIEW
 import android.util.Log
 import android.webkit.WebViewClient
-import net.activitywatch.android.R
+import ca.uqam.espaceunaw.R
 
 private const val TAG = "WebUI"
 

@@ -1,4 +1,4 @@
-package net.activitywatch.android
+package ca.uqam.espaceunaw
 
 import org.junit.Test
 

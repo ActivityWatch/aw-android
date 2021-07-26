@@ -1,4 +1,4 @@
-package net.activitywatch.android
+package ca.uqam.espaceunaw
 
 import android.content.Context
 import android.util.Log

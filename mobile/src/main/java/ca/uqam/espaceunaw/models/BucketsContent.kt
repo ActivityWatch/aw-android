@@ -1,7 +1,7 @@
-package net.activitywatch.android.models
+package ca.uqam.espaceunaw.models
 
 import android.util.Log
-import net.activitywatch.android.RustInterface
+import ca.uqam.espaceunaw.RustInterface
 import org.json.JSONObject
 import java.util.ArrayList
 import java.util.HashMap

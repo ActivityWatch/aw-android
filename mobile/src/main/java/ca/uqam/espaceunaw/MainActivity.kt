@@ -1,4 +1,4 @@
-package net.activitywatch.android
+package ca.uqam.espaceunaw
 
 import android.net.Uri
 import android.os.Bundle
@@ -15,9 +15,9 @@ import androidx.fragment.app.Fragment
 import android.util.Log
 import android.widget.CompoundButton
 import androidx.appcompat.widget.SwitchCompat
-import net.activitywatch.android.fragments.TestFragment
-import net.activitywatch.android.fragments.WebUIFragment
-import net.activitywatch.android.watcher.UsageStatsWatcher
+import ca.uqam.espaceunaw.fragments.TestFragment
+import ca.uqam.espaceunaw.fragments.WebUIFragment
+import ca.uqam.espaceunaw.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
 
