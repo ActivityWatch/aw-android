@@ -19,17 +19,17 @@ android {
             keyPassword 'QWErty123'
         }
     }
-    compileSdkVersion 29
+    compileSdkVersion 30
     defaultConfig {
         applicationId "ca.uqam.espaceunaw"
         minSdkVersion 23
-        targetSdkVersion 29
+        targetSdkVersion 30
 
         // Set in CI on tagged commit
-        versionName "1.0.0"
+        versionName "1.0.1"
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 100
+        versionCode 101
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         signingConfig signingConfigs.release
