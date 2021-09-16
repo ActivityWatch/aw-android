@@ -26,10 +26,10 @@ android {
         targetSdkVersion 30
 
         // Set in CI on tagged commit
-        versionName "1.0.1"
+        versionName "1.0.2"
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 101
+        versionCode 102
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         signingConfig signingConfigs.release
