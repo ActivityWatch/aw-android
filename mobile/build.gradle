@@ -74,22 +74,22 @@ dependencies {
 }
 
 // Can be used to build with: ./gradlew cargoBuild
-// NOTE: Doesn't work, chokes on building openssl-sys
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 cargo {
     module  = "../aw-server-rust"       // Or whatever directory contains your Cargo.toml
     libname = "aw_server"          // Or whatever matches Cargo.toml's [package] name.
     targets = ["arm", "arm64", "x86", "x86_64"]  // See bellow for a longer list of options
-    profile = 'release'  // Selects the Cargo release profile (defaults to 'debug')
+    // TODO: Set to 'release' on release builds
+    profile = 'debug'  // Selects the Cargo release profile (defaults to 'debug')
 }
 
 tasks.whenTaskAdded { task ->
-    // TODO: Build aw-server lib here instead of in Makefile?
+    // Build aw-server-rust
     // Doesn't work, chokes on building openssl-sys
-    //if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
-    //    task.dependsOn 'cargoBuild'
-    //}
+    if ((task.name == 'javaPreCompileDebug' || task.name == 'javaPreCompileRelease')) {
+        task.dependsOn 'cargoBuild'
+    }
 
     // TODO: Build aw-webui here?
     //if (task.name.contains("assembleRelease")) {
