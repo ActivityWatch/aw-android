@@ -21,11 +21,18 @@ jobs:
         os: [ubuntu-18.04]
         java_version: [1.8]
         node_version: [12]
-        ruby_version: ['2.7']
+        ruby_version: ['3.0']
     steps:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+
+    # Build in release mode if: (longer build times)
+    #  - on a tag (release)
+    #  - on the master branch (nightly)
+    - name: Set RELEASE
+      run: |
+        echo "RELEASE=${{ startsWith(github.ref_name, 'v') || github.ref_name == 'master' }}" >> $GITHUB_ENV
 
     - name: Set up JDK
       uses: actions/setup-java@v1
@@ -96,7 +103,7 @@ jobs:
     # Test
     - name: Test
       run: |
-        bundle exec fastlane test
+        make test
 
     # Build
     - name: Build

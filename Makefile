@@ -81,3 +81,6 @@ $(WEBUI_SRCDIR)/dist:
 clean:
 	rm -rf mobile/src/main/assets/webui
 	rm -rf mobile/src/main/jniLibs
+
+test:
+	bundle exec fastlane test
