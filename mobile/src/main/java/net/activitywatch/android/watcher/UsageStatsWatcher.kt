@@ -152,11 +152,18 @@ class UsageStatsWatcher constructor(val context: Context) {
 
             val usm = getUSM() ?: return 0
 
+            // Store activities here that have had a RESUMED but not a PAUSED event.
+            // (to handle out-of-order events)
+            //val activeActivities = [];
+
+            // TODO: Fix issues that occur when usage stats events are out of order (RESUME before PAUSED)
             var heartbeatsSent = 0
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
+
+                // Log screen unlock
                 if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
                     if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
                         val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
@@ -169,6 +176,8 @@ class UsageStatsWatcher constructor(val context: Context) {
                     //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
                     continue@nextEvent
                 }
+
+                // Log activity
                 val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
                 val pulsetime: Double
                 when(event.eventType) {

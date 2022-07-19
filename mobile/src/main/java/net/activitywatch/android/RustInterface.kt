@@ -17,7 +17,7 @@ class RustInterface constructor(context: Context? = null) {
 
     init {
         // NOTE: This doesn't work, probably because I can't get gradle to not strip symbols on release builds
-        //Os.setenv("RUST_BACKTRACE", "1", true)
+        Os.setenv("RUST_BACKTRACE", "1", true)
 
         if(context != null) {
             Os.setenv("SQLITE_TMPDIR", context.cacheDir.absolutePath, true)
