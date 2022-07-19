@@ -22,6 +22,7 @@ jobs:
         java_version: [1.8]
         node_version: [16]
         ruby_version: ['3.0']
+        rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
     steps:
     - uses: actions/checkout@v2
       with:
@@ -42,11 +43,8 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Set up Android NDK
-      uses: nttld/setup-ndk@v1
-      id: setup-ndk
-      with:
-        ndk-version: r21d
+    - name: Install NDK
+      run: sdkmanager "ndk;25.0.8775105"
 
     - name: Set up Node
       uses: actions/setup-node@v1
@@ -79,6 +77,7 @@ jobs:
           ${{ runner.os }}-${{ env.cache-name }}-
     - name: Cache cargo build
       uses: actions/cache@v1
+      if: ${{ matrix.rust_build == 'true' }}
       env:
         cache-name: cargo-build-target
       with:
@@ -90,26 +89,54 @@ jobs:
     # Install fastlane
     - name: Install fastlane
       run: |
-        gem install bundle
+        gem install bundler
         bundle install
 
     # Set up Rust toolchain
     - name: Set up Rust toolchain for Android NDK
-      env:
-        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
-        ./aw-server-rust/install-ndk.sh
+        ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk-bundle ./aw-server-rust/install-ndk.sh
 
     # Test
     - name: Test
       run: |
         make test
 
-    # Build
-    - name: Build
+    # Build webui
+    - name: Build webui
+      run: |
+        make aw-webui
+
+    # Build or fetch aw-server-rust artifacts
+    - name: Build aw-server-rust
+      if: ${{ matrix.rust_build == 'true' }}
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
-        make build
+        make aw-server-rust
+    - name: Download artifact
+      uses: dawidd6/action-download-artifact@v2
+      if: ${{ !(matrix.rust_build == 'true') }}
+      with:
+        repo: ActivityWatch/aw-server-rust
+        branch: master
+        workflow: build.yml
+        # Optional, uploaded artifact name,
+        # will download all artifacts if not specified
+        # and extract them in respective subdirectories
+        # https://github.com/actions/download-artifact#download-all-artifacts
+        name: binaries-android
+        path: aw-server-rust/
+        # Optional, the status or conclusion of a completed workflow to search for
+        # Can be one of a workflow conculsion::
+        # "failure", "success", "neutral", "cancelled", "skipped", "timed_out", "action_required"
+        # Or a workflow status:
+        # "completed", "in_progress", "queued"
+        # Default: "completed"
+        workflow_conclusion: success
 
-    # TODO: Do release stuff
+    - name: Assemble APK
+      run: |
+        # TODO: Replace with ./scripts/build_apk.sh and related stuff in .travis.yml
+        ./gradlew assembleRelease
+        # TODO: Do other release stuff

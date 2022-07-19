@@ -50,14 +50,15 @@ $(JNI_x64)/libaw_server.so: $(TARGET_x64)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
 	ln -sfnv $$(pwd)/$^ $@
 
+RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
+# Explanation of RUSTFLAGS:
+#  `-Awarnings` allows all warnings, for cleaner output (warnings should be detected in aw-server-rust CI anyway)
+#  `-C debuginfo=2` is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
+
 # This target runs multiple times because it's matched multiple times, not sure how to fix
 $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
 	echo $@
-	cd aw-server-rust && env RUSTFLAGS="-C debuginfo=2 -Awarnings" bash compile-android.sh
-#	Explanation of RUSTFLAGS:
-#	  `-Awarnings` allows all warnings, for cleaner output (warnings should be detected in aw-server-rust CI anyway)
-#     `-C debuginfo=2` is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
-
+	env RUSTFLAGS=$(RUSTFLAGS_ANDROID) make -C aw-server-rust android
 
 # aw-webui
 
