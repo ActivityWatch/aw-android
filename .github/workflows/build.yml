@@ -18,9 +18,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-18.04]
+        os: [ubuntu-20.04]
         java_version: [1.8]
-        node_version: [12]
+        node_version: [16]
         ruby_version: ['3.0']
     steps:
     - uses: actions/checkout@v2
