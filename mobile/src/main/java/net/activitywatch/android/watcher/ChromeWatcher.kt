@@ -1,7 +1,6 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
-import android.annotation.TargetApi
 import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.app.PendingIntent
@@ -13,11 +12,12 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.*
 import android.provider.Settings
-import android.support.annotation.RequiresApi
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import android.annotation.TargetApi
+import androidx.annotation.RequiresApi
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
