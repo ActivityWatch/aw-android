@@ -150,7 +150,7 @@ jobs:
       env:
         KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}
       run: |
-        echo $KEY_ANDROID_JKS > android.jks.key
+        printf "$KEY_ANDROID_JKS" > android.jks.key
         cat android.jks.age | age -d -i android.jks.key -o android.jks
         rm android.jks.key
 
@@ -197,7 +197,7 @@ jobs:
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
-        echo $KEY_FASTLANE_API > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
         cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
           | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
                    -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
