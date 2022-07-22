@@ -1,6 +1,8 @@
 aw-android
 ==========
 
+[![GitHub Actions badge](https://github.com/ActivityWatch/aw-android/workflows/Build/badge.svg)](https://github.com/ActivityWatch/aw-android/actions)
+
 A very work-in-progress ActivityWatch app for Android.
 
 Available on Google Play:
