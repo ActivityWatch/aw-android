@@ -136,6 +136,7 @@ jobs:
         workflow_conclusion: success
 
     - name: Set version
+      if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
         # Sets versionName, tail used to skip "v" at start of tag name
         SHORT_VERSION=$(echo "${{ github.ref_name }}" | tail -c +2 -)
