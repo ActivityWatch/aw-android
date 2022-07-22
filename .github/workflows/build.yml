@@ -60,6 +60,8 @@ jobs:
       with:
         ruby-version: ${{ matrix.ruby_version }}
 
+    - uses: adnsio/setup-age-action@v1.2.0
+
     # Set up caches
     - name: Get npm cache dir
       id: npm-cache-dir
@@ -188,6 +190,8 @@ jobs:
       id: version
       with:
         prefix: 'v'
+
+    - uses: adnsio/setup-age-action@v1.2.0
 
     - name: Load secrets
       env:
