@@ -11,6 +11,23 @@ RELEASE_TYPE = $(shell $$RELEASE && echo 'release' || echo 'debug')
 all: aw-server-rust aw-webui
 build: all
 
+build-apk: dist/aw-android.apk
+
+dist/aw-android.apk: mobile/build/outputs/apk/release/mobile-release-unsigned.apk
+	@# TODO: Name the APK based on the version number or commit hash.
+	mkdir -p dist
+	@# Only sign if we have key secrets set ($keypass and $storepass)
+ifneq ($(shell test -f $keypass && echo true || echo false), true)
+	@echo "No key secrets set, not signing APK"
+	cp mobile/build/outputs/apk/release/mobile-release-unsigned.apk $@
+else
+	./scripts/sign_apk.sh \
+		mobile/build/outputs/apk/release/mobile-release-unsigned.apk \
+		$@
+endif
+
+mobile/build/outputs/apk/release/mobile-release-unsigned.apk: aw-server-rust
+	TERM=xterm ./gradlew assembleRelease
 
 # aw-server-rust stuff
 
@@ -34,7 +51,7 @@ aw-server-rust: $(JNILIBS)
 
 .PHONY: $(JNILIBS)
 $(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/libaw_server.so $(JNI_x64)/libaw_server.so
-	ls -lL $@/*/*  # Check that symlinks are valid
+	@ls -lL $@/*/*  # Check that symlinks are valid
 
 # There must be a better way to do this without repeating almost the same rule over and over?
 $(JNI_arm7)/libaw_server.so: $(TARGET_arm7)/$(RELEASE_TYPE)/libaw_server.so
@@ -54,10 +71,13 @@ RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
 # Explanation of RUSTFLAGS:
 #  `-Awarnings` allows all warnings, for cleaner output (warnings should be detected in aw-server-rust CI anyway)
 #  `-C debuginfo=2` is to keep debug symbols, even in release builds (later stripped by gradle on production builds, non-stripped versions needed for stack resymbolizing with ndk-stack)
+#  `-g` is to keep debug symbols in the build, bloats the binary from 7M -> 60MB. Currently using profile.release.debug in Cargo.toml however as -g didn't work on the first try
+
 
 # This target runs multiple times because it's matched multiple times, not sure how to fix
 $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
 	echo $@
+	echo $(RELEASE_TYPE)
 	env RUSTFLAGS=$(RUSTFLAGS_ANDROID) make -C aw-server-rust android
 
 # aw-webui
@@ -85,3 +105,6 @@ clean:
 
 test:
 	bundle exec fastlane test
+	#- ./gradlew clean lint test
+	#- ./gradlew connectedAndroidTest || true
+
