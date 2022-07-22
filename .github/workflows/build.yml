@@ -116,9 +116,10 @@ jobs:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
         make aw-server-rust
+
     - name: Download artifact
       uses: dawidd6/action-download-artifact@v2
-      if: ${{ matrix.rust_build }}
+      if: ${{ !matrix.rust_build }}
       with:
         repo: ActivityWatch/aw-server-rust
         branch: master
