@@ -21,6 +21,7 @@ jobs:
         node_version: [16]
         ruby_version: ['3.0']
         rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
+        skip_webui: [true]
     steps:
     - uses: actions/checkout@v2
       with:
@@ -46,6 +47,7 @@ jobs:
 
     - name: Set up Node
       uses: actions/setup-node@v1
+      if: ${{ !matrix.skip_webui }}
       with:
         node-version: ${{ matrix.node_version }}
     - name: Set up Rust nightly
@@ -65,10 +67,12 @@ jobs:
     # Set up caches
     - name: Get npm cache dir
       id: npm-cache-dir
+      if: ${{ !matrix.skip_webui }}
       run: |
         echo "::set-output name=dir::$(npm config get cache)"
     - uses: actions/cache@v1
       name: Cache npm
+      if: ${{ !matrix.skip_webui }}
       env:
         cache-name: node
       with:
@@ -106,6 +110,7 @@ jobs:
 
     # Build webui
     - name: Build webui
+      if: ${{ !matrix.skip_webui }}
       run: |
         make aw-webui
 
@@ -129,7 +134,7 @@ jobs:
         # and extract them in respective subdirectories
         # https://github.com/actions/download-artifact#download-all-artifacts
         name: binaries-android
-        path: aw-server-rust/
+        path: aw-server-rust/target/
         # Optional, the status or conclusion of a completed workflow to search for
         # Can be one of a workflow conculsion::
         # "failure", "success", "neutral", "cancelled", "skipped", "timed_out", "action_required"
@@ -168,7 +173,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: aw-android
-        path: aw-android.apk
+        path: dist/aw-android*.apk
 
   release-fastlane:
     needs: [build]
