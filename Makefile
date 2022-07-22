@@ -26,7 +26,7 @@ else
 		$@
 endif
 
-mobile/build/outputs/apk/release/mobile-release-unsigned.apk: aw-server-rust
+mobile/build/outputs/apk/release/mobile-release-unsigned.apk:
 	TERM=xterm ./gradlew assembleRelease
 
 # aw-server-rust stuff
