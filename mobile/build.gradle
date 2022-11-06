@@ -3,14 +3,13 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 
 android {
-    compileSdkVersion 29
-    buildToolsVersion = '29.0.3'
+    compileSdkVersion 31
     ndkVersion "21.4.7075529"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 23
-        targetSdkVersion 29
+        minSdkVersion 24
+        targetSdkVersion 31
 
         // Set in CI on tagged commit
         versionName "0.10.0"
@@ -19,6 +18,7 @@ android {
         versionCode 25
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments useTestStorageService: 'true'
 
         // WARNING: Never commit this uncommented!
         packagingOptions {
@@ -44,6 +44,7 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    namespace 'net.activitywatch.android'
     // Never got this to work...
     //if (project.hasProperty("doNotStrip")) {
     //    packagingOptions {
@@ -78,6 +79,8 @@ dependencies {
     androidTestImplementation "androidx.test:runner:$androidXTestVersion"
     androidTestImplementation "androidx.test:rules:$androidXTestVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
+    androidTestUtil "androidx.test.services:test-services:$servicesVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-web:$espressoVersion"
 }
 
 // Can be used to build with: ./gradlew cargoBuild

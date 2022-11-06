@@ -21,14 +21,14 @@ class ExampleInstrumentedTest {
     @Test
     fun useAppContext() {
         // Context of the app under test.
-        val appContext = InstrumentationRegistry.getTargetContext()
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("net.activitywatch.android", appContext.packageName)
     }
 
     @Test
     fun getBuckets() {
         // TODO: Clear test buckets before test
-        val appContext = InstrumentationRegistry.getTargetContext()
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val ri = RustInterface(appContext)
         val bucketId = "test-${Math.random()}"
         val oldLen = ri.getBucketsJSON().length()
@@ -38,7 +38,7 @@ class ExampleInstrumentedTest {
 
     @Test
     fun createHeartbeat() {
-        val appContext = InstrumentationRegistry.getTargetContext()
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val ri = RustInterface(appContext)
         val bucketId = "test-${Math.random()}"
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")

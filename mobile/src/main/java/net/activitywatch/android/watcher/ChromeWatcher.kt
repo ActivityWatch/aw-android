@@ -58,14 +58,14 @@ class ChromeWatcher : AccessibilityService() {
         try {
             if (event != null && event.source != null) {
                 // Get URL
-                val urlBars = event.source.findAccessibilityNodeInfosByViewId("com.android.chrome:id/url_bar")
+                val urlBars = event.source!!.findAccessibilityNodeInfosByViewId("com.android.chrome:id/url_bar")
                 if (urlBars.any()) {
                     val newUrl = "http://" + urlBars[0].text.toString() // TODO: We can't access the URI scheme, so we assume HTTP.
                     onUrl(newUrl)
                 }
 
                 // Get title
-                var webView = findWebView(event.source)
+                var webView = findWebView(event.source!!)
                 if (webView != null) {
                     lastTitle = webView.text.toString()
                     Log.i(TAG, "Title: ${lastTitle}")
@@ -73,7 +73,7 @@ class ChromeWatcher : AccessibilityService() {
             }
         }
         catch(ex : Exception) {
-            Log.e(TAG, ex.message)
+            Log.e(TAG, ex.message!!)
         }
     }
 
