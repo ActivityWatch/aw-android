@@ -32,6 +32,8 @@ android {
         }
         debug {
             applicationIdSuffix ".debug"
+            jniDebuggable true
+            renderscriptDebuggable true
         }
     }
     compileOptions {
@@ -39,6 +41,9 @@ android {
         targetCompatibility = 1.8
     }
 
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
     // Never got this to work...
     //if (project.hasProperty("doNotStrip")) {
     //    packagingOptions {
@@ -68,9 +73,11 @@ dependencies {
     implementation 'com.google.android.material:material:1.3.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.1.1'
 
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.2'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
+    androidTestImplementation "androidx.test:runner:$androidXTestVersion"
+    androidTestImplementation "androidx.test:rules:$androidXTestVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
 }
 
 // Can be used to build with: ./gradlew cargoBuild
