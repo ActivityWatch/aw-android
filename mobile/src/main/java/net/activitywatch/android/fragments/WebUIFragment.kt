@@ -61,7 +61,7 @@ class WebUIFragment : Fragment() {
                 // TODO: Find way to not show the blinking Android error page
                 Log.e(TAG, "WebView received error: $description")
                 arguments?.let {
-                    myWebView.loadUrl(it.getString(ARG_URL))
+                    it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
                 }
             }
         }
@@ -76,7 +76,7 @@ class WebUIFragment : Fragment() {
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
         arguments?.let {
-            myWebView.loadUrl(it.getString(ARG_URL))
+            it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
 
         return view
