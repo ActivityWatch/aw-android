@@ -104,6 +104,6 @@ clean:
 
 test:
 	bundle exec fastlane test
-	#- ./gradlew clean lint test
-	#- ./gradlew connectedAndroidTest || true
+	# ./gradlew clean lint test
+	# ./gradlew connectedAndroidTest # || true
 

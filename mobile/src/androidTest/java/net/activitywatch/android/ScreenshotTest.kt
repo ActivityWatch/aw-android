@@ -1,13 +1,17 @@
 package net.activitywatch.android
 
+import android.content.Intent
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.espresso.matcher.ViewMatchers.*
-import androidx.test.ext.junit.rules.activityScenarioRule
+import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestName
 import java.io.IOException
+
 
 /*
  * When this test is executed via gradle managed devices, the saved image files will be stored at
@@ -18,19 +22,26 @@ class ScreenshotTest {
     // a handy JUnit rule that stores the method name, so it can be used to generate unique
     // screenshot files per test method
     @get:Rule
-    var nameRule = TestName()
+    var permissionRule = GrantPermissionRule.grant(android.Manifest.permission.PACKAGE_USAGE_STATS)
 
     @get:Rule
-    val activityScenarioRule = activityScenarioRule<MainActivity>()
+    var nameRule = TestName()
 
+    lateinit var scenario: ActivityScenario<MainActivity>
     /**
      * Captures and saves an image of the entire device screen to storage.
      */
     @Test
     @Throws(IOException::class)
     fun saveDeviceScreenBitmap() {
+
+        //Thread.sleep(100)
+        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+        // TODO: scenarios dont clean up automatically ?
+        scenario = ActivityScenario.launch(intent)
+
         // TODO: Not a good method to sleep, need to properly hook on page load
-        Thread.sleep(2000)
+        Thread.sleep(5000)
         takeScreenshot()
             .writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")
     }
