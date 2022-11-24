@@ -3,9 +3,10 @@ name: Build
 on:
   push:
     branches: [ master ]
+    tags:
+      - v*
   pull_request:
     branches: [ master ]
-
 
 jobs:
   build:
@@ -43,8 +44,7 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
     - name: Install NDK
-      run: sdkmanager "ndk;25.0.8775105"
-
+      run: sdkmanager "ndk;21.4.7075529"
     - name: Set up Node
       uses: actions/setup-node@v1
       if: ${{ !matrix.skip_webui }}
