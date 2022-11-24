@@ -6,6 +6,7 @@ SHELL := /bin/bash
 #  - https://developer.android.com/ndk/guides/android_mk
 
 RELEASE_TYPE = $(shell $$RELEASE && echo 'release' || echo 'debug')
+HAS_SECRETS = $(shell test -n "$$JKS_KEYPASS" && echo 'true' || echo 'false')
 
 # Main targets
 all: aw-server-rust aw-webui
@@ -16,8 +17,8 @@ build-apk: dist/aw-android.apk
 dist/aw-android.apk: mobile/build/outputs/apk/release/mobile-release-unsigned.apk
 	@# TODO: Name the APK based on the version number or commit hash.
 	mkdir -p dist
-	@# Only sign if we have key secrets set ($keypass and $storepass)
-ifneq ($(shell test -f $keypass && echo true || echo false), true)
+	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
+ifneq ($(HAS_SECRETS), true)
 	@echo "No key secrets set, not signing APK"
 	cp mobile/build/outputs/apk/release/mobile-release-unsigned.apk $@
 else
