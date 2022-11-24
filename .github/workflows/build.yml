@@ -3,9 +3,10 @@ name: Build
 on:
   push:
     branches: [ master ]
+    tags:
+      - v*
   pull_request:
     branches: [ master ]
-
 
 jobs:
   build:
@@ -20,6 +21,7 @@ jobs:
         java_version: [1.8]
         node_version: [16]
         ruby_version: ['3.0']
+        ndk_version: ['21.4.7075529']
         rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
         skip_webui: [true]
     steps:
@@ -43,13 +45,13 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
     - name: Install NDK
-      run: sdkmanager "ndk;25.0.8775105"
+      run: |
+        sdkmanager "ndk;${{ matrix.ndk_version }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        ls $ANDROID_NDK_HOME
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
-    - name: Set up Node
-      uses: actions/setup-node@v1
-      if: ${{ !matrix.skip_webui }}
-      with:
-        node-version: ${{ matrix.node_version }}
+    # Rust
     - name: Set up Rust nightly
       uses: actions-rs/toolchain@v1
       if: ${{ matrix.rust_build }}
@@ -57,12 +59,26 @@ jobs:
         profile: minimal
         toolchain: nightly
         override: true
+    - name: Set up Rust toolchain for Android NDK
+      run: |
+        ./aw-server-rust/install-ndk.sh
+
+    # Ruby & Fastlane
     - name: Set up Ruby
       uses: actions/setup-ruby@v1
       with:
         ruby-version: ${{ matrix.ruby_version }}
+    - name: Install fastlane
+      run: |
+        gem install bundler
+        bundle install
 
-    - uses: adnsio/setup-age-action@v1.2.0
+    # Node
+    - name: Set up Node
+      uses: actions/setup-node@v1
+      if: ${{ !matrix.skip_webui }}
+      with:
+        node-version: ${{ matrix.node_version }}
 
     # Set up caches
     - name: Get npm cache dir
@@ -80,7 +96,6 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
         restore-keys: |
           ${{ runner.os }}-${{ env.cache-name }}-
-
     - name: Cache cargo build
       uses: actions/cache@v1
       if: ${{ matrix.rust_build }}
@@ -91,17 +106,6 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-${{ env.cache-name }}-
-
-    # Install fastlane
-    - name: Install fastlane
-      run: |
-        gem install bundler
-        bundle install
-
-    # Set up Rust toolchain
-    - name: Set up Rust toolchain for Android NDK
-      run: |
-        ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk-bundle ./aw-server-rust/install-ndk.sh
 
     # Test
     - name: Test
@@ -117,8 +121,6 @@ jobs:
     # Build or fetch aw-server-rust artifacts
     - name: Build aw-server-rust
       if: ${{ matrix.rust_build }}
-      env:
-        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
         make aw-server-rust
 
@@ -152,6 +154,9 @@ jobs:
                 mobile/build.gradle
         bundle exec fastlane update_version
 
+    # Install age & load secrets
+    - name: Install age
+      uses: adnsio/setup-age-action@v1.2.0
     - name: Load secrets
       env:
         KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}

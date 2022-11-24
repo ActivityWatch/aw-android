@@ -24,8 +24,9 @@ fi
 # Sign
 jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 \
     -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
-    -keystore android.jks $output activitywatch
-jarsigner -verify $output
+    -keystore android.jks $input activitywatch
+jarsigner -verify $input
+mv $input $output
 
 zipalign=$(find $ANDROID_HOME/build-tools -name "zipalign" -print | head -n 1)
 $zipalign -v 4 $output $output.new

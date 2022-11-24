@@ -5,7 +5,7 @@ apply plugin: 'kotlin-android-extensions'
 android {
     compileSdkVersion 29
     buildToolsVersion = '29.0.3'
-    ndkVersion "25.0.8775105"
+    ndkVersion "21.4.7075529"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
