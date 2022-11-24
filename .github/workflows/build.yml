@@ -41,14 +41,15 @@ jobs:
         java-version: ${{ matrix.java_version }}
 
     # Android SDK & NDK
-    # TODO: Is setup-android redundant with setup-ndk?
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Set up Android NDK
-      uses: nttld/setup-ndk@v1
-      id: setup-ndk
+    - name: Install NDK
+      run: sdkmanager "ndk;21.4.7075529"
+    - name: Set up Node
+      uses: actions/setup-node@v1
+      if: ${{ !matrix.skip_webui }}
       with:
-        ndk-version: r21e
+        node-version: ${{ matrix.node_version }}
 
     # Rust
     - name: Set up Rust nightly
@@ -63,13 +64,6 @@ jobs:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       run: |
         ./aw-server-rust/install-ndk.sh
-
-    # Node
-    - name: Set up Node
-      uses: actions/setup-node@v1
-      if: ${{ !matrix.skip_webui }}
-      with:
-        node-version: ${{ matrix.node_version }}
 
     # Ruby & Fastlane
     - name: Set up Ruby
