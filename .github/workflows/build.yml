@@ -101,6 +101,9 @@ jobs:
     # Set up Rust toolchain
     - name: Set up Rust toolchain for Android NDK
       run: |
+        ls -l $ANDROID_SDK_ROOT
+        ls -l $ANDROID_SDK_ROOT/ndk-bundle
+        ls -l $ANDROID_SDK_ROOT/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin
         ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk-bundle ./aw-server-rust/install-ndk.sh
 
     # Test
