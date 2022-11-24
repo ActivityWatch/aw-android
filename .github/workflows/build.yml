@@ -154,6 +154,10 @@ jobs:
                 mobile/build.gradle
         bundle exec fastlane update_version
 
+    - name: Assemble debug & test APK
+      run: |
+        make build-apk-debug
+
     # Install age & load secrets
     - name: Install age
       uses: adnsio/setup-age-action@v1.2.0
@@ -171,8 +175,6 @@ jobs:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
-        # TODO: Add related stuff in .travis.yml
-        # TODO: Allow building even if secrets not set
         make dist/aw-android.apk
 
     - name: Upload artifact
@@ -181,11 +183,17 @@ jobs:
         name: aw-android
         path: dist/aw-android*.apk
 
-  test:
-    name: Test ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: apks
+        path: dist/apk/
+
+  test-e2e:
+    needs: [build]
+    name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
     runs-on: ${{ matrix.os }}
     env:
-      SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
       MATRIX_E_SDK: ${{ matrix.android_emu_version }}
       MATRIX_AVD: ${{ matrix.android_avd }}
     strategy:
@@ -193,27 +201,30 @@ jobs:
       max-parallel: 1
       matrix:
         os: [macos-12] # macOS-latest,
-        android_emu_version: [27] #29, 31, 32]
-        # android_avd: [Pixel_API_29_AOSP]
+        android_avd: [Pixel_API_27_AOSP]
         java_version: [11]
-        node_version: [16]
-        ruby_version: ['3.0']
-        rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
-        skip_webui: [true]
+        ndk_version: ['21.4.7075529']
         include:
           - android_avd: Pixel_API_27_AOSP
             android_emu_version: 27
           # # # Cannot run > 27-emuLevel -_- https://github.com/actions/runner-images/issues/6527
-          # - android_avd: Pixel_API_29_AOSP
-          #   android_emu_version: 29
-          # - android_avd: Pixel_API_31_AOSP
-          #   android_emu_version: 31
           # - android_avd: Pixel_API_32_AOSP
           #   android_emu_version: 32
     steps:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+
+    # Will download all artifacts to path
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: apks
+        path: dist/apk
+    - name: Display structure of downloaded files
+      working-directory: dist
+      run: ls -R
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
@@ -265,162 +276,6 @@ jobs:
         $ANDROID_HOME/platform-tools/adb exec-out screencap -p > emulator$SUFFIX.png
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
-    # Build in release mode if: (longer build times)
-    #  - on a tag (release)
-    #  - on the master branch (nightly)
-    - name: Set RELEASE
-      run: |
-        echo "RELEASE=${{ startsWith(github.ref_name, 'v') || github.ref_name == 'master' }}" >> $GITHUB_ENV
-
-    - name: Set up JDK
-      uses: actions/setup-java@v1
-      with:
-        java-version: ${{ matrix.java_version }}
-
-    # Android SDK & NDK
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
-
-    - name: Install NDK
-      run: sdkmanager "ndk;25.0.8775105"
-
-    - name: Set up Node
-      uses: actions/setup-node@v1
-      if: ${{ !matrix.skip_webui }}
-      with:
-        node-version: ${{ matrix.node_version }}
-
-    - name: Set up Rust nightly
-      uses: actions-rs/toolchain@v1
-      if: ${{ matrix.rust_build }}
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-
-    - name: Set up Ruby
-      uses: actions/setup-ruby@v1
-      with:
-        ruby-version: ${{ matrix.ruby_version }}
-
-    - uses: adnsio/setup-age-action@v1.2.0
-
-    # Set up caches
-    - name: Get npm cache dir
-      id: npm-cache-dir
-      if: ${{ !matrix.skip_webui }}
-      run: |
-        echo "::set-output name=dir::$(npm config get cache)"
-
-    - uses: actions/cache@v1
-      name: Cache npm
-      if: ${{ !matrix.skip_webui }}
-      env:
-        cache-name: node
-      with:
-        path: ${{ steps.npm-cache-dir.outputs.dir }}
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-
-
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      if: ${{ matrix.rust_build }}
-      env:
-        cache-name: cargo-build-target
-      with:
-        path: aw-server-rust/target
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-
-
-    # Install fastlane
-    - name: Install fastlane
-      run: |
-        gem install bundler
-        bundle install
-
-    # Set up Rust toolchain
-    - name: Set up Rust toolchain for Android NDK
-      if: ${{ matrix.rust_build }}
-      run: |
-        ANDROID_NDK_HOME=
-        ./aw-server-rust/install-ndk.sh
-
-    # Build webui
-    - name: Build webui
-      if: ${{ !matrix.skip_webui }}
-      run: |
-        make aw-webui
-
-    # Build or fetch aw-server-rust artifacts
-    - name: Build aw-server-rust
-      if: ${{ matrix.rust_build }}
-      env:
-        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-      run: |
-        make aw-server-rust
-
-    - name: Download artifact
-      uses: dawidd6/action-download-artifact@v2
-      if: ${{ !matrix.rust_build }}
-      with:
-        repo: ActivityWatch/aw-server-rust
-        branch: master
-        workflow: build.yml
-        # Optional, uploaded artifact name,
-        # will download all artifacts if not specified
-        # and extract them in respective subdirectories
-        # https://github.com/actions/download-artifact#download-all-artifacts
-        name: binaries-android
-        path: aw-server-rust/target/
-        # Optional, the status or conclusion of a completed workflow to search for
-        # Can be one of a workflow conculsion::
-        # "failure", "success", "neutral", "cancelled", "skipped", "timed_out", "action_required"
-        # Or a workflow status:
-        # "completed", "in_progress", "queued"
-        # Default: "completed"
-        workflow_conclusion: success
-
-    - name: Install aw-server-rust binaries
-      if: ${{ !matrix.rust_build }}
-      # TODO: These are only debug + develop something like "make install" for below
-      run: |
-        mkdir -p mobile/src/main/jniLibs/arm64-v8a/
-        cp -f ./aw-server-rust/target/aarch64-linux-android/debug/libaw_server.so mobile/src/main/jniLibs/arm64-v8a/libaw_server.so
-        mkdir -p mobile/src/main/jniLibs/armeabi-v7a/
-        cp -f ./aw-server-rust/target/armv7-linux-androideabi/debug/libaw_server.so mobile/src/main/jniLibs/armeabi-v7a/libaw_server.so
-        mkdir -p mobile/src/main/jniLibs/x86/
-        cp -f ./aw-server-rust/target/i686-linux-android/debug/libaw_server.so mobile/src/main/jniLibs/x86/libaw_server.so
-        mkdir -p mobile/src/main/jniLibs/x86_64/
-        cp -f ./aw-server-rust/target/x86_64-linux-android/debug/libaw_server.so mobile/src/main/jniLibs/x86_64/libaw_server.so
-
-    - name: Set version
-      if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
-      run: |
-        # Sets versionName, tail used to skip "v" at start of tag name
-        SHORT_VERSION=$(echo "${{ github.ref_name }}" | tail -c +2 -)
-        sed -i "s/versionName \".*\"/versionName \"$SHORT_VERSION\"/g" \
-                mobile/build.gradle
-        bundle exec fastlane update_version
-
-    - name: Load secrets
-      if: env.KEY_ANDROID_JKS != null
-      env:
-        KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}
-      run: |
-        printf "$KEY_ANDROID_JKS" > android.jks.key
-        cat android.jks.age | age -d -i android.jks.key -o android.jks
-        rm android.jks.key
-
-    - name: Cache Assemble APK
-      env:
-        JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
-        JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
-      run: |
-        # TODO: Add related stuff in .travis.yml
-        # TODO: Allow building even if secrets not set
-        make dist/aw-android.apk
 
     # # # Test # # reactiveCircus is giving a black screenshot not working
     # # # TODO: Take a screenshot of OS to confirm if its Emulator issue or testcode/androidsdk issue - or maybe the emulator is screen off ?
@@ -456,11 +311,35 @@ jobs:
     #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
     #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
 
+    # Java
+    # Needs to be set up after emulator is started, otherwise I get:
+    #   java.lang.NoClassDefFoundError: javax/xml/bind/annotation/XmlSchema
+    # This seemes relevant: https://stackoverflow.com/a/58652345/965332
+    #- name: Set up JDK
+    #  uses: actions/setup-java@v1
+    #  with:
+    #    java-version: ${{ matrix.java_version }}
+
+    # Android SDK & NDK
+    #- name: Set up Android SDK
+    #  uses: android-actions/setup-android@v2
+    #- name: Install NDK
+    #  run: |
+    #    sdkmanager "ndk;${{ matrix.ndk_version }}"
+    #    ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+    #    ls $ANDROID_NDK_HOME
+    #    echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
     - name: Test App
       id: test
       run: |
+        adb install dist/apk/debug/mobile-debug.apk
+        adb install dist/apk/androidTest/debug/mobile-debug-androidTest.apk
+        adb shell pm list instrumentation
         adb logcat -v color &
-        ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest --stacktrace
+        adb shell am instrument -w \
+            -e class net.activitywatch.android.ScreenshotTest \
+            net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
         # adb logcat -d
         adb logcat > mobile/build/logcat.log
 
@@ -512,7 +391,6 @@ jobs:
         # echo '<style>' >> GITHUB_STEP_SUMMARY.html;for file in ./mobile/build/reports/androidTests/connected/**/*.css; do cat $file >> GITHUB_STEP_SUMMARY.html ; done; echo '</style>' >> GITHUB_STEP_SUMMARY.html;
         cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
-
   release-fastlane:
     needs: [build]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
@@ -526,8 +404,8 @@ jobs:
         path: dist
 
     - name: Display structure of downloaded files
-      run: ls -R
       working-directory: dist
+      run: ls -R
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2
@@ -565,8 +443,8 @@ jobs:
         path: dist
 
     - name: Display structure of downloaded files
-      run: ls -R
       working-directory: dist
+      run: ls -R
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2

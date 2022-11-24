@@ -8,13 +8,33 @@ SHELL := /bin/bash
 RELEASE_TYPE = $(shell $$RELEASE && echo 'release' || echo 'debug')
 HAS_SECRETS = $(shell test -n "$$JKS_KEYPASS" && echo 'true' || echo 'false')
 
+APKDIR = mobile/build/outputs/apk
+
 # Main targets
 all: aw-server-rust aw-webui
 build: all
 
+# builds a complete, signed apk, puts it in dist
 build-apk: dist/aw-android.apk
 
-dist/aw-android.apk: mobile/build/outputs/apk/release/mobile-release-unsigned.apk
+# builds debug and test apks (unsigned)
+build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk
+	mkdir -p dist
+	cp -r $(APKDIR) dist
+
+$(APKDIR)/release/mobile-release-unsigned.apk:
+	TERM=xterm ./gradlew assembleRelease
+	tree $(APKDIR)
+
+$(APKDIR)/debug/mobile-debug.apk:
+	TERM=xterm ./gradlew assembleDebug
+	tree $(APKDIR)
+
+$(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk:
+	TERM=xterm ./gradlew assembleAndroidTest
+	tree $(APKDIR)
+
+dist/aw-android.apk: $(APKDIR)/release/mobile-release-unsigned.apk
 	@# TODO: Name the APK based on the version number or commit hash.
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
@@ -25,8 +45,10 @@ else
 	./scripts/sign_apk.sh $< $@
 endif
 
-mobile/build/outputs/apk/release/mobile-release-unsigned.apk:
-	TERM=xterm ./gradlew assembleRelease
+# for mobile-debug.apk and mobile-debug-androidTest.apk
+dist/debug/%: $(APKDIR)/debug/%
+	mkdir -p dist
+	cp $< $@
 
 # aw-server-rust stuff
 
