@@ -16,12 +16,11 @@ Available on Google Play:
 
 Due to the massive disclaimer we put up to prevent people from getting disappointed when things break or just don't work great, you first need to navigate to the Web UI in the side menu. We hope to change this soon, when things don't suck as much.
 
-
 ### For Oculus Quest
 
 It's available [on SideQuest](https://sidequestvr.com/#/app/201). 
 
-**Note:** you might need to install AppStarter to find it the app menus. If this is the case, open an issue and include the steps for what you had to do.
+**Note 2022-11-24:** At some point a Quest system upgrade broke the ability to allow ActivityWatch access to usage stats. This can be fixed by manually assigning the needed permission using adb: `adb shell appops set net.activitywatch.android android:get_usage_stats allow`
 
 
 ## Building
