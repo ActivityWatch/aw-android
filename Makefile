@@ -20,11 +20,9 @@ dist/aw-android.apk: mobile/build/outputs/apk/release/mobile-release-unsigned.ap
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
 	@echo "No key secrets set, not signing APK"
-	cp mobile/build/outputs/apk/release/mobile-release-unsigned.apk $@
+	cp $< $@
 else
-	./scripts/sign_apk.sh \
-		mobile/build/outputs/apk/release/mobile-release-unsigned.apk \
-		$@
+	./scripts/sign_apk.sh $< $@
 endif
 
 mobile/build/outputs/apk/release/mobile-release-unsigned.apk:
