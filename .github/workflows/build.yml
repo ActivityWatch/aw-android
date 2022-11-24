@@ -22,7 +22,7 @@ jobs:
         node_version: [16]
         ruby_version: ['3.0']
         ndk_version: ['21.4.7075529']
-        rust_build: [true]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
+        rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
         skip_webui: [true]
     steps:
     - uses: actions/checkout@v2
