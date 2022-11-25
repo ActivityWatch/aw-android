@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }}
+    name: Build ${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }}
     runs-on: ${{ matrix.os }}
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-20.04]
-        java_version: [1.8]
+        java_version: [11]
         node_version: [16]
         ruby_version: ['3.0']
         ndk_version: ['21.4.7075529']
@@ -119,12 +119,7 @@ jobs:
         make aw-webui
 
     # Build or fetch aw-server-rust artifacts
-    - name: Build aw-server-rust
-      if: ${{ matrix.rust_build }}
-      run: |
-        make aw-server-rust
-
-    - name: Download artifact
+    - name: Download prebuilt aw-server-rust Android libs
       uses: dawidd6/action-download-artifact@v2
       if: ${{ !matrix.rust_build }}
       with:
@@ -144,6 +139,16 @@ jobs:
         # "completed", "in_progress", "queued"
         # Default: "completed"
         workflow_conclusion: success
+    - name: Build aw-server-rust
+      env:
+        USE_PREBUILT: ${{ !matrix.rust_build }}
+      run: |
+        # will build if USE_PREBUILT is true,
+        # otherwise will just move files into the right place
+        make aw-server-rust
+    - name: Check that jniLibs present
+      run: |
+        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     - name: Set version
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
@@ -154,10 +159,15 @@ jobs:
                 mobile/build.gradle
         bundle exec fastlane update_version
 
+    - name: Assemble debug & test APK
+      run: |
+        make build-apk-debug
+
     # Install age & load secrets
     - name: Install age
       uses: adnsio/setup-age-action@v1.2.0
     - name: Load secrets
+      if: env.KEY_ANDROID_JKS != null
       env:
         KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}
       run: |
@@ -170,8 +180,6 @@ jobs:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
-        # TODO: Add related stuff in .travis.yml
-        # TODO: Allow building even if secrets not set
         make dist/aw-android.apk
 
     - name: Upload artifact
@@ -179,6 +187,202 @@ jobs:
       with:
         name: aw-android
         path: dist/aw-android*.apk
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: apks
+        path: dist/apk/
+
+  test-e2e:
+    needs: [build]
+    name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
+    runs-on: ${{ matrix.os }}
+    env:
+      MATRIX_E_SDK: ${{ matrix.android_emu_version }}
+      MATRIX_AVD: ${{ matrix.android_avd }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [macos-12] # macOS-latest,
+        android_avd: [Pixel_API_27_AOSP]
+        java_version: [11]
+        ndk_version: ['21.4.7075529']
+        include:
+          - android_avd: Pixel_API_27_AOSP
+            android_emu_version: 27
+          # # # Cannot run > 27-emuLevel -_- https://github.com/actions/runner-images/issues/6527
+          # - android_avd: Pixel_API_32_AOSP
+          #   android_emu_version: 32
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    # Will download all artifacts to path
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: apks
+        path: dist/apk
+    - name: Display structure of downloaded files
+      working-directory: dist
+      run: ls -R
+
+    # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
+    - name: Create Android emulator
+      run: |
+        brew install intel-haxm
+        # Install AVD files
+        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+
+        # Create emulator
+        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        $ANDROID_HOME/emulator/emulator -list-avds
+        if false; then
+        emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
+        # The following madness is to support empty OR populated config.ini files,
+        # the state of which is dependant on the version of the emulator used (which we don't control),
+        # so let's be defensive to be safe.
+        # Replace existing config (NOTE we're on MacOS so sed works differently!)
+        sed -i .bak 's/hw.lcd.density=.*/hw.lcd.density=420/' "$emulator_config"
+        sed -i .bak 's/hw.lcd.height=.*/hw.lcd.height=1920/' "$emulator_config"
+        sed -i .bak 's/hw.lcd.width=.*/hw.lcd.width=1080/' "$emulator_config"
+        # Or, add new config
+        if ! grep -q "hw.lcd.density" "$emulator_config"; then
+          echo "hw.lcd.density=420" >> "$emulator_config"
+        fi
+        if ! grep -q "hw.lcd.height" "$emulator_config"; then
+          echo "hw.lcd.height=1920" >> "$emulator_config"
+        fi
+        if ! grep -q "hw.lcd.width" "$emulator_config"; then
+          echo "hw.lcd.width=1080" >> "$emulator_config"
+        fi
+        echo "Emulator settings ($emulator_config)"
+        cat "$emulator_config"
+        fi
+
+    - name: Start Android emulator
+      timeout-minutes: 30 # ~4min normal - 3x DOSafety
+      env:
+        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+      run: |
+        echo "Starting emulator and waiting for boot to complete...."
+        ls -la $ANDROID_HOME/emulator
+        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
+        echo "Emulator has finished booting"
+        $ANDROID_HOME/platform-tools/adb devices
+        sleep 30
+        mkdir -p screenshots
+        screencapture screenshots/screenshot-$SUFFIX.jpg
+        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
+
+    # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
+    # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
+
+    # # # Test # # reactiveCircus is giving a black screenshot not working
+    # # # TODO: Take a screenshot of OS to confirm if its Emulator issue or testcode/androidsdk issue - or maybe the emulator is screen off ?
+    # # # https://github.com/ReactiveCircus/android-emulator-runner
+    # - name: Test Cache
+    #   uses: reactivecircus/android-emulator-runner@v2
+    #   with:
+    #     api-level: ${{ matrix.android_emu_version }}
+    #     arch: x86_64
+    #     profile: Nexus 6
+    #     target: google_apis
+    #     emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+    #     script: echo Meoooow !
+    # - name: Test
+    #   id: test
+    #   uses: reactivecircus/android-emulator-runner@v2
+    #   with:
+    #     api-level: ${{ matrix.android_emu_version }}
+    #     arch: x86_64
+    #     profile: Nexus 6
+    #     target: google_apis
+    #     emulator-options: -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+    #     # Only running specific Instrumentation tests cause others are failing right now. TODO: Fix others
+    #     script: ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest --stacktrace
+
+    # - name: Install recorder and record session
+    #   env:
+    #     SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
+    #   run: |
+    #     brew install ffmpeg
+    #     $ANDROID_HOME/tools/emulator -help-all
+    #     # -logcat *:v
+    #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
+    #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
+
+    - name: Test App
+      timeout-minutes: 20
+      id: test
+      run: |
+        adb install dist/apk/debug/mobile-debug.apk
+        adb install dist/apk/androidTest/debug/mobile-debug-androidTest.apk
+        adb shell pm list instrumentation
+        adb shell am instrument -w \
+            -e class net.activitywatch.android.ScreenshotTest \
+            net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+
+    - name: Output and save logcat to file
+      if: ${{ success() || steps.test.conclusion == 'failure'}}
+      run: |
+        mkdir -p mobile/build
+        adb logcat -d > mobile/build/logcat.log
+        adb logcat -v color &
+
+    - name: Screenshot
+      if: ${{ success() || steps.test.conclusion == 'failure'}}
+      env:
+        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
+      run: |
+        adb shell monkey -p net.activitywatch.android.debug 1
+        sleep 10
+        screencapture screenshots/pscreenshot-$SUFFIX.jpg
+        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
+        ls -alh screenshots/
+
+    - name: Upload logcat
+      if: ${{ success() || steps.test.conclusion == 'failure'}}
+      uses: actions/upload-artifact@v3
+      with:
+        name: logcat
+        # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
+        path: |
+          mobile/build/logcat.log
+        #mobile/build/reports/*
+
+    # - name: Upload video
+    #   if: ${{ success() || steps.test.conclusion == 'failure'}}
+    #   uses: actions/upload-artifact@master
+    #   with:
+    #     name: video
+    #     path: ./*.mov # out.mov
+
+    - name: Upload screenshots
+      uses: actions/upload-artifact@v3
+      if: ${{ success() || steps.test.conclusion == 'failure'}}
+      with:
+        name: screenshots
+        path: |
+          screenshots/*
+          **/mobile/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*
+
+    #- name: Publish Test Report
+    #  # # uses: mikepenz/action-junit-report@v3
+    #  # # # # TODO: Format a little ? or Use some utility to confier GITHUB_STE_SUMMARY.html below into markdown before outputting it into $GITHUB_STEP_SUMMARY?
+    #  if: ${{ success() || steps.test.conclusion == 'failure'}}
+    #  # # with:
+    #  # #   report_paths: '**/build/reports/*Tests/**/*.html' # '**/build/test-results/test/TEST-*.xml'
+    #  run: |
+    #    for file in ./mobile/build/reports/androidTests/connected/*.html; do cat $file >> GITHUB_STEP_SUMMARY.html ; done
+    #    # echo '<style>' >> GITHUB_STEP_SUMMARY.html;for file in ./mobile/build/reports/androidTests/connected/**/*.css; do cat $file >> GITHUB_STEP_SUMMARY.html ; done; echo '</style>' >> GITHUB_STEP_SUMMARY.html;
+    #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
   release-fastlane:
     needs: [build]
@@ -193,8 +397,8 @@ jobs:
         path: dist
 
     - name: Display structure of downloaded files
-      run: ls -R
       working-directory: dist
+      run: ls -R
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2
@@ -232,8 +436,8 @@ jobs:
         path: dist
 
     - name: Display structure of downloaded files
-      run: ls -R
       working-directory: dist
+      run: ls -R
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2

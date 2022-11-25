@@ -3,14 +3,13 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 
 android {
-    compileSdkVersion 29
-    buildToolsVersion = '29.0.3'
+    compileSdkVersion 33
     ndkVersion "21.4.7075529"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 23
-        targetSdkVersion 29
+        minSdkVersion 24
+        targetSdkVersion 33
 
         // Set in CI on tagged commit
         versionName "0.10.0"
@@ -19,6 +18,7 @@ android {
         versionCode 25
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments useTestStorageService: 'true'
 
         // WARNING: Never commit this uncommented!
         packagingOptions {
@@ -32,13 +32,19 @@ android {
         }
         debug {
             applicationIdSuffix ".debug"
+            jniDebuggable true
+            renderscriptDebuggable true
         }
     }
     compileOptions {
-        sourceCompatibility = "1.8"
-        targetCompatibility = 1.8
+        sourceCompatibility = '1.8'
+        targetCompatibility = '1.8'
     }
 
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+    namespace 'net.activitywatch.android'
     // Never got this to work...
     //if (project.hasProperty("doNotStrip")) {
     //    packagingOptions {
@@ -57,20 +63,24 @@ dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 
-    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'androidx.appcompat:appcompat:1.5.1'
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
     implementation 'androidx.cardview:cardview:1.0.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
-    implementation 'androidx.recyclerview:recyclerview:1.1.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
-    implementation 'androidx.annotation:annotation:1.1.0'
+    implementation 'androidx.annotation:annotation:1.5.0'
 
-    implementation 'com.google.android.material:material:1.3.0'
+    implementation 'com.google.android.material:material:1.7.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.1.1'
 
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.2'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
+    androidTestImplementation "androidx.test:runner:$androidXTestVersion"
+    androidTestImplementation "androidx.test:rules:$androidXTestVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
+    androidTestUtil "androidx.test.services:test-services:$servicesVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-web:$espressoVersion"
 }
 
 // Can be used to build with: ./gradlew cargoBuild
