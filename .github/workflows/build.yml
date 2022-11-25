@@ -119,12 +119,7 @@ jobs:
         make aw-webui
 
     # Build or fetch aw-server-rust artifacts
-    - name: Build aw-server-rust
-      if: ${{ matrix.rust_build }}
-      run: |
-        make aw-server-rust
-
-    - name: Download artifact
+    - name: Download prebuilt aw-server-rust Android libs
       uses: dawidd6/action-download-artifact@v2
       if: ${{ !matrix.rust_build }}
       with:
@@ -144,6 +139,16 @@ jobs:
         # "completed", "in_progress", "queued"
         # Default: "completed"
         workflow_conclusion: success
+    - name: Build aw-server-rust
+      env:
+        USE_PREBUILT: ${{ !matrix.rust_build }}
+      run: |
+        # will build if USE_PREBUILT is true,
+        # otherwise will just move files into the right place
+        make aw-server-rust
+    - name: Check that jniLibs present
+      run: |
+        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     - name: Set version
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
