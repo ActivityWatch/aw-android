@@ -386,16 +386,16 @@ jobs:
           ./*.png
           **/mobile/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*
 
-    - name: Publish Test Report
-      # # uses: mikepenz/action-junit-report@v3
-      # # # # TODO: Format a little ? or Use some utility to confier GITHUB_STE_SUMMARY.html below into markdown before outputting it into $GITHUB_STEP_SUMMARY?
-      if: ${{ success() || steps.test.conclusion == 'failure'}}
-      # # with:
-      # #   report_paths: '**/build/reports/*Tests/**/*.html' # '**/build/test-results/test/TEST-*.xml'
-      run: |
-        for file in ./mobile/build/reports/androidTests/connected/*.html; do cat $file >> GITHUB_STEP_SUMMARY.html ; done
-        # echo '<style>' >> GITHUB_STEP_SUMMARY.html;for file in ./mobile/build/reports/androidTests/connected/**/*.css; do cat $file >> GITHUB_STEP_SUMMARY.html ; done; echo '</style>' >> GITHUB_STEP_SUMMARY.html;
-        cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
+    #- name: Publish Test Report
+    #  # # uses: mikepenz/action-junit-report@v3
+    #  # # # # TODO: Format a little ? or Use some utility to confier GITHUB_STE_SUMMARY.html below into markdown before outputting it into $GITHUB_STEP_SUMMARY?
+    #  if: ${{ success() || steps.test.conclusion == 'failure'}}
+    #  # # with:
+    #  # #   report_paths: '**/build/reports/*Tests/**/*.html' # '**/build/test-results/test/TEST-*.xml'
+    #  run: |
+    #    for file in ./mobile/build/reports/androidTests/connected/*.html; do cat $file >> GITHUB_STEP_SUMMARY.html ; done
+    #    # echo '<style>' >> GITHUB_STEP_SUMMARY.html;for file in ./mobile/build/reports/androidTests/connected/**/*.css; do cat $file >> GITHUB_STEP_SUMMARY.html ; done; echo '</style>' >> GITHUB_STEP_SUMMARY.html;
+    #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
   release-fastlane:
     needs: [build]

@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.content.Intent
+import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.core.app.takeScreenshot
@@ -12,13 +13,13 @@ import org.junit.Test
 import org.junit.rules.TestName
 import java.io.IOException
 
+private const val TAG = "ScreenshotTest"
 
 /*
  * When this test is executed via gradle managed devices, the saved image files will be stored at
  * build/outputs/managed_device_android_test_additional_output/debugAndroidTest/managedDevice/nexusOneApi30/
  */
 class ScreenshotTest {
-
     // a handy JUnit rule that stores the method name, so it can be used to generate unique
     // screenshot files per test method
     @get:Rule
@@ -34,7 +35,6 @@ class ScreenshotTest {
     @Test
     @Throws(IOException::class)
     fun saveDeviceScreenBitmap() {
-
         //Thread.sleep(100)
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         // TODO: scenarios dont clean up automatically ?
@@ -42,7 +42,10 @@ class ScreenshotTest {
 
         // TODO: Not a good method to sleep, need to properly hook on page load
         Thread.sleep(5000)
-        takeScreenshot()
-            .writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")
+        Log.i(TAG, "Taking screenshot")
+
+        val bitmap = takeScreenshot()
+        bitmap.writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")
+        Log.i(TAG, "Took screenshot!")
     }
 }
