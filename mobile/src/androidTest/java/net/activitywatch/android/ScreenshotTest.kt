@@ -28,13 +28,19 @@ class ScreenshotTest {
     @get:Rule
     var nameRule = TestName()
 
-    lateinit var scenario: ActivityScenario<MainActivity>
+    private lateinit var scenario: ActivityScenario<MainActivity>
+
+    @Test
+    fun testScreenshot() {
+        saveDeviceScreenBitmap()
+    }
+
     /**
      * Captures and saves an image of the entire device screen to storage.
      */
-    @Test
     @Throws(IOException::class)
     fun saveDeviceScreenBitmap() {
+        Log.i(TAG, "Running saveDeviceScreenBitmap")
         //Thread.sleep(100)
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
         // TODO: scenarios dont clean up automatically ?

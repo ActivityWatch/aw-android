@@ -355,16 +355,17 @@ jobs:
       env:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
       run: |
+        adb shell monkey -p net.activitywatch.android.debug 1
         sleep 10
         screencapture screenshots/pscreenshot-$SUFFIX.jpg
         $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
-        ls -alh
+        ls -alh screenshots/
 
     - name: Upload logcat
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       uses: actions/upload-artifact@v3
       with:
-        name: Build outputs
+        name: logcat
         # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
         path: |
           mobile/build/logcat.log
