@@ -98,12 +98,12 @@ RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
 # This target runs multiple times because it's matched multiple times, not sure how to fix
 $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
 	echo $@
-	echo $(RELEASE_TYPE)
-	# if we indicate in CI via USE_PREBUILT that we've
-	# fetched prebuilt libaw_server.so from aw-server-rust repo,
-	# then don't rebuild it
-	# also check libraries exist, if not, error
-	if [ $$USE_PREBUILT == "true" ] && [ -f $@ ]; then \
+	echo "Release type: $(RELEASE_TYPE)"
+	@# if we indicate in CI via USE_PREBUILT that we've
+	@# fetched prebuilt libaw_server.so from aw-server-rust repo,
+	@# then don't rebuild it
+	@# also check libraries exist, if not, error
+	@if [ $$USE_PREBUILT == "true" ] && [ -f $@ ]; then \
 		echo "Using prebuilt libaw_server.so"; \
 	else \
 		echo "Building libaw_server.so from aw-server-rust repo"; \

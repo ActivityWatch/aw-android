@@ -336,6 +336,7 @@ jobs:
     #    echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
     - name: Test App
+      timeout-minutes: 20
       id: test
       run: |
         adb install dist/apk/debug/mobile-debug.apk
@@ -345,8 +346,8 @@ jobs:
         adb shell am instrument -w \
             -e class net.activitywatch.android.ScreenshotTest \
             net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
-        # adb logcat -d
-        adb logcat > mobile/build/logcat.log
+        mkdir -p mobile/build
+        adb logcat -d > mobile/build/logcat.log
 
     - name: Screenshot
       if: ${{ success() || steps.test.conclusion == 'failure'}}
@@ -365,8 +366,8 @@ jobs:
         name: Build outputs
         # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
         path: |
-          mobile/build/reports/*
           mobile/build/logcat.log
+        #mobile/build/reports/*
 
     # - name: Upload video
     #   if: ${{ success() || steps.test.conclusion == 'failure'}}
