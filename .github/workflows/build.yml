@@ -280,6 +280,7 @@ jobs:
         mkdir -p screenshots
         screencapture screenshots/screenshot-$SUFFIX.jpg
         $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
+
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
 
@@ -317,25 +318,6 @@ jobs:
     #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
     #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
 
-    # Java
-    # Needs to be set up after emulator is started, otherwise I get:
-    #   java.lang.NoClassDefFoundError: javax/xml/bind/annotation/XmlSchema
-    # This seemes relevant: https://stackoverflow.com/a/58652345/965332
-    #- name: Set up JDK
-    #  uses: actions/setup-java@v1
-    #  with:
-    #    java-version: ${{ matrix.java_version }}
-
-    # Android SDK & NDK
-    #- name: Set up Android SDK
-    #  uses: android-actions/setup-android@v2
-    #- name: Install NDK
-    #  run: |
-    #    sdkmanager "ndk;${{ matrix.ndk_version }}"
-    #    ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
-    #    ls $ANDROID_NDK_HOME
-    #    echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-
     - name: Test App
       timeout-minutes: 20
       id: test
@@ -343,12 +325,16 @@ jobs:
         adb install dist/apk/debug/mobile-debug.apk
         adb install dist/apk/androidTest/debug/mobile-debug-androidTest.apk
         adb shell pm list instrumentation
-        adb logcat -v color &
         adb shell am instrument -w \
             -e class net.activitywatch.android.ScreenshotTest \
             net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+
+    - name: Output and save logcat to file
+      if: ${{ success() || steps.test.conclusion == 'failure'}}
+      run: |
         mkdir -p mobile/build
         adb logcat -d > mobile/build/logcat.log
+        adb logcat -v color &
 
     - name: Screenshot
       if: ${{ success() || steps.test.conclusion == 'failure'}}
