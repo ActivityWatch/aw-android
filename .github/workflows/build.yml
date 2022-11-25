@@ -277,8 +277,9 @@ jobs:
         echo "Emulator has finished booting"
         $ANDROID_HOME/platform-tools/adb devices
         sleep 30
-        screencapture screenshot$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > emulator$SUFFIX.png
+        mkdir -p screenshots
+        screencapture screenshots/screenshot-$SUFFIX.jpg
+        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
 
@@ -354,12 +355,12 @@ jobs:
       env:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
       run: |
-        sleep 30
-        screencapture pscreenshot$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > pemulator$SUFFIX.png
+        sleep 10
+        screencapture screenshots/pscreenshot-$SUFFIX.jpg
+        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
         ls -alh
 
-    - name: Upload Build artifact
+    - name: Upload logcat
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       uses: actions/upload-artifact@v3
       with:
@@ -376,14 +377,13 @@ jobs:
     #     name: video
     #     path: ./*.mov # out.mov
 
-    - uses: actions/upload-artifact@v3
+    - name: Upload screenshots
+      uses: actions/upload-artifact@v3
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       with:
-        name: screenshots #.jpg
-        #screenshot.jpg
+        name: screenshots
         path: |
-          ./*.jpg
-          ./*.png
+          screenshots/*
           **/mobile/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*
 
     #- name: Publish Test Report
