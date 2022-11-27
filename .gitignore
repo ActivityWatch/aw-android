@@ -58,6 +58,7 @@ captures/
 .idea/dictionaries
 .idea/libraries
 .idea/caches
+.idea/deploymentTargetDropDown.xml
 
 # Keystore files
 # Uncomment the following lines if you do not want to check your keystore files in.
