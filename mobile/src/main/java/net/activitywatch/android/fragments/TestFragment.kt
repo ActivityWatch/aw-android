@@ -44,7 +44,7 @@ class TestFragment : Fragment() {
         viewModel = ViewModelProviders.of(this).get(TestViewModel::class.java)
         // TODO: Use the ViewModel
 
-        val usw = UsageStatsWatcher(context!!)
+        val usw = UsageStatsWatcher(requireContext())
 
         val button = view?.findViewById(R.id.button) as Button
         button.setOnClickListener {
