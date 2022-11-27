@@ -23,7 +23,7 @@ build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mo
 	cp -r $(APKDIR) dist
 
 # Test targets
-test: test-unit test-e2e
+test: test-unit
 
 test-unit:
 	./gradlew test
@@ -34,10 +34,8 @@ test-e2e:
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest
 
 test-e2e-adb:
-	# Requires that:
-	#  - you have adb installed
-	#  - you have a device connected
-	#  - you have the apk installed
+	# Requires that you have a device connected with the necessary APKs installed
+	# Alternative to using gradle, if you don't want to rebuild.
 	# Run only screenshot test, for now
 	adb shell pm list instrumentation
 	adb shell am instrument -w \
