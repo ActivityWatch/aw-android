@@ -16,6 +16,7 @@ import android.content.Intent.ACTION_VIEW
 import android.util.Log
 import android.webkit.WebViewClient
 import net.activitywatch.android.R
+import java.lang.Thread.sleep
 
 private const val TAG = "WebUI"
 
@@ -60,6 +61,7 @@ class WebUIFragment : Fragment() {
                 // Retry
                 // TODO: Find way to not show the blinking Android error page
                 Log.e(TAG, "WebView received error: $description")
+                sleep(100);
                 arguments?.let {
                     it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
                 }

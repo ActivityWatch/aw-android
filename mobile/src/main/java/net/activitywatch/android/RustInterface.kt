@@ -2,14 +2,18 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.os.AsyncTask
+import android.os.Handler
+import android.os.Looper
 import android.system.Os
 import android.util.Log
+import android.widget.Toast
 import net.activitywatch.android.models.Event
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.Instant
 import java.io.File
+import java.util.concurrent.Executors
 
 private const val TAG = "RustInterface"
 
@@ -51,19 +55,24 @@ class RustInterface constructor(context: Context? = null) {
     fun startServerTask(context: Context) {
         if(!serverStarted) {
             serverStarted = true
-            ServerTask(context).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR)
+            val executor = Executors.newSingleThreadExecutor()
+            val handler = Handler(Looper.getMainLooper())
+            executor.execute {
+                // will not block the UI thread
+
+                // Extract web assets
+                AssetExtractor.extractAssets("webui", context)
+
+                // Start server
+                Log.w(TAG, "Starting server...")
+                val assetDir = context.cacheDir.path + File.separator + "webui"
+                startServer(assetDir)
+
+                handler.post {
+                    // will run on UI thread after the task is done
+                }
+            }
             Log.w(TAG, "Server started")
-        }
-    }
-
-    // TODO: This probably shouldn't be an AsyncTask
-    private inner class ServerTask(val context: Context) : AsyncTask<String, Nothing, Unit>() {
-        override fun doInBackground(vararg inputs: String) {
-            AssetExtractor.extractAssets("webui", context)
-
-            Log.w(TAG, "Starting server...")
-            val assetDir = context.cacheDir.path + File.separator + "webui"
-            startServer(assetDir)
         }
     }
 
