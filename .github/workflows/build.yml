@@ -31,10 +31,10 @@ jobs:
 
     # Build in release mode if: (longer build times)
     #  - on a tag (release)
-    #  - on the master branch (nightly)
+    # FIXME: Can't use with matrix rust_build=false
     - name: Set RELEASE
       run: |
-        echo "RELEASE=${{ startsWith(github.ref_name, 'v') || github.ref_name == 'master' }}" >> $GITHUB_ENV
+        echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Set up JDK
       uses: actions/setup-java@v1
