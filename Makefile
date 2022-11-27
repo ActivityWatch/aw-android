@@ -22,6 +22,29 @@ build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mo
 	mkdir -p dist
 	cp -r $(APKDIR) dist
 
+# Test targets
+test: test-unit test-e2e
+
+test-unit:
+	./gradlew test
+
+test-e2e:
+	# Run only screenshot test, for now
+	./gradlew connectedAndroidTest \
+		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest
+
+test-e2e-adb:
+	# Requires that:
+	#  - you have adb installed
+	#  - you have a device connected
+	#  - you have the apk installed
+	# Run only screenshot test, for now
+	adb shell pm list instrumentation
+	adb shell am instrument -w \
+		-e class net.activitywatch.android.ScreenshotTest
+		net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+
+# APK targets
 $(APKDIR)/release/mobile-release-unsigned.apk:
 	TERM=xterm ./gradlew assembleRelease
 	tree $(APKDIR)
@@ -34,6 +57,7 @@ $(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk:
 	TERM=xterm ./gradlew assembleAndroidTest
 	tree $(APKDIR)
 
+# Signed release APK
 dist/aw-android.apk: $(APKDIR)/release/mobile-release-unsigned.apk
 	@# TODO: Name the APK based on the version number or commit hash.
 	mkdir -p dist
