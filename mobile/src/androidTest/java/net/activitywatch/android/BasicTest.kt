@@ -4,7 +4,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 
 import org.junit.Test
-import org.junit.Before
 import org.junit.runner.RunWith
 
 import org.junit.Assert.*
@@ -17,12 +16,12 @@ import java.time.Instant
  * See [testing documentation](http://d.android.com/tools/testing).
  */
 @RunWith(AndroidJUnit4::class)
-class ExampleInstrumentedTest {
+class BasicTest {
     @Test
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("net.activitywatch.android", appContext.packageName)
+        assertEquals("net.activitywatch.android.debug", appContext.packageName)
     }
 
     @Test
@@ -33,7 +32,7 @@ class ExampleInstrumentedTest {
         val bucketId = "test-${Math.random()}"
         val oldLen = ri.getBucketsJSON().length()
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")
-        assertEquals(ri.getBucketsJSON().length(), oldLen + 1)
+        assertEquals(oldLen + 1, ri.getBucketsJSON().length())
     }
 
     @Test
@@ -42,8 +41,8 @@ class ExampleInstrumentedTest {
         val ri = RustInterface(appContext)
         val bucketId = "test-${Math.random()}"
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")
+        val oldLen = ri.getEventsJSON(bucketId, 3).length()
         ri.heartbeat(bucketId, """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}""", 1.0)
-        sleep(10)
-        assertEquals(1, ri.getEventsJSON(bucketId).length())
+        assertEquals(oldLen + 1, ri.getEventsJSON(bucketId, 3).length())
     }
 }

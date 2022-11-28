@@ -29,7 +29,10 @@ test-unit:
 	./gradlew test
 
 test-e2e:
-	@# Run only screenshot test, for now
+	./gradlew connectedAndroidTest
+
+test-e2e-screenshot-only:
+	@# To only run screenshot test:
 	./gradlew connectedAndroidTest \
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest
 
