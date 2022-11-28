@@ -2,10 +2,10 @@
 
 buildscript {
     ext.kotlin_version = '1.7.20'
-    ext.androidXTestVersion = '1.4.0'
-    ext.espressoVersion = '3.5.0-rc01'
-    ext.extJUnitVersion = '1.1.3'
-    ext.servicesVersion = "1.4.2-rc01"
+    ext.androidXTestVersion = '1.5.0'
+    ext.espressoVersion = '3.5.0'
+    ext.extJUnitVersion = '1.1.4'
+    ext.servicesVersion = '1.4.2'
     repositories {
         google()
         mavenCentral()

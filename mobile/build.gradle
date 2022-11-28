@@ -57,6 +57,10 @@ android {
     applicationVariants.all { variant ->
         variant.resValue "string", "versionName", 'v' + variant.versionName
     }
+
+    buildFeatures {
+        viewBinding true
+    }
 }
 
 dependencies {
@@ -72,7 +76,7 @@ dependencies {
     implementation 'androidx.annotation:annotation:1.5.0'
 
     implementation 'com.google.android.material:material:1.7.0'
-    implementation 'com.jakewharton.threetenabp:threetenabp:1.1.1'
+    implementation 'com.jakewharton.threetenabp:threetenabp:1.4.3'
 
     testImplementation "junit:junit:4.13.2"
     androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"

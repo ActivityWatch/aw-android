@@ -1,7 +1,6 @@
 package net.activitywatch.android
 
 import android.content.Context
-import android.os.AsyncTask
 import android.os.Handler
 import android.os.Looper
 import android.system.Os

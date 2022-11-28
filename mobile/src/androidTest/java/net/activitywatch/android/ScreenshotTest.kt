@@ -51,7 +51,12 @@ class ScreenshotTest {
         Log.i(TAG, "Taking screenshot")
 
         val bitmap = takeScreenshot()
-        bitmap.writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")
+        // Only supported on API levels >=28
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            bitmap.writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")
+        } else {
+            Log.i(TAG, "Screenshot not saved to test storage, API level too low")
+        }
         Log.i(TAG, "Took screenshot!")
     }
 }
