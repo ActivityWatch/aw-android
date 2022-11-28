@@ -66,10 +66,21 @@ jobs:
       run: |
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
+    - name: Cache JNI libs
+      uses: actions/cache@v1
+      id: cache-jniLibs
+      env:
+        cache-name: jniLibs
+      with:
+        path: mobile/src/main/jniLibs/
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ hashFiles('.git/modules/aw-server-rust/refs/heads/master') }}
+
     # Android SDK & NDK
     - name: Set up Android SDK
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       uses: android-actions/setup-android@v2
     - name: Install NDK
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
         sdkmanager "ndk;${{ matrix.ndk_version }}"
         ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
@@ -79,6 +90,7 @@ jobs:
     # Rust
     - name: Set up Rust nightly
       uses: actions-rs/toolchain@v1
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       with:
         profile: minimal
         toolchain: nightly
@@ -89,15 +101,15 @@ jobs:
 
     - name: Cache cargo build
       uses: actions/cache@v1
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       env:
         cache-name: cargo-build-target
       with:
         path: aw-server-rust/target
-        key: ${{ env.RELEASE }}-${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        #restore-keys: |
-        #  ${{ env.RELEASE }}-${{ runner.os }}-${{ env.cache-name }}-
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build aw-server-rust
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
         make aw-server-rust
 
