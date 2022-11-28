@@ -29,7 +29,7 @@ test-unit:
 	./gradlew test
 
 test-e2e:
-	./gradlew connectedAndroidTest
+	./gradlew connectedAndroidTest --stacktrace
 
 test-e2e-screenshot-only:
 	@# To only run screenshot test:
