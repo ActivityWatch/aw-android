@@ -14,13 +14,14 @@ Available on Google Play:
 
 ## Usage
 
-Due to the massive disclaimer we put up to prevent people from getting disappointed when things break or just don't work great, you first need to navigate to the Web UI in the side menu. We hope to change this soon, when things don't suck as much.
+Install the APK from the Play Store or from the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
 
 ### For Oculus Quest
 
-It's available [on SideQuest](https://sidequestvr.com/#/app/201). 
+> **Note** 
+> At some point a Quest system upgrade broke the ability to allow ActivityWatch access to usage stats. This can be fixed by manually assigning the needed permission using adb: `adb shell appops set net.activitywatch.android android:get_usage_stats allow`
 
-**Note 2022-11-24:** At some point a Quest system upgrade broke the ability to allow ActivityWatch access to usage stats. This can be fixed by manually assigning the needed permission using adb: `adb shell appops set net.activitywatch.android android:get_usage_stats allow`
+It's available [on SideQuest](https://sidequestvr.com/#/app/201). 
 
 
 ## Building
@@ -31,15 +32,22 @@ If you haven't already, initialize the submodules with: `git submodule update --
 
 ### Building aw-server-rust
 
-To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you could try to build it with:
+> **Note**
+> If you don't want to go through the hassle of getting Rust up and running, you can download the jniLibs from [aw-server-rust CI artifacts](https://github.com/ActivityWatch/aw-server-rust/actions/workflows/build.yml) and place them in `mobile/src/main/jniLibs` manually instead of following this section.
+
+> **Note**
+> You need to use NDK r21e (21.4.7075529).
+
+To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you can build it with:
 
 ```
-export ANDROID_NDK_HOME=`pwd`/aw-server-rust/NDK
-pushd aw-server-rust && ./install-ndk.sh; popd  # This configures the NDK for use with Rust, and installs the NDK if missing
-env RELEASE=false make aw-server-rust  # Set RELEASE=true to build in release mode (slower build, harder to debug)
+export ANDROID_NDK_HOME=`pwd`/aw-server-rust/NDK  # The path to your NDK
+pushd aw-server-rust && ./install-ndk.sh; popd    # This configures the NDK for use with Rust, and installs the NDK if missing
+env RELEASE=false make aw-server-rust             # Set RELEASE=true to build in release mode (slower build, harder to debug)
 ```
 
-Note: The Android NDK will be downloaded by the `install-ndk.sh` script if missing. The location of the Android NDK *must* be `aw-server-rust/NDK`. You can create a symlink pointing to the real location if you already have it elsewhere (such as /opt/android-ndk/ on Arch Linux).
+> **Note**
+> The Android NDK will be downloaded by `install-ndk.sh` to `aw-server-rust/NDK` if `ANDROID_NDK_HOME` not set. You can create a symlink pointing to the real location if you already have it elsewhere (such as /opt/android-ndk/ on Arch Linux).
 
 ### Building aw-webui
 
