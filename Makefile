@@ -29,18 +29,25 @@ test-unit:
 	./gradlew test
 
 test-e2e:
-	# Run only screenshot test, for now
+	@# Run only screenshot test, for now
 	./gradlew connectedAndroidTest \
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest
 
 test-e2e-adb:
-	# Requires that you have a device connected with the necessary APKs installed
-	# Alternative to using gradle, if you don't want to rebuild.
-	# Run only screenshot test, for now
-	adb shell pm list instrumentation
+	@# Requires that you have a device connected with the necessary APKs installed
+	@# Alternative to using gradle, if you don't want to rebuild.
+	@#
+	@# To list instrumentation tests, run:
+	@# adb shell pm list instrumentation
+	@#
+	@# Run only screenshot test, for now
 	adb shell am instrument -w \
 		-e class net.activitywatch.android.ScreenshotTest
 		net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+
+install-apk-debug: $(APKDIR)/debug/mobile-debug.apk
+	adb install $(APKDIR)/debug/mobile-debug.apk
+	adb install $(APKDIR)/debug/mobile-debug-androidTest.apk
 
 # APK targets
 $(APKDIR)/release/mobile-release-unsigned.apk:

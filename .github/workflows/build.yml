@@ -182,17 +182,23 @@ jobs:
       run: |
         make dist/aw-android.apk
 
-    - name: Upload artifact
+    - name: Upload release APK
       uses: actions/upload-artifact@v3
       with:
         name: aw-android
         path: dist/aw-android*.apk
 
-    - name: Upload artifact
+    - name: Upload debug APKs
       uses: actions/upload-artifact@v3
       with:
         name: apks
         path: dist/apk/
+
+    - name: Upload JNI libs
+      uses: actions/upload-artifact@v3
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs/
 
   test-e2e:
     needs: [build]
@@ -220,15 +226,21 @@ jobs:
       with:
         submodules: 'recursive'
 
-    # Will download all artifacts to path
-    - name: Download build artifacts
+    - name: Download debug APKs
       uses: actions/download-artifact@v3
       with:
         name: apks
-        path: dist/apk
+        path: mobile/build/outputs/apk
     - name: Display structure of downloaded files
-      working-directory: dist
-      run: ls -R
+      run: cd mobile/build/outputs/apk && ls -R
+
+    - name: Download JNI libs
+      uses: actions/download-artifact@v3
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs
+    - name: Display structure of downloaded files
+      run: cd mobile/src/main/jniLibs && ls -R
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
@@ -318,16 +330,26 @@ jobs:
     #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
     #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
 
-    - name: Test App
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ matrix.java_version }}
+
+    # Android SDK & NDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+    - name: Install NDK
+      run: |
+        sdkmanager "ndk;${{ matrix.ndk_version }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        ls $ANDROID_NDK_HOME
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+    - name: Run E2E tests
       timeout-minutes: 20
       id: test
       run: |
-        adb install dist/apk/debug/mobile-debug.apk
-        adb install dist/apk/androidTest/debug/mobile-debug-androidTest.apk
-        adb shell pm list instrumentation
-        adb shell am instrument -w \
-            -e class net.activitywatch.android.ScreenshotTest \
-            net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
+        make test-e2e
 
     - name: Output and save logcat to file
       if: ${{ success() || steps.test.conclusion == 'failure'}}
