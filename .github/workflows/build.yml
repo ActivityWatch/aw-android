@@ -75,6 +75,10 @@ jobs:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ matrix.ndk_version }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
 
+    - name: Display structure of downloaded files
+      run: |
+        pushd mobile/src/main/jniLibs && ls -R && popd
+
     # Android SDK & NDK
     - name: Set up Android SDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
@@ -259,16 +263,16 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs
 
-    #- name: Display structure of downloaded files
-    #  run: |
-    #    cd mobile/build/outputs/apk && ls -R
-    #    cd mobile/src/main/jniLibs && ls -R
-
     - name: Download web UI
       uses: actions/download-artifact@v3
       with:
         name: webui
         path: mobile/src/main/assets/webui
+
+    - name: Display structure of downloaded files
+      run: |
+        pushd mobile/src/main/assets/webui && ls -R && popd
+        pushd mobile/src/main/jniLibs && ls -R && popd
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
