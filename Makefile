@@ -107,18 +107,19 @@ $(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/l
 	@ls -lL $@/*/*  # Check that symlinks are valid
 
 # There must be a better way to do this without repeating almost the same rule over and over?
+# NOTE: These must be hard links for CI caching to work
 $(JNI_arm7)/libaw_server.so: $(TARGET_arm7)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -sfnv $$(pwd)/$^ $@
+	ln -fnv $$(pwd)/$^ $@
 $(JNI_arm8)/libaw_server.so: $(TARGET_arm8)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -sfnv $$(pwd)/$^ $@
+	ln -fnv $$(pwd)/$^ $@
 $(JNI_x86)/libaw_server.so: $(TARGET_x86)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -sfnv $$(pwd)/$^ $@
+	ln -fnv $$(pwd)/$^ $@
 $(JNI_x64)/libaw_server.so: $(TARGET_x64)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -sfnv $$(pwd)/$^ $@
+	ln -fnv $$(pwd)/$^ $@
 
 RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
 # Explanation of RUSTFLAGS:
