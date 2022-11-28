@@ -17,7 +17,8 @@ android {
         versionCode 25
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        testInstrumentationRunnerArguments useTestStorageService: 'true'
+        // NOTE: This only works for API level 28 and above
+        //testInstrumentationRunnerArguments useTestStorageService: 'true'
 
         // WARNING: Never commit this uncommented!
         packagingOptions {
