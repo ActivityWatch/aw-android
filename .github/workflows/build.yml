@@ -74,8 +74,8 @@ jobs:
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ matrix.ndk_version }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-
     - name: Display structure of downloaded files
+      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
