@@ -9,9 +9,110 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
-    name: Build ${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }}
+  build-webui:
+    name: Build aw-webui (node-${{ matrix.node_version }})
     runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+        node_version: [16]
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Set up Node
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ matrix.node_version }}
+
+    # Set up caches
+    - name: Get npm cache dir
+      id: npm-cache-dir
+      run: |
+        echo "::set-output name=dir::$(npm config get cache)"
+    - uses: actions/cache@v1
+      name: Cache npm
+      env:
+        cache-name: node
+      with:
+        path: ${{ steps.npm-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.cache-name }}-
+
+    - name: Build webui
+      run: |
+        make aw-webui
+
+    - name: Upload web UI
+      uses: actions/upload-artifact@v3
+      with:
+        name: webui
+        path: mobile/src/main/assets/webui/
+
+  build-rust:
+    name: Build aw-server-rust
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+        ndk_version: ['21.4.7075529']
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    # Android SDK & NDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+    - name: Install NDK
+      run: |
+        sdkmanager "ndk;${{ matrix.ndk_version }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        ls $ANDROID_NDK_HOME
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+    # Rust
+    - name: Set up Rust nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+    - name: Set up Rust toolchain for Android NDK
+      run: |
+        ./aw-server-rust/install-ndk.sh
+
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      env:
+        cache-name: cargo-build-target
+      with:
+        path: aw-server-rust/target
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.cache-name }}-
+
+    - name: Build aw-server-rust
+      run: |
+        make aw-server-rust
+
+    - name: Check that jniLibs present
+      run: |
+        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+
+    - name: Upload JNI libs
+      uses: actions/upload-artifact@v3
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs/
+
+
+  build-apk:
+    name: Build APK (${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }})
+    runs-on: ${{ matrix.os }}
+    needs: [build-rust, build-webui]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
     strategy:
@@ -22,8 +123,6 @@ jobs:
         node_version: [16]
         ruby_version: ['3.0']
         ndk_version: ['21.4.7075529']
-        rust_build: [false]   # if true, will build aw-server-rust, otherwise will fetch artifact from recent CI run
-        skip_webui: [true]
     steps:
     - uses: actions/checkout@v2
       with:
@@ -51,18 +150,6 @@ jobs:
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
-    # Rust
-    - name: Set up Rust nightly
-      uses: actions-rs/toolchain@v1
-      if: ${{ matrix.rust_build }}
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-    - name: Set up Rust toolchain for Android NDK
-      run: |
-        ./aw-server-rust/install-ndk.sh
-
     # Ruby & Fastlane
     - name: Set up Ruby
       uses: actions/setup-ruby@v1
@@ -73,82 +160,20 @@ jobs:
         gem install bundler
         bundle install
 
-    # Node
-    - name: Set up Node
-      uses: actions/setup-node@v1
-      if: ${{ !matrix.skip_webui }}
+    - name: Download JNI libs
+      uses: actions/download-artifact@v3
       with:
-        node-version: ${{ matrix.node_version }}
-
-    # Set up caches
-    - name: Get npm cache dir
-      id: npm-cache-dir
-      if: ${{ !matrix.skip_webui }}
-      run: |
-        echo "::set-output name=dir::$(npm config get cache)"
-    - uses: actions/cache@v1
-      name: Cache npm
-      if: ${{ !matrix.skip_webui }}
-      env:
-        cache-name: node
-      with:
-        path: ${{ steps.npm-cache-dir.outputs.dir }}
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      if: ${{ matrix.rust_build }}
-      env:
-        cache-name: cargo-build-target
-      with:
-        path: aw-server-rust/target
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-
-
-    # Test
-    - name: Test
-      run: |
-        make test
-
-    # Build webui
-    - name: Build webui
-      if: ${{ !matrix.skip_webui }}
-      run: |
-        make aw-webui
-
-    # Build or fetch aw-server-rust artifacts
-    - name: Download prebuilt aw-server-rust Android libs
-      uses: dawidd6/action-download-artifact@v2
-      if: ${{ !matrix.rust_build }}
-      with:
-        repo: ActivityWatch/aw-server-rust
-        branch: master
-        workflow: build.yml
-        # Optional, uploaded artifact name,
-        # will download all artifacts if not specified
-        # and extract them in respective subdirectories
-        # https://github.com/actions/download-artifact#download-all-artifacts
-        name: binaries-android
-        path: aw-server-rust/target/
-        # Optional, the status or conclusion of a completed workflow to search for
-        # Can be one of a workflow conculsion::
-        # "failure", "success", "neutral", "cancelled", "skipped", "timed_out", "action_required"
-        # Or a workflow status:
-        # "completed", "in_progress", "queued"
-        # Default: "completed"
-        workflow_conclusion: success
-    - name: Build aw-server-rust
-      env:
-        USE_PREBUILT: ${{ !matrix.rust_build }}
-      run: |
-        # will build if USE_PREBUILT is true,
-        # otherwise will just move files into the right place
-        make aw-server-rust
+        name: jniLibs
+        path: mobile/src/main/jniLibs
     - name: Check that jniLibs present
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+
+    - name: Download web UI
+      uses: actions/download-artifact@v3
+      with:
+        name: webui
+        path: mobile/src/main/assets/webui
 
     - name: Set version
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
@@ -159,9 +184,10 @@ jobs:
                 mobile/build.gradle
         bundle exec fastlane update_version
 
-    - name: Assemble debug & test APK
+    # Test
+    - name: Test
       run: |
-        make build-apk-debug
+        make test
 
     # Install age & load secrets
     - name: Install age
@@ -188,20 +214,8 @@ jobs:
         name: aw-android
         path: dist/aw-android*.apk
 
-    - name: Upload debug APKs
-      uses: actions/upload-artifact@v3
-      with:
-        name: apks
-        path: dist/apk/
-
-    - name: Upload JNI libs
-      uses: actions/upload-artifact@v3
-      with:
-        name: jniLibs
-        path: mobile/src/main/jniLibs/
-
   test-e2e:
-    needs: [build]
+    needs: [build-rust, build-webui]
     name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
     runs-on: ${{ matrix.os }}
     env:
@@ -226,21 +240,22 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Download debug APKs
-      uses: actions/download-artifact@v3
-      with:
-        name: apks
-        path: mobile/build/outputs/apk
     - name: Download JNI libs
       uses: actions/download-artifact@v3
       with:
         name: jniLibs
         path: mobile/src/main/jniLibs
 
-    - name: Display structure of downloaded files
-      run: |
-        cd mobile/build/outputs/apk && ls -R
-        cd mobile/src/main/jniLibs && ls -R
+    #- name: Display structure of downloaded files
+    #  run: |
+    #    cd mobile/build/outputs/apk && ls -R
+    #    cd mobile/src/main/jniLibs && ls -R
+
+    - name: Download web UI
+      uses: actions/download-artifact@v3
+      with:
+        name: webui
+        path: mobile/src/main/assets/webui
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
@@ -407,15 +422,15 @@ jobs:
     #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
   release-fastlane:
-    needs: [build]
+    needs: [build-apk]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
 
-    # Will download all artifacts to path
-    - name: Download build artifacts
+    - name: Download release APK
       uses: actions/download-artifact@v3
       with:
+        name: aw-android
         path: dist
 
     - name: Display structure of downloaded files
@@ -446,15 +461,16 @@ jobs:
         bundle exec fastlane supply run --apk dist/*/*.apk
 
   release-gh:
-    needs: [build]
+    needs: [build-apk]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
 
     # Will download all artifacts to path
-    - name: Download build artifacts
+    - name: Download release APK
       uses: actions/download-artifact@v3
       with:
+        name: aw-android
         path: dist
 
     - name: Display structure of downloaded files
