@@ -52,7 +52,7 @@ jobs:
         path: mobile/src/main/assets/webui/
 
   build-rust:
-    name: Build aw-server-rust
+    name: Build aw-server-rust (ndk-${{ matrix.ndk_version }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -73,7 +73,7 @@ jobs:
         cache-name: jniLibs
       with:
         path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ hashFiles('.git/modules/aw-server-rust/refs/heads/master') }}
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ matrix.ndk_version }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
 
     # Android SDK & NDK
     - name: Set up Android SDK
@@ -96,6 +96,7 @@ jobs:
         toolchain: nightly
         override: true
     - name: Set up Rust toolchain for Android NDK
+      if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
         ./aw-server-rust/install-ndk.sh
 
@@ -106,7 +107,7 @@ jobs:
         cache-name: cargo-build-target
       with:
         path: aw-server-rust/target
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build aw-server-rust
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
