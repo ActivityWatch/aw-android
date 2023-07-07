@@ -3,7 +3,7 @@ apply plugin: 'kotlin-android'
 
 android {
     compileSdkVersion 33
-    ndkVersion "21.4.7075529"
+    ndkVersion "25.2.9519653"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
