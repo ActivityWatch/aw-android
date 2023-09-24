@@ -57,7 +57,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        ndk_version: ['21.4.7075529']
+        ndk_version: ['25.2.9519653']
     steps:
     - uses: actions/checkout@v2
       with:
@@ -141,7 +141,7 @@ jobs:
         os: [ubuntu-20.04]
         java_version: [11]
         ruby_version: ['3.0']
-        ndk_version: ['21.4.7075529']
+        ndk_version: ['25.2.9519653']
     steps:
     - uses: actions/checkout@v2
       with:
@@ -245,7 +245,7 @@ jobs:
         os: [macos-12] # macOS-latest,
         android_avd: [Pixel_API_27_AOSP]
         java_version: [11]
-        ndk_version: ['21.4.7075529']
+        ndk_version: ['25.2.9519653']
         include:
           - android_avd: Pixel_API_27_AOSP
             android_emu_version: 27
