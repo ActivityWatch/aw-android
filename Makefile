@@ -1,4 +1,3 @@
-.PHONY: aw-webui
 SHELL := /bin/bash
 
 # We should probably do this the "Android way" (would also help with getting it on FDroid):
@@ -10,8 +9,11 @@ HAS_SECRETS = $(shell test -n "$$JKS_KEYPASS" && echo 'true' || echo 'false')
 
 APKDIR = mobile/build/outputs/apk
 
+WEBUI_SRCDIR := aw-server-rust/aw-webui
+WEBUI_DISTDIR := $(WEBUI_SRCDIR)/dist
+
 # Main targets
-all: aw-server-rust aw-webui
+all: aw-server-rust
 build: all
 
 # builds a complete, signed apk, puts it in dist
@@ -100,6 +102,9 @@ TARGET_arm8 := $(TARGET)/aarch64-linux-android
 TARGET_x64 := $(TARGET)/x86_64-linux-android
 TARGET_x86 := $(TARGET)/i686-linux-android
 
+# Build webui specifically for Android (disabled update check, different default views, etc)
+export ON_ANDROID := -- --android  
+
 aw-server-rust: $(JNILIBS)
 
 .PHONY: $(JNILIBS)
@@ -129,7 +134,7 @@ RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
 
 
 # This target runs multiple times because it's matched multiple times, not sure how to fix
-$(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
+$(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES) $(WEBUI_DISTDIR)
 	@echo $@
 	@echo "Release type: $(RELEASE_TYPE)"
 	@# if we indicate in CI via USE_PREBUILT that we've
@@ -144,21 +149,8 @@ $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES)
 	fi
 
 # aw-webui
-
-WEBUI_SRCDIR := aw-server-rust/aw-webui
-WEBUI_OUTDIR := mobile/src/main/assets/webui
-WEBUI_SOURCES := $(shell find $(RS_SRCDIR) -type f -name *.rs)
-export ON_ANDROID := -- --android  # Build specifically for Android (disabled update check, different default views, etc)
-
-aw-webui: $(WEBUI_OUTDIR)
-
-.PHONY: $(WEBUI_OUTDIR)
-$(WEBUI_OUTDIR): $(WEBUI_SRCDIR)/dist
-	mkdir -p mobile/src/main/assets/webui
-	cp -r $(WEBUI_SRCDIR)/dist/* mobile/src/main/assets/webui
-
-.PHONY: $(WEBUI_SRCDIR)/dist
-$(WEBUI_SRCDIR)/dist:
+.PHONY: $(WEBUI_DISTDIR)
+$(WEBUI_DISTDIR):
 	# Ideally this sub-Makefile should not rebuild unless files have changed
 	make --directory=aw-server-rust/aw-webui build
 

@@ -10,12 +10,13 @@ on:
 
 jobs:
   build-rust:
-    name: Build aw-server-rust (ndk-${{ matrix.ndk_version }})
+    name: Build aw-server-rust (ndk-${{ matrix.ndk_version }}, node-${{ matrix.node_version }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-20.04]
         ndk_version: ['25.2.9519653']
+        node_version: [16]
     steps:
     - uses: actions/checkout@v2
       with:
@@ -88,7 +89,7 @@ jobs:
 
 
   build-apk:
-    name: Build APK (${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }})
+    name: Build APK (${{ matrix.os }}, java-${{ matrix.java_version }})
     runs-on: ${{ matrix.os }}
     needs: [build-rust]
     env:
