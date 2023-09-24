@@ -4,6 +4,7 @@ NDK
 mobile/src/main/assets/webui
 .bundle
 vendor
+dist
 
 # secrets
 secret*
