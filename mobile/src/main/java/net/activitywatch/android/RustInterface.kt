@@ -40,7 +40,7 @@ class RustInterface constructor(context: Context? = null) {
 
     private external fun initialize(): String
     private external fun greeting(pattern: String): String
-    private external fun startServer(assetDir: String)
+    private external fun startServer()
     private external fun setDataDir(path: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
@@ -59,13 +59,10 @@ class RustInterface constructor(context: Context? = null) {
             executor.execute {
                 // will not block the UI thread
 
-                // Extract web assets
-                AssetExtractor.extractAssets("webui", context)
-
                 // Start server
                 Log.w(TAG, "Starting server...")
                 val assetDir = context.cacheDir.path + File.separator + "webui"
-                startServer(assetDir)
+                startServer()
 
                 handler.post {
                     // will run on UI thread after the task is done
