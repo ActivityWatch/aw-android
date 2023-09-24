@@ -26,7 +26,7 @@ It's available [on SideQuest](https://sidequestvr.com/#/app/201).
 
 ## Building
 
-To build this app you first need to build aw-server-rust and aw-webui (which is placed in `aw-server-rust/aw-webui`).
+To build this app you first need to build aw-server-rust (`./aw-server-rust`) and aw-webui (`./aw-server-rust/aw-webui`).
 
 If you haven't already, initialize the submodules with: `git submodule update --init --recursive`
 
@@ -36,7 +36,7 @@ If you haven't already, initialize the submodules with: `git submodule update --
 > If you don't want to go through the hassle of getting Rust up and running, you can download the jniLibs from [aw-server-rust CI artifacts](https://github.com/ActivityWatch/aw-server-rust/actions/workflows/build.yml) and place them in `mobile/src/main/jniLibs` manually instead of following this section.
 
 > **Note**
-> You need to use NDK r21e (21.4.7075529).
+> You need to use NDK r25 (25.2.9519653).
 
 To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you can build it with:
 
