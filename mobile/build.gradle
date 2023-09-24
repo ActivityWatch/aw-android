@@ -20,10 +20,10 @@ android {
         // NOTE: This only works for API level 28 and above
         //testInstrumentationRunnerArguments useTestStorageService: 'true'
 
-        // WARNING: Never commit this uncommented!
-        packagingOptions {
-            doNotStrip '**/*.so'
-        }
+        // WARNING: Never commit this uncommented! (leads to huge APKs)
+        //packagingOptions {
+        //    doNotStrip '**/*.so'
+        //}
     }
     buildTypes {
         release {
