@@ -9,48 +9,6 @@ on:
     branches: [ master ]
 
 jobs:
-  build-webui:
-    name: Build aw-webui (node-${{ matrix.node_version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-        node_version: [16]
-    steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
-
-    - name: Set up Node
-      uses: actions/setup-node@v1
-      with:
-        node-version: ${{ matrix.node_version }}
-
-    # Set up caches
-    - name: Get npm cache dir
-      id: npm-cache-dir
-      run: |
-        echo "::set-output name=dir::$(npm config get cache)"
-    - uses: actions/cache@v1
-      name: Cache npm
-      env:
-        cache-name: node
-      with:
-        path: ${{ steps.npm-cache-dir.outputs.dir }}
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ env.cache-name }}-
-
-    - name: Build webui
-      run: |
-        make aw-webui
-
-    - name: Upload web UI
-      uses: actions/upload-artifact@v3
-      with:
-        name: webui
-        path: mobile/src/main/assets/webui/
-
   build-rust:
     name: Build aw-server-rust (ndk-${{ matrix.ndk_version }})
     runs-on: ${{ matrix.os }}
@@ -132,7 +90,7 @@ jobs:
   build-apk:
     name: Build APK (${{ matrix.os }}, java-${{ matrix.java_version }}, node-${{ matrix.node_version }})
     runs-on: ${{ matrix.os }}
-    needs: [build-rust, build-webui]
+    needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
     strategy:
@@ -186,12 +144,6 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
-    - name: Download web UI
-      uses: actions/download-artifact@v3
-      with:
-        name: webui
-        path: mobile/src/main/assets/webui
-
     - name: Set version
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
@@ -232,8 +184,9 @@ jobs:
         path: dist/aw-android*.apk
 
   test-e2e:
-    needs: [build-rust, build-webui]
     name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
+    needs: [build-rust]
+    if: false  # disabled
     runs-on: ${{ matrix.os }}
     env:
       MATRIX_E_SDK: ${{ matrix.android_emu_version }}
@@ -263,15 +216,8 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs
 
-    - name: Download web UI
-      uses: actions/download-artifact@v3
-      with:
-        name: webui
-        path: mobile/src/main/assets/webui
-
     - name: Display structure of downloaded files
       run: |
-        pushd mobile/src/main/assets/webui && ls -R && popd
         pushd mobile/src/main/jniLibs && ls -R && popd
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
