@@ -136,6 +136,9 @@ jobs:
         gem install bundler
         bundle install
 
+    - name: Install age
+      uses: adnsio/setup-age-action@v1.2.0
+
     - name: Download JNI libs
       uses: actions/download-artifact@v3
       with:
@@ -145,6 +148,17 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
+    # Needed for `fastlane update_version`
+    - name: Load Fastlane secrets
+      env:
+        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+      run: |
+        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+        cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
+          | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
+                   -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
+        rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
     - name: Set version
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
@@ -152,17 +166,16 @@ jobs:
         SHORT_VERSION=$(echo "${{ github.ref_name }}" | tail -c +2 -)
         sed -i "s/versionName \".*\"/versionName \"$SHORT_VERSION\"/g" \
                 mobile/build.gradle
-        bundle exec fastlane update_version
+
+    - name: Update versionCode
+      run: bundle exec fastlane update_version
 
     # Test
     - name: Test
       run: |
         make test
 
-    # Install age & load secrets
-    - name: Install age
-      uses: adnsio/setup-age-action@v1.2.0
-    - name: Load secrets
+    - name: Load Android secrets
       if: env.KEY_ANDROID_JKS != null
       env:
         KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}
@@ -408,7 +421,6 @@ jobs:
         prefix: 'v'
 
     - uses: adnsio/setup-age-action@v1.2.0
-
     - name: Load secrets
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
