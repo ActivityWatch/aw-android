@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.AlertDialog
 import android.app.AppOpsManager
 import android.app.PendingIntent
 import android.app.usage.UsageEvents
@@ -85,13 +86,20 @@ class UsageStatsWatcher constructor(val context: Context) {
         } else {
             Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
 
-            // Needed since Toasts can only be created in the UI thread, and getUSM isn't always called in the UI thread
             Handler(Looper.getMainLooper()).post {
-                run {
-                    Toast.makeText(context, "Please grant ActivityWatch usage access", Toast.LENGTH_LONG).show()
-                }
+                // Create an alert dialog to inform the user
+                AlertDialog.Builder(context)
+                    .setTitle("ActivityWatch needs Usage Access")
+                    .setMessage("This gives ActivityWatch access to your device use data, which is required for the basic functions of the application.\n\nWe respect your privacy, no data leaves your device.")
+                    .setPositiveButton("Continue") { _, _ ->
+                        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                    .setNegativeButton("Cancel") { dialog, _ ->
+                        dialog.cancel()
+                        System.exit(0)
+                    }
+                    .show()
             }
-            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             null
         }
     }
