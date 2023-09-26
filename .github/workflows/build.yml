@@ -419,7 +419,7 @@ jobs:
     - name: Set up Ruby
       uses: actions/setup-ruby@v1
       with:
-        ruby-version: ${{ matrix.ruby_version }}
+        ruby-version: '3.0'
     - name: Install fastlane
       run: |
         gem install bundler
