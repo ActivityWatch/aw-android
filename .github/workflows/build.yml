@@ -476,6 +476,6 @@ jobs:
       with:
         draft: true
         prerelease: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
-        files: dist/*/*.apk
+        files: dist/*.apk
         # body_path: dist/release_notes/release_notes.md
 
