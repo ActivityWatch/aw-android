@@ -23,7 +23,7 @@ fi
 
 # Zipalign
 zipalign=$(find $ANDROID_HOME/build-tools -name "zipalign" -print | head -n 1)
-$zipalign -v 4 $input $input.new
+$zipalign -v -p 4 $input $input.new
 mv $input.new $input
 
 # Sign
