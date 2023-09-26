@@ -98,7 +98,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-20.04]
-        java_version: [11]
+        java_version: [17]
         ruby_version: ['3.0']
         ndk_version: ['25.2.9519653']
     steps:
