@@ -14,6 +14,8 @@ import android.webkit.WebView
 
 import android.content.Intent.ACTION_VIEW
 import android.util.Log
+import android.webkit.URLUtil
+import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import net.activitywatch.android.R
 import java.lang.Thread.sleep
@@ -65,6 +67,24 @@ class WebUIFragment : Fragment() {
                 arguments?.let {
                     it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
                 }
+            }
+
+            // Open external links in external browser
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url.toString()
+                if (URLUtil.isNetworkUrl(url)) {
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        if (!url.contains("//localhost:")) {
+                            // Open the URL in an external browser
+                            val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            startActivity(i)
+                            return true
+                        }
+                    }
+                    // For all other URLs, load them inside the WebView
+                    return false
+                }
+                return true
             }
         }
         myWebView.webViewClient = MyWebViewClient()
