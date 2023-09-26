@@ -18,7 +18,7 @@ jobs:
         ndk_version: ['25.2.9519653']
         node_version: [16]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         submodules: 'recursive'
     - name: Set RELEASE
@@ -26,7 +26,7 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Cache JNI libs
-      uses: actions/cache@v1
+      uses: actions/cache@v3
       id: cache-jniLibs
       env:
         cache-name: jniLibs
@@ -403,6 +403,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/checkout@v3
 
     - name: Download release APK
       uses: actions/download-artifact@v3
@@ -413,6 +414,16 @@ jobs:
     - name: Display structure of downloaded files
       working-directory: dist
       run: ls -R
+
+    # Ruby & Fastlane
+    - name: Set up Ruby
+      uses: actions/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby_version }}
+    - name: Install fastlane
+      run: |
+        gem install bundler
+        bundle install
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2
