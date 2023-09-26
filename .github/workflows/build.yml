@@ -99,7 +99,6 @@ jobs:
       matrix:
         os: [ubuntu-20.04]
         java_version: [17]
-        ruby_version: ['3.0']
         ndk_version: ['25.2.9519653']
     steps:
     - uses: actions/checkout@v2
@@ -127,14 +126,11 @@ jobs:
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
     # Ruby & Fastlane
-    - name: Set up Ruby
-      uses: actions/setup-ruby@v1
+    # version set by .ruby-version
+    - name: Set up Ruby and install fastlane
+      uses: ruby/setup-ruby@v1
       with:
-        ruby-version: ${{ matrix.ruby_version }}
-    - name: Install fastlane
-      run: |
-        gem install bundler
-        bundle install
+        bundler-cache: true
 
     - name: Install age
       uses: adnsio/setup-age-action@v1.2.0
@@ -416,14 +412,11 @@ jobs:
       run: ls -R
 
     # Ruby & Fastlane
-    - name: Set up Ruby
-      uses: actions/setup-ruby@v1
+    # version set by .ruby-version
+    - name: Set up Ruby and install fastlane
+      uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '3.0'
-    - name: Install fastlane
-      run: |
-        gem install bundler
-        bundle install
+        bundler-cache: true
 
     # detect if version tag is stable/beta
     - uses: nowsprinting/check-version-format-action@v2
