@@ -436,7 +436,7 @@ jobs:
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
 
     - name: Release with fastlane
-      if: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
+      if: ${{ steps.version.outputs.is_stable == 'true' }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
       run: |
         bundle exec fastlane supply run --apk dist/*/*.apk
 
