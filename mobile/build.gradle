@@ -2,13 +2,13 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 33
+    compileSdk 34
     ndkVersion "25.2.9519653"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
         minSdkVersion 24
-        targetSdkVersion 33
+        targetSdkVersion 34
 
         // Set in CI on tagged commit
         versionName "0.10.0"

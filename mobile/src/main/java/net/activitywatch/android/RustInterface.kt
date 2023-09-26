@@ -61,7 +61,6 @@ class RustInterface constructor(context: Context? = null) {
 
                 // Start server
                 Log.w(TAG, "Starting server...")
-                val assetDir = context.cacheDir.path + File.separator + "webui"
                 startServer()
 
                 handler.post {
