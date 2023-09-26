@@ -64,7 +64,7 @@ jobs:
         ./aw-server-rust/install-ndk.sh
 
     - name: Cache cargo build
-      uses: actions/cache@v1
+      uses: actions/cache@v3
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       env:
         cache-name: cargo-build-target
