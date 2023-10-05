@@ -32,9 +32,16 @@ platform :android do
 
   desc "Update versionCode to be one higher than the latest on Play Store"
   lane :update_version do
+    gp = google_play_track_version_codes(track: 'production')
+    gb = google_play_track_version_codes(track: 'beta')
+    ga = google_play_track_version_codes(track: 'alpha')
+    gi = google_play_track_version_codes(track: 'internal')
+    max_value = [gp[0].to_i, gb[0].to_i, ga[0].to_i, gi[0].to_i].max
+    version_updated = max_value + 1
+
     increment_version_code(
         gradle_file_path: "mobile/build.gradle",
-        version_code: google_play_track_version_codes.max + 1
+        version_code: version_updated
     )
   end
 
