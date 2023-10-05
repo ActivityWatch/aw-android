@@ -104,11 +104,28 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-
-    # Build in release mode if on a tag/release (longer build times)
-    - name: Set RELEASE
+    
+    - uses: ActivityWatch/check-version-format-action@v2
+      id: version
+      with:
+        prefix: 'v'
+    
+    - name: Echo version
       run: |
+        echo "${{ steps.version.outputs.full }} (stable: ${{ steps.version.outputs.is_stable }})"
+
+    - name: Set RELEASE and SUPPLY_TRACK
+      run: |
+        # Build in release mode if on a tag/release (longer build times)
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
+
+        # Set SUPPLY_TRACK (used by fastlane) depending on is_stable
+        if [[ "${{ steps.version.outputs.is_stable }}" == "true" ]]; then
+          SUPPLY_TRACK="production"
+        else
+          SUPPLY_TRACK="internal"
+        fi
+        echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> $GITHUB_ENV
 
     - name: Set up JDK
       uses: actions/setup-java@v1
@@ -424,6 +441,16 @@ jobs:
       with:
         prefix: 'v'
 
+    - name: Set SUPPLY_TRACK
+      run: |
+        # Set SUPPLY_TRACK (used by fastlane) depending on is_stable
+        if [[ "${{ steps.version.outputs.is_stable }}" == "true" ]]; then
+          SUPPLY_TRACK="production"
+        else
+          SUPPLY_TRACK="internal"
+        fi
+        echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> $GITHUB_ENV
+
     - uses: adnsio/setup-age-action@v1.2.0
     - name: Load secrets
       env:
@@ -436,7 +463,6 @@ jobs:
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
 
     - name: Release with fastlane
-      if: ${{ steps.version.outputs.is_stable == 'true' }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
       run: |
         bundle exec fastlane supply run --apk dist/*.apk
 
