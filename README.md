@@ -35,9 +35,6 @@ If you haven't already, initialize the submodules with: `git submodule update --
 > **Note**
 > If you don't want to go through the hassle of getting Rust up and running, you can download the jniLibs from [aw-server-rust CI artifacts](https://github.com/ActivityWatch/aw-server-rust/actions/workflows/build.yml) and place them in `mobile/src/main/jniLibs` manually instead of following this section.
 
-> **Note**
-> You need to use NDK r25 (25.2.9519653).
-
 To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you can build it with:
 
 ```

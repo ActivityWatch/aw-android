@@ -1,18 +1,17 @@
 package net.activitywatch.android
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.navigation.NavigationView
 import androidx.core.view.GravityCompat
-import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
 import androidx.fragment.app.Fragment
 import android.util.Log
 import net.activitywatch.android.databinding.ActivityMainBinding
-import net.activitywatch.android.databinding.AppBarMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
@@ -41,13 +40,22 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val view = binding.root
         setContentView(view)
 
+        // Set up alarm to send heartbeats
+        val usw = UsageStatsWatcher(this)
+        usw.setupAlarm()
+
+        // If first time, or usage not allowed, show onboarding activity
+        val prefs = AWPreferences(this)
+        if (prefs.isFirstTime() || UsageStatsWatcher.isUsageAllowed(this)) {
+            Log.i(TAG, "First time or usage not allowed, starting onboarding activity")
+            val intent = Intent(this, OnboardingActivity::class.java)
+            startActivity(intent)
+        }
+
         binding.navView.setNavigationItemSelectedListener(this)
 
         val ri = RustInterface(this)
         ri.startServerTask(this)
-
-        val usw = UsageStatsWatcher(this)
-        usw.setupAlarm()
 
         if (savedInstanceState != null) {
             return

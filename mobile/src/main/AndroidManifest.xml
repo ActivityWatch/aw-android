@@ -40,6 +40,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".OnboardingActivity"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:exported="true"/>
+
         <receiver
                 android:name=".watcher.AlarmReceiver"
                 android:enabled="true"

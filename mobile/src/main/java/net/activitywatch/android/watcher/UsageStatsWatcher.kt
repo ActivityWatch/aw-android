@@ -16,6 +16,8 @@ import android.os.Build.VERSION
 import android.os.Build.VERSION_CODES
 import android.provider.Settings
 import android.util.Log
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
@@ -26,58 +28,62 @@ import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
 
+const val bucket_id = "aw-watcher-android-test"
+const val unlock_bucket_id = "aw-watcher-android-unlock"
 
 class UsageStatsWatcher constructor(val context: Context) {
-    private val TAG = "UsageStatsWatcher"
-    private val bucket_id = "aw-watcher-android-test"
-    private val unlock_bucket_id = "aw-watcher-android-unlock"
-
     private val ri = RustInterface(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
 
     var lastUpdated: Instant? = null
 
-    // https://stackoverflow.com/a/54839499/4957939
-    fun getUsageStatsPermissionsStatus(context: Context): PermissionStatus? {
-        if (VERSION.SDK_INT < VERSION_CODES.LOLLIPOP) return PermissionStatus.CANNOT_BE_GRANTED
-        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            context.packageName
-        )
-        val granted = if (mode == AppOpsManager.MODE_DEFAULT) context.checkCallingOrSelfPermission(
-            Manifest.permission.PACKAGE_USAGE_STATS
-        ) == PackageManager.PERMISSION_GRANTED else mode == AppOpsManager.MODE_ALLOWED
-        return if (granted) PermissionStatus.GRANTED else PermissionStatus.DENIED
-    }
 
     enum class PermissionStatus {
         GRANTED, DENIED, CANNOT_BE_GRANTED
     }
 
-    fun isUsageAllowed(): Boolean {
+    companion object {
+        const val TAG = "UsageStatsWatcher"
 
-        // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
-        val applicationInfo: ApplicationInfo = try {
-            context.packageManager.getApplicationInfo(context.packageName, 0)
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(TAG, e.toString())
-            return false
+        fun isUsageAllowed(context: Context): Boolean {
+            // https://stackoverflow.com/questions/27215013/check-if-my-application-has-usage-access-enabled
+            val applicationInfo: ApplicationInfo = try {
+                context.packageManager.getApplicationInfo(context.packageName, 0)
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.e(TAG, e.toString())
+                return false
+            }
+
+            return getUsageStatsPermissionsStatus(context)
         }
 
-        val appOpsManager = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOpsManager.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            applicationInfo.uid,
-            applicationInfo.packageName
-        )
-        // TODO: Use either of below tests, but the 1st test is not working
-        return mode == AppOpsManager.MODE_ALLOWED || getUsageStatsPermissionsStatus(context) == PermissionStatus.GRANTED
+        fun isAccessibilityAllowed(context: Context): Boolean {
+            return getAccessibilityPermissionStatus(context)
+        }
+
+        private fun getUsageStatsPermissionsStatus(context: Context): Boolean {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val mode = appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                context.packageName
+            )
+           return if (mode == AppOpsManager.MODE_DEFAULT) context.checkCallingOrSelfPermission(
+                    Manifest.permission.PACKAGE_USAGE_STATS
+                ) == PackageManager.PERMISSION_GRANTED else mode == AppOpsManager.MODE_ALLOWED
+        }
+
+        private fun getAccessibilityPermissionStatus(context: Context): Boolean {
+            // https://stackoverflow.com/a/54839499/4957939
+            val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+            val accessibilityServices = accessibilityManager.getEnabledAccessibilityServiceList(
+                AccessibilityEvent.TYPES_ALL_MASK)
+            return accessibilityServices.any { it.id.contains(context.packageName) }
+        }
     }
 
     private fun getUSM(): UsageStatsManager? {
-        val usageIsAllowed = isUsageAllowed()
+        val usageIsAllowed = isUsageAllowed(context)
 
         return if (usageIsAllowed) {
             // Get UsageStatsManager stuff

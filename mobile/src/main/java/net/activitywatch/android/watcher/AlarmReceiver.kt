@@ -17,7 +17,7 @@ class AlarmReceiver : BroadcastReceiver() {
             usw.setupAlarm()
         } else if(intent.action == "net.activitywatch.android.watcher.LOG_DATA") {
             Log.w(TAG, "Action ${intent.action}, running sendHeartbeats")
-            if(usw.isUsageAllowed()) {
+            if(UsageStatsWatcher.isUsageAllowed(context)) {
                 usw.sendHeartbeats()
             }
         } else {
