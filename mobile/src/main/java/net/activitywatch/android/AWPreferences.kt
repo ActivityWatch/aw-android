@@ -8,6 +8,7 @@ class AWPreferences(context: Context) {
         context.getSharedPreferences("AWPreferences", Context.MODE_PRIVATE)
 
     // To check if it is the first time the app is being run
+    // Set to false when user finishes onboarding
     fun isFirstTime(): Boolean {
         return sharedPreferences.getBoolean("isFirstTime", true)
     }

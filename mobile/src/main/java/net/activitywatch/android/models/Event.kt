@@ -3,6 +3,7 @@ package net.activitywatch.android.models
 import android.app.usage.UsageEvents
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
@@ -13,9 +14,9 @@ data class Event(val timestamp: Instant, val duration: Double = 0.0, val data: J
             val timestamp = DateTimeUtils.toInstant(java.util.Date(usageEvent.timeStamp))
             val pm = context.packageManager
             val appName = try {
-                pm.getApplicationLabel(pm.getApplicationInfo(usageEvent.packageName, PackageManager.GET_META_DATA))
+                pm.getApplicationLabel(pm.getApplicationInfo(usageEvent.packageName, PackageManager.GET_META_DATA or PackageManager.MATCH_UNINSTALLED_PACKAGES))
             } catch(e: PackageManager.NameNotFoundException) {
-                "Unknown"
+                "Unknown (${usageEvent.packageName})"
             }
 
             // Construct the data object in an exception-safe manner

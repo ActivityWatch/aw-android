@@ -52,6 +52,7 @@ class OnboardingActivity : AppCompatActivity() {
                 // Handle finish button click (e.g., navigate to the main activity)
                 // First, check if the user has granted the usage permission
                 if(UsageStatsWatcher.isUsageAllowed(this)) {
+                    AWPreferences(this).setFirstTimeRunFlag()
                     finish()
                 } else {
                     // Show a snackbar and don't finish the activity

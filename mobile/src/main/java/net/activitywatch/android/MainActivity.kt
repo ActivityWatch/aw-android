@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         // If first time, or usage not allowed, show onboarding activity
         val prefs = AWPreferences(this)
-        if (prefs.isFirstTime() || UsageStatsWatcher.isUsageAllowed(this)) {
+        if (prefs.isFirstTime() || !UsageStatsWatcher.isUsageAllowed(this)) {
             Log.i(TAG, "First time or usage not allowed, starting onboarding activity")
             val intent = Intent(this, OnboardingActivity::class.java)
             startActivity(intent)
