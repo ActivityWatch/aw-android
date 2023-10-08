@@ -45,9 +45,9 @@ if [[ $input == *.apk ]]; then
 fi
 if [[ $input == *.aab ]]; then
     jarsigner -verbose \
-        -keystore android.jks activitywatch \
+        -keystore android.jks \
         -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
-        $input
+        $input activitywatch
 fi
 
 # Move to output destination
