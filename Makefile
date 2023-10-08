@@ -85,7 +85,7 @@ else
 endif
 
 # Signed release APK
-dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)-unsigned.apk
+dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)%.apk
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
