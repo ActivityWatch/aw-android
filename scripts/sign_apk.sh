@@ -47,7 +47,7 @@ if [[ $input == *.aab ]]; then
     jarsigner -verbose \
         -keystore android.jks activitywatch \
         -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
-        $input activitywatch
+        $input
 fi
 
 # Move to output destination
