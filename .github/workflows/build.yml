@@ -89,7 +89,7 @@ jobs:
 
 
   build-apk:
-    name: Build APK (${{ matrix.os }}, java-${{ matrix.java_version }})
+    name: Build APK & AAB (${{ matrix.os }}, java-${{ matrix.java_version }})
     runs-on: ${{ matrix.os }}
     needs: [build-rust]
     env:
@@ -104,12 +104,12 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    
+
     - uses: ActivityWatch/check-version-format-action@v2
       id: version
       with:
         prefix: 'v'
-    
+
     - name: Echo version
       run: |
         echo "${{ steps.version.outputs.full }} (stable: ${{ steps.version.outputs.is_stable }})"
@@ -197,18 +197,25 @@ jobs:
         cat android.jks.age | age -d -i android.jks.key -o android.jks
         rm android.jks.key
 
-    - name: Assemble APK
+    - name: Assemble APK and AAB
       env:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
         make dist/aw-android.apk
+        make dist/aw-android.aab
 
-    - name: Upload release APK
+    - name: Upload APK
       uses: actions/upload-artifact@v3
       with:
         name: aw-android
         path: dist/aw-android*.apk
+
+    - name: Upload AAB
+      uses: actions/upload-artifact@v3
+      with:
+        name: aw-android
+        path: dist/aw-android*.aab
 
   test-e2e:
     name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
