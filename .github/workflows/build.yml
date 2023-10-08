@@ -219,6 +219,10 @@ jobs:
       with:
         submodules: 'recursive'
 
+    - name: Set RELEASE
+      run: |
+        echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
+
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
