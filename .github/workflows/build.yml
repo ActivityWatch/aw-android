@@ -8,15 +8,15 @@ on:
   pull_request:
     branches: [ master ]
 
+env:
+  NDK_VERSION: '25.2.9519653'
+  NODE_VERSION: '16'
+  JAVA_VERSION: '17'
+
 jobs:
   build-rust:
-    name: Build aw-server-rust (ndk-${{ matrix.ndk_version }}, node-${{ matrix.node_version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-        ndk_version: ['25.2.9519653']
-        node_version: [16]
+    name: Build aw-server-rust
+    runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
       with:
@@ -32,7 +32,7 @@ jobs:
         cache-name: jniLibs
       with:
         path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ matrix.ndk_version }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
     - name: Display structure of downloaded files
       if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
@@ -45,8 +45,8 @@ jobs:
     - name: Install NDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
-        sdkmanager "ndk;${{ matrix.ndk_version }}"
-        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
@@ -89,17 +89,11 @@ jobs:
 
 
   build-apk:
-    name: Build APK & AAB (${{ matrix.os }}, java-${{ matrix.java_version }})
-    runs-on: ${{ matrix.os }}
+    name: Build APK & AAB
+    runs-on: ubuntu-20.04
     needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-20.04]
-        java_version: [17]
-        ndk_version: ['25.2.9519653']
     steps:
     - uses: actions/checkout@v2
       with:
@@ -130,15 +124,15 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.java_version }}
+        java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
     - name: Install NDK
       run: |
-        sdkmanager "ndk;${{ matrix.ndk_version }}"
-        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
@@ -183,11 +177,6 @@ jobs:
     - name: Update versionCode
       run: bundle exec fastlane update_version
 
-    # Test
-    - name: Test
-      run: |
-        make test
-
     - name: Load Android secrets
       if: env.KEY_ANDROID_JKS != null
       env:
@@ -217,11 +206,53 @@ jobs:
         name: aw-android
         path: dist/aw-android*.aab
 
+  test:
+    name: Test
+    runs-on: ubuntu-20.04
+    needs: [build-rust]
+    env:
+      SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+    - name: Set up JDK
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+
+    # Android SDK & NDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+    - name: Install NDK
+      run: |
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
+        ls $ANDROID_NDK_HOME
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+    - name: Download JNI libs
+      uses: actions/download-artifact@v3
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs
+    - name: Check that jniLibs present
+      run: |
+        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+
+    # Test
+    - name: Test
+      run: |
+        make test
+
+
   test-e2e:
-    name: Test E2E ${{ matrix.android_avd }} #-${{ matrix.os }}-eAPI-${{ matrix.android_emu_version }}-java-${{ matrix.java_version }}-node-${{ matrix.node_version }}
+    name: Test E2E
     needs: [build-rust]
     if: false  # disabled
-    runs-on: ${{ matrix.os }}
+    runs-on: "macos-12"  # macOS-latest
     env:
       MATRIX_E_SDK: ${{ matrix.android_emu_version }}
       MATRIX_AVD: ${{ matrix.android_avd }}
@@ -229,10 +260,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        os: [macos-12] # macOS-latest,
         android_avd: [Pixel_API_27_AOSP]
-        java_version: [11]
-        ndk_version: ['25.2.9519653']
         include:
           - android_avd: Pixel_API_27_AOSP
             android_emu_version: 27
@@ -291,7 +319,7 @@ jobs:
     - name: Start Android emulator
       timeout-minutes: 30 # ~4min normal - 3x DOSafety
       env:
-        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
+        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
         HOMEBREW_NO_INSTALL_CLEANUP: 1
       run: |
         echo "Starting emulator and waiting for boot to complete...."
@@ -345,15 +373,15 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
-        java-version: ${{ matrix.java_version }}
+        java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
     - name: Install NDK
       run: |
-        sdkmanager "ndk;${{ matrix.ndk_version }}"
-        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ matrix.ndk_version }}"
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
@@ -373,7 +401,7 @@ jobs:
     - name: Screenshot
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       env:
-        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
+        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
       run: |
         adb shell monkey -p net.activitywatch.android.debug 1
         sleep 10
@@ -419,7 +447,7 @@ jobs:
     #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
   release-fastlane:
-    needs: [build-apk]
+    needs: [build-apk, test]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
@@ -474,7 +502,7 @@ jobs:
         bundle exec fastlane supply run --apk dist/*.apk
 
   release-gh:
-    needs: [build-apk]
+    needs: [build-apk, test]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
