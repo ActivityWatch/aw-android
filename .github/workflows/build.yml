@@ -43,7 +43,7 @@ jobs:
     - name: Set up Android SDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       uses: android-actions/setup-android@v2
-    - name: Install NDK
+    - name: Set up Android NDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -82,13 +82,53 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
+  # This needs to be a seperate job since fastlane update_version,
+  # fails if run concurrently (such as in build apk/aab matrix),
+  # thus we need to run it once and and reuse the results.
+  # https://github.com/fastlane/fastlane/issues/13689#issuecomment-439217502
+  get-versionCode:
+    name: Get latest versionCode
+    runs-on: ubuntu-latest
+    outputs:
+      versionCode: ${{ steps.versionCode.outputs.versionCode }}
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+
+
+    # Ruby & Fastlane
+    # version set by .ruby-version
+    - name: Set up Ruby and install fastlane
+      uses: ruby/setup-ruby@v1
+      with:
+        bundler-cache: true
+
+    # Needed for `fastlane update_version`
+    - uses: adnsio/setup-age-action@v1.2.0
+    - name: Load Fastlane secrets
+      env:
+        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+      run: |
+        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+        cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
+          | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
+                   -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
+        rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+    - name: Update versionCode
+      run: bundle exec fastlane update_version
+
+    - name: Output versionCode
+      id: versionCode
+      run: |
+        cat mobile/build.gradle | grep versionCode | sed 's/.*\s\([0-9]*\)$/versionCode=\1/' >> "$GITHUB_OUTPUT"
 
   build-apk:
     name: Build ${{ matrix.type }}
     runs-on: ubuntu-20.04
-    needs: [build-rust]
-    env:
-      SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
+    needs: [build-rust, get-versionCode]
     strategy:
       fail-fast: true
       matrix:
@@ -108,18 +148,10 @@ jobs:
       run: |
         echo "${{ steps.version.outputs.full }} (stable: ${{ steps.version.outputs.is_stable }})"
 
-    - name: Set RELEASE and SUPPLY_TRACK
+    - name: Set RELEASE
       run: |
         # Build in release mode if on a tag/release (longer build times)
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
-
-        # Set SUPPLY_TRACK (used by fastlane) depending on is_stable
-        if [[ "${{ steps.version.outputs.is_stable }}" == "true" ]]; then
-          SUPPLY_TRACK="production"
-        else
-          SUPPLY_TRACK="internal"
-        fi
-        echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> $GITHUB_ENV
 
     - name: Set up JDK
       uses: actions/setup-java@v1
@@ -129,22 +161,12 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Install NDK
+    - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
         ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-
-    # Ruby & Fastlane
-    # version set by .ruby-version
-    - name: Set up Ruby and install fastlane
-      uses: ruby/setup-ruby@v1
-      with:
-        bundler-cache: true
-
-    - name: Install age
-      uses: adnsio/setup-age-action@v1.2.0
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
@@ -161,18 +183,7 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
-    # Needed for `fastlane update_version`
-    - name: Load Fastlane secrets
-      env:
-        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
-      run: |
-        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-        cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
-          | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
-                   -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
-        rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-
-    - name: Set version
+    - name: Set versionName
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
         # Sets versionName, tail used to skip "v" at start of tag name
@@ -180,9 +191,13 @@ jobs:
         sed -i "s/versionName \".*\"/versionName \"$SHORT_VERSION\"/g" \
                 mobile/build.gradle
 
-    - name: Update versionCode
-      run: bundle exec fastlane update_version
+    - name: Set versionCode
+      run: |
+        # Sets versionCode
+        sed -i "s/versionCode .*/versionCode ${{needs.get-versionCode.outputs.versionCode}}/" \
+                mobile/build.gradle
 
+    - uses: adnsio/setup-age-action@v1.2.0
     - name: Load Android secrets
       if: env.KEY_ANDROID_JKS != null
       env:
@@ -229,7 +244,7 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Install NDK
+    - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
         ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
@@ -387,7 +402,7 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Install NDK
+    - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
         ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
@@ -496,7 +511,7 @@ jobs:
         echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> $GITHUB_ENV
 
     - uses: adnsio/setup-age-action@v1.2.0
-    - name: Load secrets
+    - name: Load Android secrets
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |

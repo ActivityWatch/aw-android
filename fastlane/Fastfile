@@ -45,6 +45,15 @@ platform :android do
     )
   end
 
+  desc "Set versionCode to a specific value"
+  lane :set_version do |options|
+    version = options[:version]
+    increment_version_code(
+        gradle_file_path: "mobile/build.gradle",
+        version_code: version
+    )
+  end
+
   desc "Deploy a new version to the Google Play"
   lane :deploy do
     gradle(task: "clean assembleRelease")

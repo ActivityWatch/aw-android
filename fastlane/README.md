@@ -39,6 +39,14 @@ Build a new Beta build
 
 Update versionCode to be one higher than the latest on Play Store
 
+### android set_version
+
+```sh
+[bundle exec] fastlane android set_version
+```
+
+Set versionCode to a specific value
+
 ### android deploy
 
 ```sh
