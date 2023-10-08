@@ -464,7 +464,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Download release APK
+    - name: Download APK & AAB
       uses: actions/download-artifact@v3
       with:
         name: aw-android
@@ -510,7 +510,8 @@ jobs:
 
     - name: Release with fastlane
       run: |
-        bundle exec fastlane supply run --apk dist/*.apk
+        # bundle exec fastlane supply run --apk dist/*.apk
+        bundle exec fastlane supply run --aab dist/*.aab
 
   release-gh:
     needs: [build-apk, test]
@@ -519,7 +520,7 @@ jobs:
     steps:
 
     # Will download all artifacts to path
-    - name: Download release APK
+    - name: Download release APK & AAB
       uses: actions/download-artifact@v3
       with:
         name: aw-android
@@ -541,6 +542,8 @@ jobs:
       with:
         draft: true
         prerelease: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
-        files: dist/*.apk
+        files: |
+          dist/*.apk
+          dist/*.aab
         # body_path: dist/release_notes/release_notes.md
 
