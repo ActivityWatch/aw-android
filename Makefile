@@ -60,7 +60,7 @@ install-apk-debug: $(APKDIR)/debug/mobile-debug.apk
 	adb install $(APKDIR)/debug/mobile-debug-androidTest.apk
 
 # APK targets
-$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)%.apk:
+$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).apk:
 	TERM=xterm ./gradlew assemble$(RELEASE_TYPE_CAPS)
 	tree $(APKDIR)
 
@@ -85,7 +85,7 @@ else
 endif
 
 # Signed release APK
-dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)%.apk
+dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).apk
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
@@ -173,9 +173,4 @@ $(WEBUI_DISTDIR):
 clean:
 	rm -rf mobile/src/main/assets/webui
 	rm -rf mobile/src/main/jniLibs
-
-test:
-	bundle exec fastlane test
-	# ./gradlew clean lint test
-	# ./gradlew connectedAndroidTest # || true
 
