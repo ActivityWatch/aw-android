@@ -61,7 +61,7 @@ install-apk-debug: $(APKDIR)/debug/mobile-debug.apk
 	adb install $(APKDIR)/debug/mobile-debug-androidTest.apk
 
 # APK targets
-$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).apk:
+$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE_UNSIGNED).apk:
 	TERM=xterm ./gradlew assemble$(RELEASE_TYPE_CAPS)
 	tree $(APKDIR)
 
