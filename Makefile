@@ -5,9 +5,11 @@ SHELL := /bin/bash
 #  - https://developer.android.com/ndk/guides/android_mk
 
 RELEASE_TYPE = $(shell test -n "$$RELEASE" && $$RELEASE && echo 'release' || echo 'debug')
+RELEASE_TYPE_CAPS = $(shell test -n "$$RELEASE" && $$RELEASE && echo 'Release' || echo 'Debug')
 HAS_SECRETS = $(shell test -n "$$JKS_KEYPASS" && echo 'true' || echo 'false')
 
 APKDIR = mobile/build/outputs/apk
+AABDIR = mobile/build/outputs/bundle
 
 WEBUI_SRCDIR := aw-server-rust/aw-webui
 WEBUI_DISTDIR := $(WEBUI_SRCDIR)/dist
@@ -15,6 +17,9 @@ WEBUI_DISTDIR := $(WEBUI_SRCDIR)/dist
 # Main targets
 all: aw-server-rust
 build: all
+
+# builds an app bundle, puts it in dist
+build-bundle: dist/aw-android.aab
 
 # builds a complete, signed apk, puts it in dist
 build-apk: dist/aw-android.apk
@@ -55,32 +60,43 @@ install-apk-debug: $(APKDIR)/debug/mobile-debug.apk
 	adb install $(APKDIR)/debug/mobile-debug-androidTest.apk
 
 # APK targets
-$(APKDIR)/release/mobile-release-unsigned.apk:
-	TERM=xterm ./gradlew assembleRelease
+$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).apk:
+	TERM=xterm ./gradlew assemble$(RELEASE_TYPE_CAPS)
 	tree $(APKDIR)
 
-$(APKDIR)/debug/mobile-debug.apk:
-	TERM=xterm ./gradlew assembleDebug
-	tree $(APKDIR)
-
-$(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk:
+$(APKDIR)/androidTest/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)-androidTest.apk:
 	TERM=xterm ./gradlew assembleAndroidTest
 	tree $(APKDIR)
 
-# Signed release APK
-dist/aw-android.apk: $(APKDIR)/release/mobile-release-unsigned.apk
-	@# TODO: Name the APK based on the version number or commit hash.
+# App bundle targets
+$(AABDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).aab:
+	TERM=xterm ./gradlew bundle$(RELEASE_TYPE_CAPS)
+	tree $(AABDIR)
+
+# Signed release bundle
+dist/aw-android.aab: $(AABDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).aab
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
-	@echo "No key secrets set, not signing APK"
+	@echo "No key secrets set, not signing"
+	cp $< $@
+else
+	./scripts/sign_apk.sh $< $@
+endif
+
+# Signed release APK
+dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).apk
+	mkdir -p dist
+	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
+ifneq ($(HAS_SECRETS), true)
+	@echo "No key secrets set, not signing"
 	cp $< $@
 else
 	./scripts/sign_apk.sh $< $@
 endif
 
 # for mobile-debug.apk and mobile-debug-androidTest.apk
-dist/debug/%: $(APKDIR)/debug/%
+dist/$(RELEASE_TYPE)/%: $(APKDIR)/$(RELEASE_TYPE)/%
 	mkdir -p dist
 	cp $< $@
 
@@ -103,7 +119,7 @@ TARGET_x64 := $(TARGET)/x86_64-linux-android
 TARGET_x86 := $(TARGET)/i686-linux-android
 
 # Build webui specifically for Android (disabled update check, different default views, etc)
-export ON_ANDROID := -- --android  
+export ON_ANDROID := -- --android
 
 aw-server-rust: $(JNILIBS)
 
@@ -157,9 +173,4 @@ $(WEBUI_DISTDIR):
 clean:
 	rm -rf mobile/src/main/assets/webui
 	rm -rf mobile/src/main/jniLibs
-
-test:
-	bundle exec fastlane test
-	# ./gradlew clean lint test
-	# ./gradlew connectedAndroidTest # || true
 
