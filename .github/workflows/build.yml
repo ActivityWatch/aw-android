@@ -84,11 +84,16 @@ jobs:
 
 
   build-apk:
-    name: Build APK & AAB
+    name: Build ${{ matrix.type }}
     runs-on: ubuntu-20.04
     needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
+    strategy:
+      fail-fast: true
+      matrix:
+        type: ['apk', 'aab']
+
     steps:
     - uses: actions/checkout@v2
       with:
@@ -187,25 +192,18 @@ jobs:
         cat android.jks.age | age -d -i android.jks.key -o android.jks
         rm android.jks.key
 
-    - name: Assemble APK and AAB
+    - name: Assemble
       env:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
-        make dist/aw-android.apk
-        make dist/aw-android.aab
+        make dist/aw-android.${{ matrix.type }}
 
-    - name: Upload APK
+    - name: Upload
       uses: actions/upload-artifact@v3
       with:
         name: aw-android
-        path: dist/aw-android*.apk
-
-    - name: Upload AAB
-      uses: actions/upload-artifact@v3
-      with:
-        name: aw-android
-        path: dist/aw-android*.aab
+        path: dist/aw-android*.${{ matrix.type }}
 
   test:
     name: Test
