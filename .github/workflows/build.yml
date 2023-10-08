@@ -33,6 +33,7 @@ jobs:
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+
     - name: Display structure of downloaded files
       if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
@@ -80,12 +81,6 @@ jobs:
     - name: Check that jniLibs present
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
-
-    - name: Upload JNI libs
-      uses: actions/upload-artifact@v3
-      with:
-        name: jniLibs
-        path: mobile/src/main/jniLibs/
 
 
   build-apk:
@@ -146,11 +141,17 @@ jobs:
     - name: Install age
       uses: adnsio/setup-age-action@v1.2.0
 
-    - name: Download JNI libs
-      uses: actions/download-artifact@v3
+    # Restores jniLibs from cache
+    # `actions/cache/restore` only restores, without saving back in a post-hook
+    - uses: actions/cache/restore@v3
+      id: cache-jniLibs
+      env:
+        cache-name: jniLibs
       with:
-        name: jniLibs
-        path: mobile/src/main/jniLibs
+        path: mobile/src/main/jniLibs/
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: true
+
     - name: Check that jniLibs present
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
@@ -233,11 +234,17 @@ jobs:
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
-    - name: Download JNI libs
-      uses: actions/download-artifact@v3
+
+    # Restores jniLibs from cache
+    # `actions/cache/restore` only restores, without saving back in a post-hook
+    - uses: actions/cache/restore@v3
+      id: cache-jniLibs
+      env:
+        cache-name: jniLibs
       with:
-        name: jniLibs
-        path: mobile/src/main/jniLibs
+        path: mobile/src/main/jniLibs/
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: true
     - name: Check that jniLibs present
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
