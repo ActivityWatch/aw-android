@@ -117,8 +117,14 @@ jobs:
                    -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
 
+    # Retry this, in case there are concurrent jobs, which may lead to the error:
+    #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
-      run: bundle exec fastlane update_version
+      uses: Wandalen/wretry.action@master
+      with:
+        command: bundle exec fastlane update_version
+        attempt_limit: 3
+        attempt_delay: 20000
 
     - name: Output versionCode
       id: versionCode
