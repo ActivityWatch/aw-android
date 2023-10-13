@@ -92,6 +92,8 @@ class UsageStatsWatcher constructor(val context: Context) {
         } else {
             Log.w(TAG, "Was not allowed access to UsageStats, enable in settings.")
 
+            // Unused, deprecated in favor of OnboardingActivity
+            /*
             Handler(Looper.getMainLooper()).post {
                 // Create an alert dialog to inform the user
                 AlertDialog.Builder(context)
@@ -106,6 +108,7 @@ class UsageStatsWatcher constructor(val context: Context) {
                     }
                     .show()
             }
+             */
             null
         }
     }

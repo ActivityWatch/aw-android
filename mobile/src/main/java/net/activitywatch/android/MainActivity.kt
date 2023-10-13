@@ -36,13 +36,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        val view = binding.root
-        setContentView(view)
-
-        // Set up alarm to send heartbeats
-        val usw = UsageStatsWatcher(this)
-        usw.setupAlarm()
 
         // If first time, or usage not allowed, show onboarding activity
         val prefs = AWPreferences(this)
@@ -51,6 +44,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             val intent = Intent(this, OnboardingActivity::class.java)
             startActivity(intent)
         }
+
+        // Set up UI
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        val view = binding.root
+        setContentView(view)
+
+        // Set up alarm to send heartbeats
+        val usw = UsageStatsWatcher(this)
+        usw.setupAlarm()
 
         binding.navView.setNavigationItemSelectedListener(this)
 

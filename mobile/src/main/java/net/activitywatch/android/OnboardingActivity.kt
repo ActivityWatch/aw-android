@@ -37,13 +37,22 @@ class OnboardingActivity : AppCompatActivity() {
         viewPager.adapter = OnboardingAdapter(this)
         TabLayoutMediator(tabLayout, viewPager) { _, _ -> }.attach()
 
+        val nextButton = findViewById<Button>(R.id.nextButton)
+        val backButton = findViewById<Button>(R.id.backButton)
+
+        // helper function to update texts/visibility of buttons on page change
+        fun updateButtons() {
+            nextButton.text = if (viewPager.currentItem == numPages - 1) "Finish" else "Continue"
+            backButton.visibility = if (viewPager.currentItem > 0) View.VISIBLE else View.GONE
+        }
+
         // If not users first time, skip to the last page
         val prefs = AWPreferences(this)
         if (!prefs.isFirstTime()) {
             viewPager.currentItem = OnboardingPage.ACCESSIBILITY_PERMISSION.ordinal
+            updateButtons()
         }
 
-        val nextButton = findViewById<Button>(R.id.nextButton)
         nextButton.setOnClickListener {
             val currentItem = viewPager.currentItem
             if (currentItem < numPages - 1) {
@@ -56,19 +65,35 @@ class OnboardingActivity : AppCompatActivity() {
                     finish()
                 } else {
                     // Show a snackbar and don't finish the activity
-                    val snackbar = Snackbar.make(viewPager, "Please grant usage access permission", Snackbar.LENGTH_LONG)
+                    val snackbar = Snackbar.make(viewPager, "Please grant usage access permission, they are necessary for the core function of the app.", Snackbar.LENGTH_LONG)
                     snackbar.show()
                 }
             }
+            updateButtons()
+        }
+
+        backButton.setOnClickListener {
+            val currentItem = viewPager.currentItem
+            if (currentItem > 0) {
+                viewPager.currentItem = currentItem - 1
+            }
+            updateButtons()
         }
 
         // Update the text of the next button based on the current page
         viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
-                // if on last page, disable button until permission is granted
-                nextButton.text = if (position == numPages - 1) "Finish" else "Continue"
+                updateButtons()
             }
         })
+    }
+
+    override fun onBackPressed() {
+        // If back button is pressed, exit the app,
+        // since we don't want to allow the user to accidentally skip onboarding.
+        // (Google Play policy, due to sensitive permissions)
+        // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
+        finishAffinity()
     }
 }
 
