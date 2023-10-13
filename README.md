@@ -54,6 +54,17 @@ To build aw-webui you need a recent version of node/npm installed. You can then 
 
 Once both aw-server-rust and aw-webui is built, you can build the Android app as any other Android app using Android Studio.
 
+### Making a release
+
+To make a release, make a signed tag and push it to GitHub:
+
+```sh
+git tag -s v0.1.0
+git push origin refs/tags/v0.1.0
+```
+
+This will trigger a GitHub Actions workflow which will build the app and upload it to GitHub releases, and deploy it to the Play Store (including the metadata in `./fastlane/metadata/android`).
+
 ## More info
 
 For more info, check out the main [ActivityWatch repo](https://github.com/ActivityWatch/activitywatch).

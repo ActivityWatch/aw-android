@@ -16,8 +16,9 @@ WEBUI_SRCDIR := aw-server-rust/aw-webui
 WEBUI_DISTDIR := $(WEBUI_SRCDIR)/dist
 
 # Main targets
-all: aw-server-rust
+all: aw-server-rust metadata
 build: all
+metadata: fastlane/metadata/android/en-US/images/icon.png
 
 # builds an app bundle, puts it in dist
 build-bundle: dist/aw-android.aab
@@ -113,11 +114,11 @@ JNI_arm7 := $(JNILIBS)/armeabi-v7a
 JNI_x86 := $(JNILIBS)/x86
 JNI_x64 := $(JNILIBS)/x86_64
 
-TARGET := aw-server-rust/target
-TARGET_arm7 := $(TARGET)/armv7-linux-androideabi
-TARGET_arm8 := $(TARGET)/aarch64-linux-android
-TARGET_x64 := $(TARGET)/x86_64-linux-android
-TARGET_x86 := $(TARGET)/i686-linux-android
+TARGETDIR := aw-server-rust/target
+TARGETDIR_arm7 := $(TARGETDIR)/armv7-linux-androideabi
+TARGETDIR_arm8 := $(TARGETDIR)/aarch64-linux-android
+TARGETDIR_x64 := $(TARGETDIR)/x86_64-linux-android
+TARGETDIR_x86 := $(TARGETDIR)/i686-linux-android
 
 # Build webui specifically for Android (disabled update check, different default views, etc)
 export ON_ANDROID := -- --android
@@ -130,18 +131,19 @@ $(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/l
 
 # There must be a better way to do this without repeating almost the same rule over and over?
 # NOTE: These must be hard links for CI caching to work
-$(JNI_arm7)/libaw_server.so: $(TARGET_arm7)/$(RELEASE_TYPE)/libaw_server.so
+$(JNI_arm7)/libaw_server.so: $(TARGETDIR_arm7)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -fnv $$(pwd)/$^ $@
-$(JNI_arm8)/libaw_server.so: $(TARGET_arm8)/$(RELEASE_TYPE)/libaw_server.so
+	# if target is empty, then create symlink
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "arm" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_arm8)/libaw_server.so: $(TARGETDIR_arm8)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -fnv $$(pwd)/$^ $@
-$(JNI_x86)/libaw_server.so: $(TARGET_x86)/$(RELEASE_TYPE)/libaw_server.so
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "arm64" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_x86)/libaw_server.so: $(TARGETDIR_x86)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -fnv $$(pwd)/$^ $@
-$(JNI_x64)/libaw_server.so: $(TARGET_x64)/$(RELEASE_TYPE)/libaw_server.so
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_x64)/libaw_server.so: $(TARGETDIR_x64)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
-	ln -fnv $$(pwd)/$^ $@
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86_64" ]; then ln -fnv $$(pwd)/$^ $@; fi
 
 RUSTFLAGS_ANDROID="-C debuginfo=2 -Awarnings"
 # Explanation of RUSTFLAGS:
@@ -169,9 +171,18 @@ $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES) $(WEBUI_DIS
 .PHONY: $(WEBUI_DISTDIR)
 $(WEBUI_DISTDIR):
 	# Ideally this sub-Makefile should not rebuild unless files have changed
-	make --directory=aw-server-rust/aw-webui build
+	# Don't run if SKIP_WEBUI is set
+	if [ "$$SKIP_WEBUI" == "true" ]; then \
+		echo "Skipping aw-webui build, as SKIP_WEBUI is set"; \
+	else \
+		echo "Building aw-webui"; \
+		make --directory=aw-server-rust/aw-webui build; \
+	fi
 
 clean:
 	rm -rf mobile/src/main/assets/webui
 	rm -rf mobile/src/main/jniLibs
 
+.PHONY: fastlane/metadata/android/en-US/images/icon.png
+fastlane/metadata/android/en-US/images/icon.png: aw-server-rust/aw-webui/media/logo/logo.png
+	convert $< -resize 75% -gravity center -background white -extent 512x512 $@
