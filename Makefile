@@ -15,6 +15,10 @@ AABDIR = mobile/build/outputs/bundle
 WEBUI_SRCDIR := aw-server-rust/aw-webui
 WEBUI_DISTDIR := $(WEBUI_SRCDIR)/dist
 
+# NOTE: you have to download bundletool manually and set this path
+#		https://github.com/google/bundletool/releases
+BUNDLETOOL := java -jar ~/Downloads/bundletool-all-1.15.5.jar
+
 # Main targets
 all: aw-server-rust metadata
 build: all
@@ -25,6 +29,27 @@ build-bundle: dist/aw-android.aab
 
 # builds a complete, signed apk, puts it in dist
 build-apk: dist/aw-android.apk
+
+# Attempts at working with bundletool to build device-specific APKs
+# See: https://github.com/ActivityWatch/aw-android/issues/61
+dist/aw-android.apks:
+	rm -rf dist/aw-android.apks
+	$(BUNDLETOOL) \
+		build-apks --bundle=dist/aw-android.aab --output=dist/aw-android.apks
+
+# Extracts device-specific APKs from the apks bundle
+build-device-specific-apks:
+	# TODO: add arm(7), x86, x86_64
+	$(BUNDLETOOL) \
+		extract-apks \
+		--apks=dist/aw-android.apks \
+		--output-dir=dist/splits/arm64 \
+		--device-spec=scripts/device-arm64.json
+
+# Useful for inspecting the contents of the apks
+unzip-apks: dist/aw-android.apks
+	rm -rf dist/apks
+	unzip -o dist/aw-android.apks -d dist/apks
 
 # builds debug and test apks (unsigned)
 build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk
