@@ -52,13 +52,11 @@ jobs:
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
     # Rust
-    - name: Set up Rust nightly
-      uses: actions-rs/toolchain@v1
+    - name: Set up Rust
+      id: toolchain
+      uses: dtolnay/rust-toolchain@stable
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
+
     - name: Set up Rust toolchain for Android NDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
@@ -71,7 +69,10 @@ jobs:
         cache-name: cargo-build-target
       with:
         path: aw-server-rust/target
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-${{ hashFiles('**/Cargo.lock') }}
+        # key needs to contain cachekey due to https://github.com/ActivityWatch/aw-server-rust/issues/180
+        key: ${{ env.cache-name }}-${{ runner.os }}-release-${{ env.RELEASE }}-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ env.cache-name }}-${{ runner.os }}-release-${{ env.RELEASE }}-${{ steps.toolchain.outputs.cachekey }}-
 
     - name: Build aw-server-rust
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
