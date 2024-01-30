@@ -16,7 +16,7 @@ env:
 jobs:
   build-rust:
     name: Build aw-server-rust
-    runs-on: ubuntu-20.04
+    runs-on: ubicloud
     steps:
     - uses: actions/checkout@v3
       with:
