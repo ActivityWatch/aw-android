@@ -16,7 +16,7 @@ env:
 jobs:
   build-rust:
     name: Build aw-server-rust
-    runs-on: ubicloud
+    runs-on: ubicloud-standard-8
     steps:
     - uses: actions/checkout@v3
       with:
@@ -134,7 +134,7 @@ jobs:
 
   build-apk:
     name: Build ${{ matrix.type }}
-    runs-on: ubuntu-20.04
+    runs-on: ubicloud-standard-4
     needs: [build-rust, get-versionCode]
     strategy:
       fail-fast: true
@@ -284,7 +284,7 @@ jobs:
     needs: [build-rust]
     #if: false  # disabled
     #runs-on: "macos-12"  # macOS-latest
-    runs-on: ubicloud
+    runs-on: ubicloud-standard-8
     env:
       MATRIX_E_SDK: ${{ matrix.android_emu_version }}
       MATRIX_AVD: ${{ matrix.android_avd }}
