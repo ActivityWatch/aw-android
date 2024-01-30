@@ -300,9 +300,14 @@ jobs:
           # - android_avd: Pixel_API_32_AOSP
           #   android_emu_version: 32
     steps:
+
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
+
+    - name: Set RELEASE
+      run: |
+        echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
