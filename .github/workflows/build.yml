@@ -324,10 +324,13 @@ jobs:
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
+    - name: Install intel-haxm
+      if: runner.os == 'macOS'
+      run: brew install intel-haxm
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
-        brew install intel-haxm
         # Install AVD files
         echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
@@ -366,6 +369,7 @@ jobs:
       run: |
         echo "Starting emulator and waiting for boot to complete...."
         ls -la $ANDROID_HOME/emulator
+        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
         nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
