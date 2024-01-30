@@ -282,8 +282,9 @@ jobs:
   test-e2e:
     name: Test E2E
     needs: [build-rust]
-    if: false  # disabled
-    runs-on: "macos-12"  # macOS-latest
+    #if: false  # disabled
+    #runs-on: "macos-12"  # macOS-latest
+    runs-on: ubicloud
     env:
       MATRIX_E_SDK: ${{ matrix.android_emu_version }}
       MATRIX_AVD: ${{ matrix.android_avd }}
