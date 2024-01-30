@@ -304,11 +304,16 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Download JNI libs
-      uses: actions/download-artifact@v3
+    # Restores jniLibs from cache
+    # `actions/cache/restore` only restores, without saving back in a post-hook
+    - uses: actions/cache/restore@v3
+      id: cache-jniLibs
+      env:
+        cache-name: jniLibs
       with:
-        name: jniLibs
-        path: mobile/src/main/jniLibs
+        path: mobile/src/main/jniLibs/
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: true
 
     - name: Display structure of downloaded files
       run: |
