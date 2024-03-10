@@ -97,6 +97,7 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
+        myWebView.addJavascriptInterface(WebAppInterface(context), "Android")
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
@@ -143,5 +144,26 @@ class WebUIFragment : Fragment() {
                     putString(ARG_URL, url)
                 }
             }
+    }
+}
+
+class WebAppInterface(private val mContext: Context) {
+    @JavascriptInterface
+    fun downloadCSV(csv: String, filename: String) {
+        downloadFile(csv, filename, "text/csv")
+    }
+
+    @JavascriptInterface
+    fun downloadJSON(csv: String, filename: String) {
+        downloadFile(csv, filename, "application/json")
+    }
+
+    fun downloadFile(csv: String, filename: String, mimetype: String) {
+        val file = File(mContext.getExternalFilesDir(null), filename)
+        file.writeText(csv)
+        val intent = Intent(Intent.ACTION_VIEW)
+        intent.setDataAndType(Uri.fromFile(file), mimetype)
+        intent.flags = Intent.FLAG_ACTIVITY_NO_HISTORY
+        mContext.startActivity(intent)
     }
 }
