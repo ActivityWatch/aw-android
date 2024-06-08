@@ -38,7 +38,7 @@ If you haven't already, initialize the submodules with: `git submodule update --
 
 To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you can build it with:
 
-```
+```sh
 export ANDROID_NDK_HOME=`pwd`/aw-server-rust/NDK  # The path to your NDK
 pushd aw-server-rust && ./install-ndk.sh; popd    # This configures the NDK for use with Rust, and installs the NDK if missing
 env RELEASE=false make aw-server-rust             # Set RELEASE=true to build in release mode (slower build, harder to debug)
