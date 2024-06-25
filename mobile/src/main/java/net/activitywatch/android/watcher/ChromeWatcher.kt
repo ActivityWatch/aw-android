@@ -56,7 +56,7 @@ class ChromeWatcher : AccessibilityService() {
         }
 
         try {
-            if (event != null && event.source != null) {
+            if (event.source != null) {
                 // Get URL
                 val urlBars = event.source!!.findAccessibilityNodeInfosByViewId("com.android.chrome:id/url_bar")
                 if (urlBars.any()) {
@@ -65,10 +65,13 @@ class ChromeWatcher : AccessibilityService() {
                 }
 
                 // Get title
-                var webView = findWebView(event.source!!)
+                val webView = findWebView(event.source!!)
                 if (webView != null) {
-                    lastTitle = webView.text.toString()
-                    Log.i(TAG, "Title: ${lastTitle}")
+                    val title = webView.text.toString()
+                    if (title != lastTitle) {
+                        lastTitle = title
+                        Log.i(TAG, "Title: ${lastTitle}")
+                    }
                 }
             }
         }
@@ -78,9 +81,6 @@ class ChromeWatcher : AccessibilityService() {
     }
 
     fun findWebView(info : AccessibilityNodeInfo) : AccessibilityNodeInfo? {
-        if(info == null)
-            return null
-
         if(info.className == "android.webkit.WebView" && info.text != null)
             return info
 
@@ -90,17 +90,17 @@ class ChromeWatcher : AccessibilityService() {
             if (webView != null) {
                 return webView
             }
-            if(child != null){
-                child.recycle()
-            }
+            child?.recycle()
         }
 
         return null
     }
 
     fun onUrl(newUrl : String?) {
-        Log.i(TAG, "Url: ${newUrl}")
         if (newUrl != lastUrl) { // URL changed
+            if (newUrl != null) {
+                Log.i(TAG, "Url: $newUrl")
+            }
             if (lastUrl != null) {
                 // Log last URL and title as a completed browser event.
                 // We wait for the event to complete (marked by a change in URL) to ensure that
