@@ -53,6 +53,15 @@ class RustInterface constructor(context: Context? = null) {
 
     fun startServerTask(context: Context) {
         if(!serverStarted) {
+            // check if port 5600 is already in use
+            try {
+                val socket = java.net.ServerSocket(5600)
+                socket.close()
+            } catch(e: java.net.BindException) {
+                Log.e(TAG, "Port 5600 is already in use, server probably already started")
+                return
+            }
+
             serverStarted = true
             val executor = Executors.newSingleThreadExecutor()
             val handler = Handler(Looper.getMainLooper())
@@ -65,6 +74,8 @@ class RustInterface constructor(context: Context? = null) {
 
                 handler.post {
                     // will run on UI thread after the task is done
+                    Log.i(TAG, "Server finished")
+                    serverStarted = false
                 }
             }
             Log.w(TAG, "Server started")
