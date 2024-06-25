@@ -11,10 +11,10 @@ android {
         targetSdkVersion 34
 
         // Set in CI on tagged commit
-        versionName "0.12.0"
+        versionName "0.12.1"
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 26
+        versionCode 34
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // NOTE: This only works for API level 28 and above
