@@ -11,6 +11,8 @@ android {
         targetSdkVersion 34
 
         // Set in CI on tagged commit
+        // FIXME: should be set before tagging, so that F-droid picks it up correctly
+        //        https://gitlab.com/fdroid/fdroiddata/-/merge_requests/11786?commit_id=d2cedcbe3d26db59378d582a8cf952af16b6407f#note_1966750559
         versionName "0.12.1"
 
         // Set in CI by `bundle exec fastlane update_version`
