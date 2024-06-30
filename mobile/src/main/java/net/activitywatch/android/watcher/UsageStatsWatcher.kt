@@ -190,53 +190,27 @@ class UsageStatsWatcher constructor(val context: Context) {
             // Store activities here that have had a RESUMED but not a PAUSED event.
             // (to handle out-of-order events)
             //val activeActivities = [];
-
-            // TODO: Fix issues that occur when usage stats events are out of order (RESUME before PAUSED)
             var heartbeatsSent = 0
-            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
-            nextEvent@ while(usageEvents.hasNextEvent()) {
-                val event = UsageEvents.Event()
-                usageEvents.getNextEvent(event)
-
-                // Log screen unlock
-                if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
-                    if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
-                        val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
-                        // NOTE: getLastEventTime() returns the last time of an event from  the activity bucket(bucket_id)
-                        // Therefore, if an unlock happens after last event from main bucket, unlock event will get sent twice.
-                        // Fortunately not an issue because identical events will get merged together (see heartbeats)
-                        ri.heartbeatHelper(unlock_bucket_id, timestamp, 0.0, JSONObject(), 0.0)
-                    }
-                    // Not sure which events are triggered here, so we use a (probably safe) fallback
-                    //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
-                    continue@nextEvent
-                }
-
-                // Log activity
-                val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
-                val pulsetime: Double
-                when(event.eventType) {
-                    UsageEvents.Event.ACTIVITY_RESUMED -> {
-                        // ACTIVITY_RESUMED: Activity was opened/reopened
-                        pulsetime = 1.0
-                    }
-                    UsageEvents.Event.ACTIVITY_PAUSED -> {
-                        // ACTIVITY_PAUSED: Activity was moved to background
-                        pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                    }
-                    else -> {
-                        Log.w(TAG, "This should never happen!")
-                        continue@nextEvent
-                    }
-                }
-
-                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                if(heartbeatsSent % 100 == 0) {
-                    publishProgress(awEvent.timestamp)
-                }
+            val usageStats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, 0,
+                Long.MAX_VALUE)
+            for (usageStat in usageStats) {
+                val event = Event.fromUsageStats(usageStat, context, includeClassname = true)
+                ri.heartbeatHelper(bucket_id, event.timestamp, event.duration, event.data, 1.0)
                 heartbeatsSent++
             }
+            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            // handle only screen unlock events
+            while(usageEvents.hasNextEvent()) {
+                val event = UsageEvents.Event()
+                usageEvents.getNextEvent(event)
+                if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
+                    val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
+                    ri.heartbeatHelper(unlock_bucket_id, timestamp, 0.0, JSONObject(), 0.0)
+                    heartbeatsSent++
+                }
+            }
             return heartbeatsSent
+
         }
 
         override fun onProgressUpdate(vararg progress: Instant) {
