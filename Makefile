@@ -210,4 +210,4 @@ clean:
 
 .PHONY: fastlane/metadata/android/en-US/images/icon.png
 fastlane/metadata/android/en-US/images/icon.png: aw-server-rust/aw-webui/media/logo/logo.png
-	convert $< -resize 75% -gravity center -background white -extent 512x512 $@
+	magick $< -resize 75% -gravity center -background white -extent 512x512 $@
