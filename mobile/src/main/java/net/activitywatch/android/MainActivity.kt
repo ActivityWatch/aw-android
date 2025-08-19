@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // Ensures data is always fresh when app is opened,
         // even if it was up to an hour since the last logging-alarm was triggered.
         val usw = UsageStatsWatcher(this)
+        val mode = if (usw.isUsingDiscreteEvents()) "discrete event insertion" else "heartbeat merging"
+        Log.i("MainActivity", "Using $mode mode for event tracking")
         usw.sendHeartbeats()
     }
 
