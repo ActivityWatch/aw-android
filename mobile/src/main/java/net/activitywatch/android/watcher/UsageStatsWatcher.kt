@@ -21,6 +21,7 @@ import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
+import net.activitywatch.android.watcher.SessionEventWatcher
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
@@ -34,8 +35,10 @@ const val unlock_bucket_id = "aw-watcher-android-unlock"
 class UsageStatsWatcher constructor(val context: Context) {
     private val ri = RustInterface(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    private val sessionWatcher = SessionEventWatcher(context)
 
     var lastUpdated: Instant? = null
+    var useSessionBasedEvents = true // Toggle between individual events and session-based events
 
 
     enum class PermissionStatus {
@@ -261,8 +264,63 @@ class UsageStatsWatcher constructor(val context: Context) {
      * Returns the number of events sent
      */
     fun sendHeartbeats() {
-        Log.w(TAG, "Starting SendHeartbeatTask")
-        SendHeartbeatsTask().execute()
+        if (useSessionBasedEvents) {
+            Log.w(TAG, "Starting Session-based events")
+            sessionWatcher.sendSessionEvents()
+        } else {
+            Log.w(TAG, "Starting SendHeartbeatTask (individual events)")
+            SendHeartbeatsTask().execute()
+        }
     }
+
+    /**
+     * Send session-based events for today only
+     */
+    fun sendSessionEventsForToday() {
+        sessionWatcher.forceRefreshToday()
+    }
+
+    /**
+     * Send session-based events for the last N days
+     */
+    fun sendSessionEventsForLastDays(numberOfDays: Int) {
+        sessionWatcher.sendSessionEventsForLastDays(numberOfDays)
+    }
+
+    /**
+     * Enable or disable session-based events
+     */
+    fun setSessionBasedEvents(enabled: Boolean) {
+        useSessionBasedEvents = enabled
+        Log.i(TAG, "Session-based events ${if (enabled) "enabled" else "disabled"}")
+    }
+
+    /**
+     * Enable discrete event insertion mode (recommended for accuracy)
+     */
+    fun enableDiscreteEventMode() {
+        setSessionBasedEvents(true)
+        Log.i(TAG, "Switched to discrete event insertion mode (insert_event with pulsetime=0)")
+    }
+
+    /**
+     * Enable heartbeat mode (traditional merging behavior)
+     */
+    fun enableHeartbeatMode() {
+        setSessionBasedEvents(false)
+        Log.i(TAG, "Switched to heartbeat mode (traditional event merging)")
+    }
+
+    /**
+     * Check if currently using discrete events
+     */
+    fun isUsingDiscreteEvents(): Boolean = useSessionBasedEvents
+
+    /**
+     * Get current timeline for analysis
+     */
+    fun getTodayTimeline() = sessionWatcher.getTimelineForDay(
+        net.activitywatch.android.utils.SessionUtils.getStartOfDay()
+    )
 
 }

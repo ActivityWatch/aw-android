@@ -91,11 +91,44 @@ class RustInterface constructor(context: Context? = null) {
         }
     }
 
+    /**
+     * Send a heartbeat event that may be merged with nearby events.
+     *
+     * Heartbeats are useful for:
+     * - Live tracking where events are sent continuously
+     * - Situations where event merging is desired
+     *
+     * However, for app usage tracking, heartbeats can cause data loss due to:
+     * - Events being merged incorrectly
+     * - Zero-duration events being created
+     * - Significant underreporting (up to 97% data loss observed)
+     *
+     * @param bucket_id The bucket to send the heartbeat to
+     * @param timestamp The event timestamp
+     * @param duration The event duration in seconds
+     * @param data Event metadata
+     * @param pulsetime Time window for merging events (default: 60 seconds)
+     */
     fun heartbeatHelper(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double = 60.0) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), pulsetime)
         //Log.w(TAG, msg)
     }
+
+    /**
+     * Insert a discrete event that will not be merged with other events.
+     *
+     * This method is preferred for accurate app usage tracking because:
+     * - Each event represents a complete app session with precise start time and duration
+     * - Events are not merged or modified by the heartbeat system
+     * @param bucket_id The bucket to insert the event into
+     * @param timestamp The exact start time of the event
+     * @param duration The precise duration in seconds
+     * @param data Event metadata (app name, package, etc.)
+     */
+    fun insertEvent(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject) {
+        val event = Event(timestamp, duration, data)
+        val msg = heartbeat(bucket_id, event.toString(), 0.0)
 
     fun getBucketsJSON(): JSONObject {
         // TODO: Handle errors
