@@ -97,6 +97,11 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
     androidTestUtil "androidx.test.services:test-services:$servicesVersion"
     androidTestImplementation "androidx.test.espresso:espresso-web:$espressoVersion"
+    androidTestImplementation "androidx.browser:browser:1.8.0"
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+    androidTestImplementation('org.awaitility:awaitility:4.3.0') {
+        exclude group: 'org.hamcrest', module: 'hamcrest'
+    }
 }
 
 // Can be used to build with: ./gradlew cargoBuild

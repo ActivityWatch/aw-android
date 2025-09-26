@@ -3,14 +3,15 @@ package net.activitywatch.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.navigation.NavigationView
-import androidx.core.view.GravityCompat
-import androidx.appcompat.app.AppCompatActivity
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.GravityCompat
 import androidx.fragment.app.Fragment
-import android.util.Log
+import com.google.android.material.navigation.NavigationView
+import com.google.android.material.snackbar.Snackbar
 import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
@@ -70,6 +71,16 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val firstFragment = WebUIFragment.newInstance(baseURL)
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                } else {
+                    finish()
+                }
+            }
+        })
     }
 
     override fun onResume() {
@@ -81,14 +92,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val mode = if (usw.isUsingDiscreteEvents()) "discrete event insertion" else "heartbeat merging"
         Log.i("MainActivity", "Using $mode mode for event tracking")
         usw.sendHeartbeats()
-    }
-
-    override fun onBackPressed() {
-        if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-            binding.drawerLayout.closeDrawer(GravityCompat.START)
-        } else {
-            super.onBackPressed()
-        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
