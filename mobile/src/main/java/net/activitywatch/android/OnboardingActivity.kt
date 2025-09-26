@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -86,14 +87,16 @@ class OnboardingActivity : AppCompatActivity() {
                 updateButtons()
             }
         })
-    }
 
-    override fun onBackPressed() {
-        // If back button is pressed, exit the app,
-        // since we don't want to allow the user to accidentally skip onboarding.
-        // (Google Play policy, due to sensitive permissions)
-        // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
-        finishAffinity()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // If back button is pressed, exit the app,
+                // since we don't want to allow the user to accidentally skip onboarding.
+                // (Google Play policy, due to sensitive permissions)
+                // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
+                finishAffinity()
+            }
+        })
     }
 }
 
