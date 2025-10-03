@@ -28,13 +28,14 @@ import org.threeten.bp.Instant
 import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
+import java.util.Locale
 
 const val bucket_id = "aw-watcher-android-test"
 const val unlock_bucket_id = "aw-watcher-android-unlock"
 
 class UsageStatsWatcher constructor(val context: Context) {
     private val ri = RustInterface(context)
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
     private val sessionWatcher = SessionEventWatcher(context)
 
     var lastUpdated: Instant? = null
