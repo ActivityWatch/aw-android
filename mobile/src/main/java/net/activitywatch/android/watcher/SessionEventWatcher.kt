@@ -12,6 +12,7 @@ import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
 import java.text.ParseException
 import java.text.SimpleDateFormat
+import java.util.Locale
 
 const val SESSION_BUCKET_ID = "aw-watcher-android-test"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
@@ -19,7 +20,7 @@ const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
 class SessionEventWatcher(val context: Context) {
     private val ri = RustInterface(context)
     private val sessionParser = SessionParser(context)
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")
+    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
 
     var lastUpdated: Instant? = null
 
