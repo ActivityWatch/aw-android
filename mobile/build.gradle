@@ -7,7 +7,7 @@ android {
 
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 24
+        minSdkVersion 25
         targetSdkVersion 34
 
         // Set in CI on tagged commit
@@ -49,6 +49,11 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
+
     namespace 'net.activitywatch.android'
     // Never got this to work...
     //if (project.hasProperty("doNotStrip")) {
