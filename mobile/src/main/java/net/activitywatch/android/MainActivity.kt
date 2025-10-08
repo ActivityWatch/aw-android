@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         binding.navView.setNavigationItemSelectedListener(this)
 
         val ri = RustInterface(this)
-        ri.startServerTask(this)
+        ri.startServerTask()
 
         if (savedInstanceState != null) {
             return

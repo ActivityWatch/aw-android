@@ -15,7 +15,7 @@ import org.threeten.bp.Instant
 
 private const val TAG = "RustInterface"
 
-class RustInterface constructor(context: Context? = null) {
+class RustInterface (context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
 
@@ -53,7 +53,7 @@ class RustInterface constructor(context: Context? = null) {
         return greeting(to)
     }
 
-    fun startServerTask(context: Context) {
+    fun startServerTask() {
         if (!serverStarted) {
             // check if port 5600 is already in use
             try {
