@@ -58,12 +58,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         binding.navView.setNavigationItemSelectedListener(this)
 
-        val ri = RustInterface(this)
-        ri.startServerTask()
-
-        // Start automatic sync scheduler
-        syncScheduler = SyncScheduler(this)
-        syncScheduler.start()
+        // Start background service to keep server and sync running
+        val serviceIntent = Intent(this, BackgroundService::class.java)
+        startForegroundService(serviceIntent)
 
         if (savedInstanceState != null) {
             return
@@ -167,6 +164,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onDestroy() {
         super.onDestroy()
-        syncScheduler.stop()
+        // syncScheduler.stop() // Handled by BackgroundService
     }
 }
