@@ -7,7 +7,7 @@ android {
 
     defaultConfig {
         applicationId "net.activitywatch.android"
-        minSdkVersion 25
+        minSdkVersion 26
         targetSdkVersion 34
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
