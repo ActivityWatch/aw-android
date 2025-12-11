@@ -41,7 +41,38 @@ class BackgroundService : Service() {
         // Start the sync scheduler
         syncScheduler.start()
 
+        // Schedule event parsing
+        scheduleEventParsing()
+
         return START_STICKY
+    }
+
+    private fun scheduleEventParsing() {
+        val currentDate = java.util.Calendar.getInstance()
+        val dueDate = java.util.Calendar.getInstance()
+        // Set to midnight
+        dueDate.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        dueDate.set(java.util.Calendar.MINUTE, 0)
+        dueDate.set(java.util.Calendar.SECOND, 0)
+        if (dueDate.before(currentDate)) {
+            dueDate.add(java.util.Calendar.HOUR_OF_DAY, 24)
+        }
+        val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
+
+        val saveRequest = androidx.work.PeriodicWorkRequest.Builder(
+            net.activitywatch.android.workers.EventParsingWorker::class.java,
+            24, java.util.concurrent.TimeUnit.HOURS
+        )
+            .setInitialDelay(timeDiff, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .addTag("EventParsing")
+            .build()
+
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "EventParsingWorker",
+            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+            saveRequest
+        )
+        Log.i(TAG, "Scheduled event parsing worker with initial delay: ${timeDiff}ms")
     }
 
     override fun onDestroy() {

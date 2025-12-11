@@ -1,7 +1,6 @@
 package net.activitywatch.android.watcher
 
 import android.content.Context
-import android.os.AsyncTask
 import android.util.Log
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
@@ -13,6 +12,7 @@ import org.threeten.bp.Instant
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.*
 
 const val SESSION_BUCKET_ID = "aw-watcher-android-test"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
@@ -33,7 +33,10 @@ class SessionEventWatcher(val context: Context) {
      */
     fun sendSessionEvents() {
         Log.w(TAG, "Starting SendSessionEventTask")
-        SendSessionEventTask().execute()
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = processEventsSinceLastUpdate()
+            Log.w(TAG, "Finished SendSessionEventTask, sent $result session events")
+        }
     }
 
     private fun getLastEventTime(): Instant? {
@@ -54,46 +57,36 @@ class SessionEventWatcher(val context: Context) {
         }
     }
 
-    private inner class SendSessionEventTask : AsyncTask<Void, AppSession, Int>() {
-        override fun doInBackground(vararg params: Void?): Int {
-            Log.i(TAG, "Sending session events...")
+    /**
+     * Synchronously process events since last update.
+     * Returns the number of events sent.
+     */
+    fun processEventsSinceLastUpdate(): Int {
+        Log.i(TAG, "Processing session events...")
 
-            // Create bucket for session events
-            ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
-            ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
+        // Create bucket for session events
+        ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
+        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
-            lastUpdated = getLastEventTime()
-            Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
+        lastUpdated = getLastEventTime()
+        Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-            val startTimestamp = lastUpdated?.toEpochMilli() ?: 0L
-            val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
+        val startTimestamp = lastUpdated?.toEpochMilli() ?: 0L
+        val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
 
-            var eventsSent = 0
+        var eventsSent = 0
 
-            for (session in sessions) {
-                // Insert session as individual event
-                insertSessionAsEvent(session)
-
-                if (eventsSent % 10 == 0) {
-                    publishProgress(session)
-                }
-                eventsSent++
-            }
-
-            return eventsSent
+        for (session in sessions) {
+            // Insert session as individual event
+            insertSessionAsEvent(session)
+            eventsSent++
         }
-
-        override fun onProgressUpdate(vararg progress: AppSession) {
-            val session = progress[0]
-            val timestamp = DateTimeUtils.toInstant(java.util.Date(session.endTime))
-            lastUpdated = timestamp
-            Log.i(TAG, "Progress: ${session.appName} - ${lastUpdated.toString()}")
-        }
-
-        override fun onPostExecute(result: Int?) {
-            Log.w(TAG, "Finished SendSessionEventTask, sent $result session events")
-        }
+        
+        Log.i(TAG, "Finished processing events, sent $eventsSent session events")
+        return eventsSent
     }
+
+
 
     /**
      * Insert a single session as an individual event (not a heartbeat)
