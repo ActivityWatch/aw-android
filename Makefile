@@ -151,7 +151,8 @@ export ON_ANDROID := -- --android
 aw-server-rust: $(JNILIBS)
 
 .PHONY: $(JNILIBS)
-$(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/libaw_server.so $(JNI_x64)/libaw_server.so
+$(JNILIBS): $(JNI_arm7)/libaw_server.so $(JNI_arm8)/libaw_server.so $(JNI_x86)/libaw_server.so $(JNI_x64)/libaw_server.so \
+            $(JNI_arm7)/libaw_sync.so $(JNI_arm8)/libaw_sync.so $(JNI_x86)/libaw_sync.so $(JNI_x64)/libaw_sync.so
 	@ls -lL $@/*/*  # Check that symlinks are valid
 
 # There must be a better way to do this without repeating almost the same rule over and over?
@@ -167,6 +168,20 @@ $(JNI_x86)/libaw_server.so: $(TARGETDIR_x86)/$(RELEASE_TYPE)/libaw_server.so
 	mkdir -p $$(dirname $@)
 	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86" ]; then ln -fnv $$(pwd)/$^ $@; fi
 $(JNI_x64)/libaw_server.so: $(TARGETDIR_x64)/$(RELEASE_TYPE)/libaw_server.so
+	mkdir -p $$(dirname $@)
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86_64" ]; then ln -fnv $$(pwd)/$^ $@; fi
+
+$(JNI_arm7)/libaw_sync.so: $(TARGETDIR_arm7)/$(RELEASE_TYPE)/libaw_sync.so
+	mkdir -p $$(dirname $@)
+	# if target is empty, then create symlink
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "arm" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_arm8)/libaw_sync.so: $(TARGETDIR_arm8)/$(RELEASE_TYPE)/libaw_sync.so
+	mkdir -p $$(dirname $@)
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "arm64" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_x86)/libaw_sync.so: $(TARGETDIR_x86)/$(RELEASE_TYPE)/libaw_sync.so
+	mkdir -p $$(dirname $@)
+	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86" ]; then ln -fnv $$(pwd)/$^ $@; fi
+$(JNI_x64)/libaw_sync.so: $(TARGETDIR_x64)/$(RELEASE_TYPE)/libaw_sync.so
 	mkdir -p $$(dirname $@)
 	if [ -z "$(TARGET)" ] || [ "$(TARGET)" == "x86_64" ]; then ln -fnv $$(pwd)/$^ $@; fi
 
@@ -189,6 +204,17 @@ $(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_server.so: $(RS_SOURCES) $(WEBUI_DIS
 		echo "Using prebuilt libaw_server.so"; \
 	else \
 		echo "Building libaw_server.so from aw-server-rust repo"; \
+		env RUSTFLAGS=$(RUSTFLAGS_ANDROID) make -C aw-server-rust android; \
+	fi
+
+# Same rule for libaw_sync.so (but without webui dependency)
+$(RS_SRCDIR)/target/%/$(RELEASE_TYPE)/libaw_sync.so: $(RS_SOURCES)
+	@echo $@
+	@echo "Release type: $(RELEASE_TYPE)"
+	@if [ "$$USE_PREBUILT" == "true" ] && [ -f $@ ]; then \
+		echo "Using prebuilt libaw_sync.so"; \
+	else \
+		echo "Building libaw_sync.so from aw-server-rust repo"; \
 		env RUSTFLAGS=$(RUSTFLAGS_ANDROID) make -C aw-server-rust android; \
 	fi
 
