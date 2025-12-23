@@ -17,6 +17,7 @@ class SyncScheduler(private val context: Context) {
             if (isRunning) {
                 performSync()
                 // Schedule next sync in 15 minutes
+                Log.i(TAG, "Scheduling next sync in 15 minutes")
                 handler.postDelayed(this, 15 * 60 * 1000L)
             }
         }
