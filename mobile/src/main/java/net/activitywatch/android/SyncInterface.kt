@@ -23,6 +23,15 @@ class SyncInterface(context: Context) {
         syncDir = "$downloadsDir/ActivityWatch"
         Os.setenv("AW_SYNC_DIR", syncDir, true)
         
+        // Set XDG environment variables to app-writable paths
+        // This is required for aw-client-rust (used by aw-sync) to create lock files
+        val cacheDir = context.cacheDir.absolutePath
+        val filesDir = context.filesDir.absolutePath
+        
+        Os.setenv("XDG_CACHE_HOME", cacheDir, true)
+        Os.setenv("XDG_CONFIG_HOME", "$filesDir/config", true)
+        Os.setenv("XDG_DATA_HOME", "$filesDir/data", true)
+        
         // Create sync directory if it doesn't exist
         File(syncDir).mkdirs()
         
@@ -77,6 +86,7 @@ class SyncInterface(context: Context) {
         val handler = Handler(Looper.getMainLooper())
         
         executor.execute {
+            Log.i(TAG, "Starting sync operation: $operation")
             try {
                 val response = syncFn()
                 val json = JSONObject(response)
