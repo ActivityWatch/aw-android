@@ -112,7 +112,7 @@ class WebWatcher : AccessibilityService() {
         return (0 until info.childCount)
             .mapNotNull { info.getChild(it) }
             .firstNotNullOfOrNull { child ->
-                findWebView(child).also { child.recycle() }
+                findWebView(child).also { if (it == null) child.recycle() }
             }
     }
 
