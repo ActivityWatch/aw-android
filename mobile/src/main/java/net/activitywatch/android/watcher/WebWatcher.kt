@@ -27,8 +27,8 @@ class WebWatcher : AccessibilityService() {
         url.removePrefix("http://").removePrefix("https://")
     }
 
-    private val TAG = "WebWatcher"
-    private val bucket_id = "aw-watcher-android-web"
+    private val tag = "WebWatcher"
+    private val bucketId = "aw-watcher-android-web"
 
     private var ri : RustInterface? = null
 
@@ -61,8 +61,8 @@ class WebWatcher : AccessibilityService() {
     )
 
     override fun onCreate() {
-        Log.i(TAG, "Creating WebWatcher")
-        ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
+        Log.i(tag, "Creating WebWatcher")
+        ri = RustInterface(applicationContext).also { it.createBucketHelper(bucketId, "web.tab.current") }
     }
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
@@ -97,7 +97,7 @@ class WebWatcher : AccessibilityService() {
                 }
             }
         } catch(ex : Exception) {
-            Log.e(TAG, ex.message!!)
+            Log.e(tag, ex.message!!)
         }
     }
 
@@ -109,16 +109,15 @@ class WebWatcher : AccessibilityService() {
     private fun findWebView(info : AccessibilityNodeInfo) : AccessibilityNodeInfo? {
         if (info.className == "android.webkit.WebView" && info.text != null) return info
 
-        return (0 until info.childCount)
+        return (0 until info.childCount).asSequence()
             .mapNotNull { info.getChild(it) }
-            .firstNotNullOfOrNull { child ->
-                findWebView(child).also { if (it == null) child.recycle() }
-            }
+            .mapNotNull { child -> findWebView(child) }
+            .firstOrNull()
     }
 
     private fun handleUrl(newUrl : String?, newBrowser: String?) {
         if (newUrl != lastUrl || newBrowser != lastBrowser) {
-            newUrl?.let { Log.i(TAG, "Url: $it, browser: $newBrowser") }
+            newUrl?.let { Log.i(tag, "Url: $it, browser: $newBrowser") }
             lastUrl?.let { url ->
                 lastBrowser?.let { browser ->
                     // Log last URL and title as a completed browser event.
@@ -140,7 +139,7 @@ class WebWatcher : AccessibilityService() {
     private fun handleWindowTitle(newWindowTitle: String) {
         if (newWindowTitle != lastWindowTitle) {
             lastWindowTitle = newWindowTitle
-            Log.i(TAG, "Title: $lastWindowTitle")
+            Log.i(tag, "Title: $lastWindowTitle")
         }
     }
 
@@ -156,8 +155,8 @@ class WebWatcher : AccessibilityService() {
             .put("audible", false) // TODO
             .put("incognito", false) // TODO
 
-        Log.i(TAG, "Registered event: $data")
-        ri?.heartbeatHelper(bucket_id, start, duration.seconds.toDouble(), data, 1.0)
+        Log.i(tag, "Registered event: $data")
+        ri?.heartbeatHelper(bucketId, start, duration.seconds.toDouble(), data, 1.0)
     }
 
     override fun onInterrupt() {}
