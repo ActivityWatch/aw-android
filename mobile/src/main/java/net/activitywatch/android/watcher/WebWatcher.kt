@@ -145,7 +145,6 @@ class WebWatcher : AccessibilityService() {
 
     private fun logBrowserEvent(url: String, browser: String, windowTitle: String, lastUrlTimestamp : Instant) {
         val now = Instant.ofEpochMilli(System.currentTimeMillis())
-        val start = lastUrlTimestamp
         val duration = Duration.between(lastUrlTimestamp, now)
 
         val data = JSONObject()
@@ -156,7 +155,7 @@ class WebWatcher : AccessibilityService() {
             .put("incognito", false) // TODO
 
         Log.i(tag, "Registered event: $data")
-        ri?.heartbeatHelper(bucketId, start, duration.seconds.toDouble(), data, 1.0)
+        ri?.heartbeatHelper(bucketId, lastUrlTimestamp, duration.seconds.toDouble(), data, 1.0)
     }
 
     override fun onInterrupt() {}
