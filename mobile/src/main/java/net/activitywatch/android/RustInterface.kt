@@ -48,6 +48,7 @@ class RustInterface (context: Context? = null) {
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
     external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
+    external fun query(query: String, timeperiods: String): String
 
     fun sayHello(to: String): String {
         return greeting(to)
@@ -172,6 +173,8 @@ class RustInterface (context: Context? = null) {
                 ?: android.os.Build.MODEL ?: "Unknown"
     }
 
+    fun query
+
     fun test() {
         // TODO: Move to instrumented test
         Log.w(TAG, sayHello("Android"))
@@ -182,6 +185,9 @@ class RustInterface (context: Context? = null) {
         Log.w(TAG, event)
         Log.w(TAG, heartbeat("test", event, 60.0))
         Log.w(TAG, getBucketsJSON().toString(2))
+        Log.w(TAG, getBucketsJSON().toString(2))
         Log.w(TAG, getEventsJSON("test").toString(2))
+        val timeintervals = "[${"\""}${Instant.now()}/${Instant.now()}${"\""}]"
+        Log.w(TAG, query("events = query_bucket(\"test\"); RETURN = events;", timeintervals))
     }
 }
