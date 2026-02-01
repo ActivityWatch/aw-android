@@ -6,133 +6,203 @@
     android:background="@drawable/widget_background"
     android:padding="16dp">
 
-    <!-- Header -->
-    <TextView
-        android:id="@+id/widget_header"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Today's Screen Time"
-        android:textColor="#CDD6F4"
-        android:textSize="14sp"
-        android:textStyle="bold" />
-
-    <!-- Total Time -->
-    <TextView
-        android:id="@+id/widget_total_time"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="0h 0m"
-        android:textColor="#FFFFFF"
-        android:textSize="28sp"
-        android:textStyle="bold"
-        android:layout_marginTop="4dp"
-        android:layout_marginBottom="12dp" />
-
-    <!-- Category 1 -->
     <LinearLayout
-        android:id="@+id/category_row_1"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="6dp">
-        <TextView
-            android:id="@+id/category_name_1"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Category 1"
-            android:textColor="#BAC2DE"
-            android:textSize="14sp"
-            android:ellipsize="end"
-            android:maxLines="1" />
-        <TextView
-            android:id="@+id/category_time_1"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0h 0m"
-            android:textColor="#A6E3A1"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- Category 2 -->
-    <LinearLayout
-        android:id="@+id/category_row_2"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="6dp">
-        <TextView
-            android:id="@+id/category_name_2"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Category 2"
-            android:textColor="#BAC2DE"
-            android:textSize="14sp"
-            android:ellipsize="end"
-            android:maxLines="1" />
-        <TextView
-            android:id="@+id/category_time_2"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0h 0m"
-            android:textColor="#89B4FA"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- Category 3 -->
-    <LinearLayout
-        android:id="@+id/category_row_3"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="6dp">
-        <TextView
-            android:id="@+id/category_name_3"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Category 3"
-            android:textColor="#BAC2DE"
-            android:textSize="14sp"
-            android:ellipsize="end"
-            android:maxLines="1" />
-        <TextView
-            android:id="@+id/category_time_3"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0h 0m"
-            android:textColor="#F9E2AF"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- Category 4 -->
-    <LinearLayout
-        android:id="@+id/category_row_4"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
-        <TextView
-            android:id="@+id/category_name_4"
+
+        <!-- Left side: Screen time header and total -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Category 4"
-            android:textColor="#BAC2DE"
-            android:textSize="14sp"
-            android:ellipsize="end"
-            android:maxLines="1" />
-        <TextView
-            android:id="@+id/category_time_4"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0h 0m"
-            android:textColor="#CBA6F7"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+            android:orientation="vertical">
 
+            <TextView
+                android:id="@+id/widget_header"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Screen time"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
+                android:baselineAligned="false">
+
+                <TextView
+                    android:id="@+id/widget_hours"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#FFFFFF"
+                    android:textSize="36sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="h"
+                    android:textColor="#AAAAAA"
+                    android:textSize="18sp"
+                    android:layout_marginStart="2dp"
+                    android:layout_marginEnd="8dp"
+                    android:layout_gravity="bottom"
+                    android:paddingBottom="6dp" />
+
+                <TextView
+                    android:id="@+id/widget_minutes"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#FFFFFF"
+                    android:textSize="36sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="m"
+                    android:textColor="#AAAAAA"
+                    android:textSize="18sp"
+                    android:layout_marginStart="2dp"
+                    android:layout_gravity="bottom"
+                    android:paddingBottom="6dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Right side: App list -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.2"
+            android:orientation="vertical"
+            android:paddingStart="8dp">
+
+            <!-- App 1 -->
+            <LinearLayout
+                android:id="@+id/app_row_1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/app_dot_1"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:src="@drawable/widget_dot_1"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/app_name_1"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="App 1"
+                    android:textColor="#CCCCCC"
+                    android:textSize="12sp"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/app_time_1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0m"
+                    android:textColor="#AAAAAA"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- App 2 -->
+            <LinearLayout
+                android:id="@+id/app_row_2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/app_dot_2"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:src="@drawable/widget_dot_2"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/app_name_2"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="App 2"
+                    android:textColor="#CCCCCC"
+                    android:textSize="12sp"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/app_time_2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0m"
+                    android:textColor="#AAAAAA"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- App 3 -->
+            <LinearLayout
+                android:id="@+id/app_row_3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/app_dot_3"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:src="@drawable/widget_dot_3"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/app_name_3"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="App 3"
+                    android:textColor="#CCCCCC"
+                    android:textSize="12sp"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/app_time_3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0m"
+                    android:textColor="#AAAAAA"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Timestamp -->
+            <TextView
+                android:id="@+id/widget_timestamp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="1/31, 21:53"
+                android:textColor="#888888"
+                android:textSize="11sp"
+                android:layout_marginTop="8dp"
+                android:gravity="end" />
+
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>
