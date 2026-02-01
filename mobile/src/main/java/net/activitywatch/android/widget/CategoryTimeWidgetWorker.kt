@@ -16,6 +16,7 @@ import net.activitywatch.android.RustInterface
 import com.jakewharton.threetenabp.AndroidThreeTen
 import org.json.JSONArray
 import org.threeten.bp.LocalDate
+import org.threeten.bp.LocalDateTime
 import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
@@ -24,7 +25,7 @@ private const val TAG = "CategoryTimeWidget"
 private const val WORK_NAME = "category_time_widget_update"
 
 /**
- * Worker that updates the widget in the background every 15 minutes
+ * Worker that updates the widget in the background every 30 minutes
  */
 class CategoryTimeWidgetWorker(
     private val context: Context,
@@ -44,25 +45,23 @@ class CategoryTimeWidgetWorker(
     }
 
     companion object {
-        private val categoryNameIds = intArrayOf(
-            R.id.category_name_1,
-            R.id.category_name_2,
-            R.id.category_name_3,
-            R.id.category_name_4
+        // App row IDs
+        private val appRowIds = intArrayOf(
+            R.id.app_row_1,
+            R.id.app_row_2,
+            R.id.app_row_3
         )
 
-        private val categoryTimeIds = intArrayOf(
-            R.id.category_time_1,
-            R.id.category_time_2,
-            R.id.category_time_3,
-            R.id.category_time_4
+        private val appNameIds = intArrayOf(
+            R.id.app_name_1,
+            R.id.app_name_2,
+            R.id.app_name_3
         )
 
-        private val categoryRowIds = intArrayOf(
-            R.id.category_row_1,
-            R.id.category_row_2,
-            R.id.category_row_3,
-            R.id.category_row_4
+        private val appTimeIds = intArrayOf(
+            R.id.app_time_1,
+            R.id.app_time_2,
+            R.id.app_time_3
         )
 
         /**
@@ -78,7 +77,7 @@ class CategoryTimeWidgetWorker(
                 ExistingPeriodicWorkPolicy.KEEP,
                 workRequest
             )
-            Log.d(TAG, "Scheduled periodic widget updates every 15 minutes")
+            Log.d(TAG, "Scheduled periodic widget updates every 30 minutes")
         }
 
         /**
@@ -122,29 +121,39 @@ class CategoryTimeWidgetWorker(
                 
                 val ri = RustInterface(context)
                 val categoryData = getCategoryTimesToday(ri)
-                val totalTime = categoryData.sumOf { it.second }
+                val totalMillis = categoryData.sumOf { it.second }
 
-                // Update total time
-                views.setTextViewText(R.id.widget_total_time, formatDuration(totalTime))
+                // Update total time (hours and minutes separately)
+                val totalSeconds = totalMillis / 1000
+                val hours = totalSeconds / 3600
+                val minutes = (totalSeconds % 3600) / 60
+                views.setTextViewText(R.id.widget_hours, hours.toString())
+                views.setTextViewText(R.id.widget_minutes, minutes.toString())
 
-                // Update categories (top 4)
-                val topCategories = categoryData.take(4)
+                // Update top 3 apps
+                val topApps = categoryData.take(3)
                 
-                for (i in 0 until 4) {
-                    if (i < topCategories.size) {
-                        val (name, duration) = topCategories[i]
-                        views.setTextViewText(categoryNameIds[i], name)
-                        views.setTextViewText(categoryTimeIds[i], formatDuration(duration))
-                        views.setViewVisibility(categoryRowIds[i], View.VISIBLE)
+                for (i in 0 until 3) {
+                    if (i < topApps.size) {
+                        val (name, duration) = topApps[i]
+                        views.setTextViewText(appNameIds[i], name)
+                        views.setTextViewText(appTimeIds[i], formatDurationShort(duration))
+                        views.setViewVisibility(appRowIds[i], View.VISIBLE)
                     } else {
-                        views.setViewVisibility(categoryRowIds[i], View.GONE)
+                        views.setViewVisibility(appRowIds[i], View.GONE)
                     }
                 }
 
-                Log.d(TAG, "Widget updated successfully with ${topCategories.size} categories, total: ${formatDuration(totalTime)}")
+                // Update timestamp
+                val now = LocalDateTime.now()
+                val timestampFormatter = DateTimeFormatter.ofPattern("M/d, HH:mm")
+                views.setTextViewText(R.id.widget_timestamp, timestampFormatter.format(now))
+
+                Log.d(TAG, "Widget updated successfully with ${topApps.size} apps, total: ${hours}h ${minutes}m")
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating widget", e)
-                views.setTextViewText(R.id.widget_total_time, "Error")
+                views.setTextViewText(R.id.widget_hours, "0")
+                views.setTextViewText(R.id.widget_minutes, "0")
             }
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -211,17 +220,17 @@ class CategoryTimeWidgetWorker(
         }
 
         /**
-         * Format duration in human-readable format (e.g., "2h 30m")
+         * Format duration in short format (e.g., "4 h 23 m" or "15 m")
          */
-        private fun formatDuration(millis: Long): String {
+        private fun formatDurationShort(millis: Long): String {
             val totalSeconds = millis / 1000
             val hours = totalSeconds / 3600
             val minutes = (totalSeconds % 3600) / 60
 
             return when {
-                hours > 0 -> "${hours}h ${minutes}m"
-                minutes > 0 -> "${minutes}m"
-                else -> "<1m"
+                hours > 0 -> "${hours} h ${minutes} m"
+                minutes > 0 -> "${minutes} m"
+                else -> "<1 m"
             }
         }
     }
