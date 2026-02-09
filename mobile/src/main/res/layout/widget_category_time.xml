@@ -214,12 +214,21 @@
 
             <ImageButton
                 android:id="@+id/widget_refresh_button"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="8dp"
                 android:src="@drawable/ic_refresh"
                 android:background="@android:color/transparent"
                 android:contentDescription="Refresh widget" />
+
+            <ProgressBar
+                android:id="@+id/widget_loading_indicator"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:visibility="gone"
+                android:indeterminate="true"
+                style="?android:attr/progressBarStyleSmall" />
         </LinearLayout>
 
     </LinearLayout>

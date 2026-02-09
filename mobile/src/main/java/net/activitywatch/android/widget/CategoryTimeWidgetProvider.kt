@@ -7,8 +7,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
 import net.activitywatch.android.R
+import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "CategoryTimeWidget"
 private const val ACTION_REFRESH = "net.activitywatch.android.widget.ACTION_REFRESH"
@@ -36,12 +38,27 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         
         if (intent.action == ACTION_REFRESH) {
-            Log.d(TAG, "Refresh button clicked - updating all widgets")
+            Log.d(TAG, "Refresh button clicked - re-parsing usage events and updating widgets")
             
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, CategoryTimeWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
             
+            // Show loading indicator first
+            for (appWidgetId in appWidgetIds) {
+                showLoadingState(context, appWidgetManager, appWidgetId)
+            }
+            
+            // Re-parse usage events
+            try {
+                val usageStatsWatcher = UsageStatsWatcher(context)
+                usageStatsWatcher.sendHeartbeats()
+                Log.d(TAG, "Triggered usage events re-parsing")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error re-parsing usage events", e)
+            }
+            
+            // Then update with fresh data
             for (appWidgetId in appWidgetIds) {
                 updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
             }
@@ -60,6 +77,21 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
 
     companion object {
         /**
+         * Show loading state - hide refresh button and show spinner
+         */
+        private fun showLoadingState(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
+            val views = RemoteViews(context.packageName, R.layout.widget_category_time)
+            views.setViewVisibility(R.id.widget_refresh_button, View.GONE)
+            views.setViewVisibility(R.id.widget_loading_indicator, View.VISIBLE)
+            appWidgetManager.updateAppWidget(appWidgetId, views)
+            Log.d(TAG, "Showing loading indicator for widget $appWidgetId")
+        }
+
+        /**
          * Update widget and set up the refresh button click handler
          */
         fun updateWidgetWithRefreshButton(
@@ -70,8 +102,12 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
             // First update the widget data
             CategoryTimeWidgetWorker.updateSingleWidget(context, appWidgetManager, appWidgetId)
             
-            // Then set up the refresh button click handler
+            // Then set up the refresh button click handler and hide loading
             val views = RemoteViews(context.packageName, R.layout.widget_category_time)
+            
+            // Hide loading indicator and show refresh button
+            views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
+            views.setViewVisibility(R.id.widget_refresh_button, View.VISIBLE)
             
             val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
                 action = ACTION_REFRESH
