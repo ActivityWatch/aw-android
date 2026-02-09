@@ -2,230 +2,225 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
+    android:orientation="horizontal"
     android:background="@drawable/widget_background"
-    android:padding="16dp">
+    android:padding="12dp"
+    android:gravity="center_vertical">
 
+    <!-- Left side: Screen time header and total -->
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-        <!-- Left side: Screen time header and total -->
-        <LinearLayout
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/widget_header"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:text="Screen time"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
 
             <TextView
-                android:id="@+id/widget_header"
+                android:id="@+id/widget_hours"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Screen time"
+                android:text="0"
                 android:textColor="#FFFFFF"
-                android:textSize="14sp" />
+                android:textSize="36sp"
+                android:textStyle="bold" />
 
-            <LinearLayout
+            <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="4dp"
-                android:baselineAligned="false">
+                android:text="h"
+                android:textColor="#AAAAAA"
+                android:textSize="18sp"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="8dp"
+                android:layout_gravity="bottom"
+                android:paddingBottom="6dp" />
 
-                <TextView
-                    android:id="@+id/widget_hours"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#FFFFFF"
-                    android:textSize="36sp"
-                    android:textStyle="bold" />
+            <TextView
+                android:id="@+id/widget_minutes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="36sp"
+                android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="h"
-                    android:textColor="#AAAAAA"
-                    android:textSize="18sp"
-                    android:layout_marginStart="2dp"
-                    android:layout_marginEnd="8dp"
-                    android:layout_gravity="bottom"
-                    android:paddingBottom="6dp" />
-
-                <TextView
-                    android:id="@+id/widget_minutes"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#FFFFFF"
-                    android:textSize="36sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="m"
-                    android:textColor="#AAAAAA"
-                    android:textSize="18sp"
-                    android:layout_marginStart="2dp"
-                    android:layout_gravity="bottom"
-                    android:paddingBottom="6dp" />
-            </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="m"
+                android:textColor="#AAAAAA"
+                android:textSize="18sp"
+                android:layout_marginStart="2dp"
+                android:layout_gravity="bottom"
+                android:paddingBottom="6dp" />
         </LinearLayout>
+    </LinearLayout>
 
-        <!-- Right side: App list -->
+    <!-- Right side: Bar chart and app list -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1.2"
+        android:orientation="vertical"
+        android:paddingStart="8dp">
+
+        <!-- Stacked bar chart -->
+        <ImageView
+            android:id="@+id/widget_bar_chart"
+            android:layout_width="match_parent"
+            android:layout_height="12dp"
+            android:scaleType="fitXY"
+            android:contentDescription="@null" />
+
+        <!-- App 1 -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:id="@+id/app_row_1"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1.2"
-            android:orientation="vertical"
-            android:paddingStart="8dp">
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical">
 
-            <!-- Stacked bar chart -->
             <ImageView
-                android:id="@+id/widget_bar_chart"
-                android:layout_width="match_parent"
-                android:layout_height="12dp"
-                android:scaleType="fitXY"
+                android:id="@+id/app_dot_1"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:src="@drawable/widget_dot_1"
                 android:contentDescription="@null" />
 
-            <!-- App 1 -->
-            <LinearLayout
-                android:id="@+id/app_row_1"
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/app_name_1"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_weight="1"
+                android:text="App 1"
+                android:textColor="#CCCCCC"
+                android:textSize="12sp"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1" />
 
-                <ImageView
-                    android:id="@+id/app_dot_1"
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:src="@drawable/widget_dot_1"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:id="@+id/app_name_1"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="App 1"
-                    android:textColor="#CCCCCC"
-                    android:textSize="12sp"
-                    android:layout_marginStart="6dp"
-                    android:ellipsize="end"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:id="@+id/app_time_1"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0m"
-                    android:textColor="#AAAAAA"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- App 2 -->
-            <LinearLayout
-                android:id="@+id/app_row_2"
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/app_time_1"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="4dp"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:id="@+id/app_dot_2"
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:src="@drawable/widget_dot_2"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:id="@+id/app_name_2"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="App 2"
-                    android:textColor="#CCCCCC"
-                    android:textSize="12sp"
-                    android:layout_marginStart="6dp"
-                    android:ellipsize="end"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:id="@+id/app_time_2"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0m"
-                    android:textColor="#AAAAAA"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- App 3 -->
-            <LinearLayout
-                android:id="@+id/app_row_3"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="4dp"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:id="@+id/app_dot_3"
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:src="@drawable/widget_dot_3"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:id="@+id/app_name_3"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="App 3"
-                    android:textColor="#CCCCCC"
-                    android:textSize="12sp"
-                    android:layout_marginStart="6dp"
-                    android:ellipsize="end"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:id="@+id/app_time_3"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0m"
-                    android:textColor="#AAAAAA"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- Timestamp and Refresh Button -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="8dp"
-                android:gravity="end|center_vertical">
-
-                <TextView
-                    android:id="@+id/widget_timestamp"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="1/31, 21:53"
-                    android:textColor="#888888"
-                    android:textSize="11sp" />
-
-                <ImageButton
-                    android:id="@+id/widget_refresh_button"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_marginStart="8dp"
-                    android:src="@drawable/ic_refresh"
-                    android:background="@android:color/transparent"
-                    android:contentDescription="Refresh widget" />
-            </LinearLayout>
-
+                android:text="0m"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp" />
         </LinearLayout>
+
+        <!-- App 2 -->
+        <LinearLayout
+            android:id="@+id/app_row_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/app_dot_2"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:src="@drawable/widget_dot_2"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/app_name_2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="App 2"
+                android:textColor="#CCCCCC"
+                android:textSize="12sp"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1" />
+
+            <TextView
+                android:id="@+id/app_time_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0m"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- App 3 -->
+        <LinearLayout
+            android:id="@+id/app_row_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/app_dot_3"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:src="@drawable/widget_dot_3"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/app_name_3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="App 3"
+                android:textColor="#CCCCCC"
+                android:textSize="12sp"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1" />
+
+            <TextView
+                android:id="@+id/app_time_3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0m"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Timestamp and Refresh Button -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp"
+            android:gravity="end|center_vertical">
+
+            <TextView
+                android:id="@+id/widget_timestamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1/31, 21:53"
+                android:textColor="#888888"
+                android:textSize="11sp" />
+
+            <ImageButton
+                android:id="@+id/widget_refresh_button"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="8dp"
+                android:src="@drawable/ic_refresh"
+                android:background="@android:color/transparent"
+                android:contentDescription="Refresh widget" />
+        </LinearLayout>
+
     </LinearLayout>
 </LinearLayout>
