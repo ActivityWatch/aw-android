@@ -1,8 +1,10 @@
 package net.activitywatch.android.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -11,6 +13,7 @@ import android.graphics.RectF
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -34,12 +37,11 @@ private const val BAR_WIDTH = 400
 private const val BAR_HEIGHT = 24
 private const val BAR_CORNER_RADIUS = 12f
 
-// Category colors (matching the dots)
-private val CATEGORY_COLORS = intArrayOf(
+// Category accent colors (matching the dots) - these stay constant in both themes
+private val CATEGORY_ACCENT_COLORS = intArrayOf(
     Color.parseColor("#00BFA5"),  // Teal - category 1
     Color.parseColor("#7986CB"),  // Purple - category 2
-    Color.parseColor("#42A5F5"),  // Blue - category 3
-    Color.parseColor("#424242")   // Gray - others
+    Color.parseColor("#42A5F5")   // Blue - category 3
 )
 
 /**
@@ -149,7 +151,7 @@ class CategoryTimeWidgetWorker(
                 views.setTextViewText(R.id.widget_minutes, minutes.toString())
 
                 // Draw and set the bar chart
-                val barChartBitmap = createBarChartBitmap(categoryData, totalMillis)
+                val barChartBitmap = createBarChartBitmap(context, categoryData, totalMillis)
                 views.setImageViewBitmap(R.id.widget_bar_chart, barChartBitmap)
 
                 // Update top 3 apps
@@ -178,16 +180,46 @@ class CategoryTimeWidgetWorker(
                 views.setTextViewText(R.id.widget_minutes, "0")
             }
 
+            // Set up tap-to-refresh on the whole widget
+            val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
+                action = "net.activitywatch.android.widget.ACTION_REFRESH"
+            }
+            val refreshPendingIntent = PendingIntent.getBroadcast(
+                context,
+                0,
+                refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_root, refreshPendingIntent)
+
+            // Ensure loading indicator is hidden
+            views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
+
             appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
+
+        /**
+         * Get the category colors array, with the "others" color resolved from theme resources
+         */
+        private fun getCategoryColors(context: Context): IntArray {
+            val othersColor = ContextCompat.getColor(context, R.color.widget_bar_bg)
+            return intArrayOf(
+                CATEGORY_ACCENT_COLORS[0],
+                CATEGORY_ACCENT_COLORS[1],
+                CATEGORY_ACCENT_COLORS[2],
+                othersColor
+            )
         }
 
         /**
          * Create a bitmap with the stacked bar chart
          */
         private fun createBarChartBitmap(
+            context: Context,
             categoryData: List<Pair<String, Long>>,
             totalMillis: Long
         ): Bitmap {
+            val categoryColors = getCategoryColors(context)
             val bitmap = Bitmap.createBitmap(BAR_WIDTH, BAR_HEIGHT, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val paint = Paint().apply {
@@ -195,113 +227,36 @@ class CategoryTimeWidgetWorker(
                 style = Paint.Style.FILL
             }
 
+            // Clip canvas to rounded rect so both ends are always perfectly rounded
+            val barRect = RectF(0f, 0f, BAR_WIDTH.toFloat(), BAR_HEIGHT.toFloat())
+            val path = android.graphics.Path().apply {
+                addRoundRect(barRect, BAR_CORNER_RADIUS, BAR_CORNER_RADIUS, android.graphics.Path.Direction.CW)
+            }
+            canvas.clipPath(path)
+
             if (totalMillis == 0L || categoryData.isEmpty()) {
-                // Draw empty bar with gray background
-                paint.color = CATEGORY_COLORS[3]
-                canvas.drawRoundRect(
-                    RectF(0f, 0f, BAR_WIDTH.toFloat(), BAR_HEIGHT.toFloat()),
-                    BAR_CORNER_RADIUS,
-                    BAR_CORNER_RADIUS,
-                    paint
-                )
+                paint.color = categoryColors[3]
+                canvas.drawRect(barRect, paint)
                 return bitmap
             }
 
-            // Calculate proportions for top 3 + others
+            // Draw segments as simple rects — the clip handles rounding
             val top3 = categoryData.take(3)
             val top3Total = top3.sumOf { it.second }
             val othersTotal = totalMillis - top3Total
-            
-            // Draw segments
             var currentX = 0f
-            
+
             for (i in top3.indices) {
-                val proportion = top3[i].second.toFloat() / totalMillis
-                val segmentWidth = proportion * BAR_WIDTH
-                
-                paint.color = CATEGORY_COLORS[i]
-                
-                // For first segment, include left rounded corners
-                // For last segment (or if no others), include right rounded corners
-                val isFirst = i == 0
-                val isLast = i == top3.lastIndex && othersTotal <= 0
-                
-                if (isFirst && isLast) {
-                    // Only segment - full rounded corners
-                    canvas.drawRoundRect(
-                        RectF(currentX, 0f, currentX + segmentWidth, BAR_HEIGHT.toFloat()),
-                        BAR_CORNER_RADIUS,
-                        BAR_CORNER_RADIUS,
-                        paint
-                    )
-                } else if (isFirst) {
-                    // First segment - rounded left corners
-                    canvas.drawRoundRect(
-                        RectF(currentX, 0f, currentX + segmentWidth + BAR_CORNER_RADIUS, BAR_HEIGHT.toFloat()),
-                        BAR_CORNER_RADIUS,
-                        BAR_CORNER_RADIUS,
-                        paint
-                    )
-                    // Cover the right rounded corners with a rect
-                    canvas.drawRect(
-                        currentX + segmentWidth,
-                        0f,
-                        currentX + segmentWidth + BAR_CORNER_RADIUS,
-                        BAR_HEIGHT.toFloat(),
-                        paint
-                    )
-                } else if (isLast) {
-                    // Last segment - rounded right corners
-                    canvas.drawRoundRect(
-                        RectF(currentX - BAR_CORNER_RADIUS, 0f, currentX + segmentWidth, BAR_HEIGHT.toFloat()),
-                        BAR_CORNER_RADIUS,
-                        BAR_CORNER_RADIUS,
-                        paint
-                    )
-                    // Cover the left rounded corners with rect
-                    canvas.drawRect(
-                        currentX - BAR_CORNER_RADIUS,
-                        0f,
-                        currentX,
-                        BAR_HEIGHT.toFloat(),
-                        paint
-                    )
-                } else {
-                    // Middle segment - no rounded corners
-                    canvas.drawRect(
-                        currentX,
-                        0f,
-                        currentX + segmentWidth,
-                        BAR_HEIGHT.toFloat(),
-                        paint
-                    )
-                }
-                
+                val segmentWidth = top3[i].second.toFloat() / totalMillis * BAR_WIDTH
+                paint.color = categoryColors[i]
+                canvas.drawRect(currentX, 0f, currentX + segmentWidth, BAR_HEIGHT.toFloat(), paint)
                 currentX += segmentWidth
             }
-            
-            // Draw "others" segment if there's remaining time
-            if (othersTotal > 0) {
-                val proportion = othersTotal.toFloat() / totalMillis
-                val segmentWidth = proportion * BAR_WIDTH
-                
-                paint.color = CATEGORY_COLORS[3]
-                
-                // Last segment with rounded right corners
-                canvas.drawRoundRect(
-                    RectF(currentX - BAR_CORNER_RADIUS, 0f, currentX + segmentWidth, BAR_HEIGHT.toFloat()),
-                    BAR_CORNER_RADIUS,
-                    BAR_CORNER_RADIUS,
-                    paint
-                )
-                // Cover left rounded corners
-                canvas.drawRect(
-                    currentX - BAR_CORNER_RADIUS,
-                    0f,
-                    currentX,
-                    BAR_HEIGHT.toFloat(),
-                    paint
-                )
+
+            // Fill remaining width with "others" color to avoid gaps from float rounding
+            if (othersTotal > 0 || currentX < BAR_WIDTH) {
+                paint.color = categoryColors[3]
+                canvas.drawRect(currentX, 0f, BAR_WIDTH.toFloat(), BAR_HEIGHT.toFloat(), paint)
             }
 
             return bitmap

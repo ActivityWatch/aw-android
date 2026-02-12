@@ -77,7 +77,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
 
     companion object {
         /**
-         * Show loading state - hide refresh button and show spinner
+         * Show loading state - show spinner
          */
         private fun showLoadingState(
             context: Context,
@@ -85,42 +85,21 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_category_time)
-            views.setViewVisibility(R.id.widget_refresh_button, View.GONE)
             views.setViewVisibility(R.id.widget_loading_indicator, View.VISIBLE)
             appWidgetManager.updateAppWidget(appWidgetId, views)
             Log.d(TAG, "Showing loading indicator for widget $appWidgetId")
         }
 
         /**
-         * Update widget and set up the refresh button click handler
+         * Update widget data and set up tap-to-refresh on the whole widget
          */
         fun updateWidgetWithRefreshButton(
             context: Context,
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            // First update the widget data
+            // updateSingleWidget handles data, click handler, and loading state
             CategoryTimeWidgetWorker.updateSingleWidget(context, appWidgetManager, appWidgetId)
-            
-            // Then set up the refresh button click handler and hide loading
-            val views = RemoteViews(context.packageName, R.layout.widget_category_time)
-            
-            // Hide loading indicator and show refresh button
-            views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
-            views.setViewVisibility(R.id.widget_refresh_button, View.VISIBLE)
-            
-            val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
-                action = ACTION_REFRESH
-            }
-            val refreshPendingIntent = PendingIntent.getBroadcast(
-                context,
-                0,
-                refreshIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_refresh_button, refreshPendingIntent)
-            
-            appWidgetManager.updateAppWidget(appWidgetId, views)
         }
     }
 }
