@@ -26,4 +26,13 @@
 
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="network_access_title">Allow network access</string>
+    <string name="network_access_summary">Allow other devices on the local network to connect to the ActivityWatch server. When disabled, only this device can access the server.</string>
+    <string name="network_access_warning_title">Security warning</string>
+    <string name="network_access_warning_message">Enabling network access will allow any device on the same network to access your ActivityWatch data.\n\nThe ActivityWatch API does not have authentication, so anyone on your network will be able to read and modify your activity data.\n\nOnly enable this if you trust your network (e.g. a VPN like Tailscale).</string>
+    <string name="network_access_warning_enable">Enable</string>
+    <string name="network_access_restart_notice">Restart the app for this change to take effect.</string>
 </resources>

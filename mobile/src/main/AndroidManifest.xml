@@ -48,6 +48,12 @@
             android:theme="@style/AppTheme.NoActionBar"
             android:exported="true"/>
 
+        <activity
+            android:name=".SettingsActivity"
+            android:screenOrientation="portrait"
+            android:label="@string/settings_title"
+            android:exported="false"/>
+
         <receiver
                 android:name=".watcher.AlarmReceiver"
                 android:enabled="true"

@@ -57,7 +57,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         binding.navView.setNavigationItemSelectedListener(this)
 
         val ri = RustInterface(this)
-        ri.startServerTask(this)
+        val host = if (prefs.isNetworkAccessEnabled()) "0.0.0.0" else "127.0.0.1"
+        ri.startServerTask(this, host)
 
         if (savedInstanceState != null) {
             return
@@ -96,8 +97,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // as you specify a parent activity in AndroidManifest.xml.
         return when (item.itemId) {
             R.id.action_settings -> {
-                Snackbar.make(binding.coordinatorLayout, "The settings button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                val intent = Intent(this, SettingsActivity::class.java)
+                startActivity(intent)
                 true
             }
             else -> super.onOptionsItemSelected(item)

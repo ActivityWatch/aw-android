@@ -40,7 +40,7 @@ class RustInterface constructor(context: Context? = null) {
 
     private external fun initialize(): String
     private external fun greeting(pattern: String): String
-    private external fun startServer()
+    private external fun startServer(host: String)
     private external fun setDataDir(path: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
@@ -51,7 +51,7 @@ class RustInterface constructor(context: Context? = null) {
         return greeting(to)
     }
 
-    fun startServerTask(context: Context) {
+    fun startServerTask(context: Context, host: String = "127.0.0.1") {
         if(!serverStarted) {
             // check if port 5600 is already in use
             try {
@@ -69,8 +69,8 @@ class RustInterface constructor(context: Context? = null) {
                 // will not block the UI thread
 
                 // Start server
-                Log.w(TAG, "Starting server...")
-                startServer()
+                Log.w(TAG, "Starting server on $host...")
+                startServer(host)
 
                 handler.post {
                     // will run on UI thread after the task is done
@@ -78,7 +78,7 @@ class RustInterface constructor(context: Context? = null) {
                     serverStarted = false
                 }
             }
-            Log.w(TAG, "Server started")
+            Log.w(TAG, "Server started on $host")
         }
     }
 
