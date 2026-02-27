@@ -17,6 +17,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 // enum for the onboarding pages
@@ -146,6 +147,10 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantAccessibilityPermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        // Handle grant notification access (for media watcher)
+        view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
     }
 
     // When fragment is resumed, check if the permission has been granted
@@ -155,13 +160,16 @@ class PermissionsFragment : Fragment() {
         // Get current permission status
         val usagePermissionGranted = UsageStatsWatcher.isUsageAllowed(requireContext())
         val accessibilityPermissionGranted = UsageStatsWatcher.isAccessibilityAllowed(requireContext())
+        val notificationPermissionGranted = MediaWatcher.isNotificationAccessGranted(requireContext())
 
         // Disable buttons if permissions granted
         view?.findViewById<Button>(R.id.btnGrantUsagePermission)?.isEnabled = !usagePermissionGranted
         view?.findViewById<Button>(R.id.btnGrantAccessibilityPermission)?.isEnabled = !accessibilityPermissionGranted
+        view?.findViewById<Button>(R.id.btnGrantNotificationPermission)?.isEnabled = !notificationPermissionGranted
 
         // Set the checkbox/x mark based on the permission status
         view?.findViewById<ImageView>(R.id.checkmarkUsage)?.setImageResource(if(usagePermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
         view?.findViewById<ImageView>(R.id.checkmarkAccessibility)?.setImageResource(if(accessibilityPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
+        view?.findViewById<ImageView>(R.id.checkmarkNotification)?.setImageResource(if(notificationPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
     }
 }
