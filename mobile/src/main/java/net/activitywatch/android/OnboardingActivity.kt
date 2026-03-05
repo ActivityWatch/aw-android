@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -16,6 +17,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 // enum for the onboarding pages
@@ -86,14 +88,16 @@ class OnboardingActivity : AppCompatActivity() {
                 updateButtons()
             }
         })
-    }
 
-    override fun onBackPressed() {
-        // If back button is pressed, exit the app,
-        // since we don't want to allow the user to accidentally skip onboarding.
-        // (Google Play policy, due to sensitive permissions)
-        // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
-        finishAffinity()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // If back button is pressed, exit the app,
+                // since we don't want to allow the user to accidentally skip onboarding.
+                // (Google Play policy, due to sensitive permissions)
+                // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
+                finishAffinity()
+            }
+        })
     }
 }
 
@@ -143,6 +147,10 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantAccessibilityPermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        // Handle grant notification access (for media watcher)
+        view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
     }
 
     // When fragment is resumed, check if the permission has been granted
@@ -152,13 +160,16 @@ class PermissionsFragment : Fragment() {
         // Get current permission status
         val usagePermissionGranted = UsageStatsWatcher.isUsageAllowed(requireContext())
         val accessibilityPermissionGranted = UsageStatsWatcher.isAccessibilityAllowed(requireContext())
+        val notificationPermissionGranted = MediaWatcher.isNotificationAccessGranted(requireContext())
 
         // Disable buttons if permissions granted
         view?.findViewById<Button>(R.id.btnGrantUsagePermission)?.isEnabled = !usagePermissionGranted
         view?.findViewById<Button>(R.id.btnGrantAccessibilityPermission)?.isEnabled = !accessibilityPermissionGranted
+        view?.findViewById<Button>(R.id.btnGrantNotificationPermission)?.isEnabled = !notificationPermissionGranted
 
         // Set the checkbox/x mark based on the permission status
         view?.findViewById<ImageView>(R.id.checkmarkUsage)?.setImageResource(if(usagePermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
         view?.findViewById<ImageView>(R.id.checkmarkAccessibility)?.setImageResource(if(accessibilityPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
+        view?.findViewById<ImageView>(R.id.checkmarkNotification)?.setImageResource(if(notificationPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
     }
 }

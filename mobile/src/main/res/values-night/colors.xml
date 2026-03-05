@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget theme colors (dark mode overrides) -->
+    <color name="widget_background">#2A2A2A</color>
+    <color name="widget_text_primary">#FFFFFF</color>
+    <color name="widget_text_secondary">#AAAAAA</color>
+    <color name="widget_text_tertiary">#CCCCCC</color>
+    <color name="widget_text_muted">#888888</color>
+    <color name="widget_bar_bg">#424242</color>
+    <color name="widget_icon_tint">#888888</color>
+</resources>

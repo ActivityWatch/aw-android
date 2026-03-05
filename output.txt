@@ -1,0 +1,140 @@
+01-31 20:44:54.926  8974  8974 W RustInterface: Hello Android (from Rust!)
+01-31 20:44:54.932  8974  8974 I RustInterface: Bucket with ID 'test', already existed. Not creating.
+01-31 20:44:54.933  8974  8974 W RustInterface: {
+01-31 20:44:54.933  8974  8974 W RustInterface:   "aw-watcher-android-test": {
+01-31 20:44:54.933  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.107321278Z",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.933  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "id": "aw-watcher-android-test",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.933  8974  8974 W RustInterface:       "end": "2026-01-31T17:35:57.596Z",
+01-31 20:44:54.933  8974  8974 W RustInterface:       "start": "2026-01-26T08:09:35.807Z"
+01-31 20:44:54.933  8974  8974 W RustInterface:     },
+01-31 20:44:54.933  8974  8974 W RustInterface:     "type": "currentwindow"
+01-31 20:44:54.933  8974  8974 W RustInterface:   },
+01-31 20:44:54.933  8974  8974 W RustInterface:   "aw-watcher-android-unlock": {
+01-31 20:44:54.933  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.145932319Z",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.933  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "id": "aw-watcher-android-unlock",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.933  8974  8974 W RustInterface:       "end": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:       "start": null
+01-31 20:44:54.933  8974  8974 W RustInterface:     },
+01-31 20:44:54.933  8974  8974 W RustInterface:     "type": "os.lockscreen.unlocks"
+01-31 20:44:54.933  8974  8974 W RustInterface:   },
+01-31 20:44:54.933  8974  8974 W RustInterface:   "test": {
+01-31 20:44:54.933  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "created": "2026-01-31T17:19:28.707277879Z",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.933  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "id": "test",
+01-31 20:44:54.933  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.933  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.933  8974  8974 W RustInterface:       "end": "2026-01-31T17:35:58.124Z",
+01-31 20:44:54.933  8974  8974 W RustInterface:       "start": "2026-01-31T17:19:28.716Z"
+01-31 20:44:54.933  8974  8974 W RustInterface:     },
+01-31 20:44:54.933  8974  8974 W RustInterface:     "type": "test"
+01-31 20:44:54.933  8974  8974 W RustInterface:   }
+01-31 20:44:54.933  8974  8974 W RustInterface: }
+01-31 20:44:54.939  8974  8974 W RustInterface: {"timestamp": "2026-01-31T17:44:54.934Z", "duration": 0, "data": {"key": "value"}}
+01-31 20:44:54.942  8974  8974 W RustInterface: Heartbeat successfully received
+01-31 20:44:54.943  8974  8974 W RustInterface: {
+01-31 20:44:54.943  8974  8974 W RustInterface:   "aw-watcher-android-test": {
+01-31 20:44:54.943  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.107321278Z",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.943  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "id": "aw-watcher-android-test",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.943  8974  8974 W RustInterface:       "end": "2026-01-31T17:35:57.596Z",
+01-31 20:44:54.943  8974  8974 W RustInterface:       "start": "2026-01-26T08:09:35.807Z"
+01-31 20:44:54.943  8974  8974 W RustInterface:     },
+01-31 20:44:54.943  8974  8974 W RustInterface:     "type": "currentwindow"
+01-31 20:44:54.943  8974  8974 W RustInterface:   },
+01-31 20:44:54.943  8974  8974 W RustInterface:   "aw-watcher-android-unlock": {
+01-31 20:44:54.943  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.145932319Z",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.943  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "id": "aw-watcher-android-unlock",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.943  8974  8974 W RustInterface:       "end": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:       "start": null
+01-31 20:44:54.943  8974  8974 W RustInterface:     },
+01-31 20:44:54.943  8974  8974 W RustInterface:     "type": "os.lockscreen.unlocks"
+01-31 20:44:54.943  8974  8974 W RustInterface:   },
+01-31 20:44:54.943  8974  8974 W RustInterface:   "test": {
+01-31 20:44:54.943  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "created": "2026-01-31T17:19:28.707277879Z",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.943  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "id": "test",
+01-31 20:44:54.943  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.943  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.943  8974  8974 W RustInterface:       "end": "2026-01-31T17:44:54.934Z",
+01-31 20:44:54.943  8974  8974 W RustInterface:       "start": "2026-01-31T17:19:28.716Z"
+01-31 20:44:54.943  8974  8974 W RustInterface:     },
+01-31 20:44:54.943  8974  8974 W RustInterface:     "type": "test"
+01-31 20:44:54.943  8974  8974 W RustInterface:   }
+01-31 20:44:54.943  8974  8974 W RustInterface: }
+01-31 20:44:54.944  8974  8974 W RustInterface: {
+01-31 20:44:54.944  8974  8974 W RustInterface:   "aw-watcher-android-test": {
+01-31 20:44:54.944  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.107321278Z",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.944  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "id": "aw-watcher-android-test",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.944  8974  8974 W RustInterface:       "end": "2026-01-31T17:35:57.596Z",
+01-31 20:44:54.944  8974  8974 W RustInterface:       "start": "2026-01-26T08:09:35.807Z"
+01-31 20:44:54.944  8974  8974 W RustInterface:     },
+01-31 20:44:54.944  8974  8974 W RustInterface:     "type": "currentwindow"
+01-31 20:44:54.944  8974  8974 W RustInterface:   },
+01-31 20:44:54.944  8974  8974 W RustInterface:   "aw-watcher-android-unlock": {
+01-31 20:44:54.944  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "created": "2026-01-31T17:15:57.145932319Z",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.944  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "id": "aw-watcher-android-unlock",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.944  8974  8974 W RustInterface:       "end": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:       "start": null
+01-31 20:44:54.944  8974  8974 W RustInterface:     },
+01-31 20:44:54.944  8974  8974 W RustInterface:     "type": "os.lockscreen.unlocks"
+01-31 20:44:54.944  8974  8974 W RustInterface:   },
+01-31 20:44:54.944  8974  8974 W RustInterface:   "test": {
+01-31 20:44:54.944  8974  8974 W RustInterface:     "client": "aw-android",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "created": "2026-01-31T17:19:28.707277879Z",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "data": {},
+01-31 20:44:54.944  8974  8974 W RustInterface:     "events": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "hostname": "sdk_gphone64_arm64",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "id": "test",
+01-31 20:44:54.944  8974  8974 W RustInterface:     "last_updated": null,
+01-31 20:44:54.944  8974  8974 W RustInterface:     "metadata": {
+01-31 20:44:54.944  8974  8974 W RustInterface:       "end": "2026-01-31T17:44:54.934Z",
+01-31 20:44:54.944  8974  8974 W RustInterface:       "start": "2026-01-31T17:19:28.716Z"
+01-31 20:44:54.944  8974  8974 W RustInterface:     },
+01-31 20:44:54.944  8974  8974 W RustInterface:     "type": "test"
+01-31 20:44:54.944  8974  8974 W RustInterface:   }
+01-31 20:44:54.944  8974  8974 W RustInterface: }
+01-31 20:44:54.944  8974  8974 W RustInterface: []
+01-31 20:44:54.945  8974  8974 W RustInterface: [[{"data":{"key":"value"},"duration":0.0,"id":77,"timestamp":"2026-01-31T17:44:54.934Z"},{"data":{"key":"value"},"duration":0.0,"id":75,"timestamp":"2026-01-31T17:35:58.124Z"},{"data":{"key":"value"},"duration":0.0,"id":73,"timestamp":"2026-01-31T17:31:16.341Z"},{"data":{"key":"value"},"duration":0.0,"id":71,"timestamp":"2026-01-31T17:24:44.733Z"},{"data":{"key":"value"},"duration":0.0,"id":69,"timestamp":"2026-01-31T17:22:02.726Z"},{"data":{"key":"value"},"duration":0.0,"id":67,"timestamp":"2026-01-31T17:19:28.716Z"}]]
+01-31 20:44:54.945  8974  8974 W RustInterface: Testing androidQuery for Jan 31, 2026
+01-31 20:44:54.958  8974  8974 W RustInterface: [[{"data":{"$category":["Uncategorized"],"app":"Settings","classname":"com.android.settings.spa.SpaActivity","package":"com.android.settings"},"duration":38.251,"id":null,"timestamp":"2026-01-31T08:28:46.815Z"},{"data":{"$category":["Uncategorized"],"app":"Package installer","classname":"com.android.packageinstaller.UninstallerActivity","package":"com.google.android.packageinstaller"},"duration":3.619,"id":null,"timestamp":"2026-01-31T14:58:46.036Z"},{"data":{"$category":["Uncategorized"],"app":"Pixel Launcher","classname":"com.google.android.apps.nexuslauncher.NexusLauncherActivity","package":"com.google.android.apps.nexuslauncher"},"duration":8683.342499999,"id":null,"timestamp":"2026-01-31T08:28:56.511500Z"},{"data":{"$category":["Work","Programming","ActivityWatch"],"app":"ActivityWatch","classname":"net.activitywatch.android.OnboardingActivity","package":"net.activitywatch.android.debug"},"duration":18.0845,"id":null,"timestamp":"2026-01-31T17:15:56.021500Z"}]]
