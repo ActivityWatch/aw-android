@@ -18,7 +18,7 @@ jobs:
     name: Build aw-server-rust
     runs-on: ubicloud-standard-8
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
     - name: Set RELEASE
@@ -26,7 +26,7 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Cache JNI libs
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
@@ -63,7 +63,7 @@ jobs:
         ./aw-server-rust/install-ndk.sh
 
     - name: Cache cargo build
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       env:
         cache-name: cargo-build-target
@@ -94,7 +94,7 @@ jobs:
       versionCode: ${{ steps.versionCode.outputs.versionCode }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -141,8 +141,7 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
-      if: steps.fastlane_secrets.outputs.available == 'true'
-      uses: Wandalen/wretry.action@master
+      uses: Wandalen/wretry.action@v3
       with:
         command: bundle exec fastlane update_version
         attempt_limit: 3
@@ -171,7 +170,7 @@ jobs:
         type: ['apk', 'aab']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -190,8 +189,9 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
@@ -206,7 +206,7 @@ jobs:
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
+    - uses: actions/cache/restore@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
@@ -266,18 +266,20 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
@@ -288,6 +290,21 @@ jobs:
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
         ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
+
+    # Restores jniLibs from cache
+    # `actions/cache/restore` only restores, without saving back in a post-hook
+    - uses: actions/cache/restore@v4
+      id: cache-jniLibs
+      env:
+        cache-name: jniLibs
+      with:
+        path: mobile/src/main/jniLibs/
+        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: true
+    - name: Check that jniLibs present
+      run: |
+        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     # Test
     - name: Test
@@ -317,7 +334,7 @@ jobs:
           #   android_emu_version: 32
     steps:
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -327,7 +344,7 @@ jobs:
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
+    - uses: actions/cache/restore@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
@@ -454,11 +471,14 @@ jobs:
     #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
 
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -532,7 +552,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Download APK & AAB
       uses: actions/download-artifact@v4
@@ -553,7 +573,7 @@ jobs:
         bundler-cache: true
 
     # detect if version tag is stable/beta
-    - uses: nowsprinting/check-version-format-action@v2
+    - uses: nowsprinting/check-version-format-action@v4
       id: version
       with:
         prefix: 'v'
@@ -603,14 +623,14 @@ jobs:
       run: ls -R
 
     # detect if version tag is stable/beta
-    - uses: nowsprinting/check-version-format-action@v2
+    - uses: nowsprinting/check-version-format-action@v4
       id: version
       with:
         prefix: 'v'
 
     # create a release
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         draft: true
         prerelease: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
