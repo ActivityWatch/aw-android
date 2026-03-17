@@ -213,6 +213,7 @@ jobs:
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: false
 
     - name: Check that jniLibs present
       run: |
@@ -300,12 +301,15 @@ jobs:
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: false
     - name: Check that jniLibs present
+      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     # Test
     - name: Test
+      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         make test
 
@@ -323,13 +327,13 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        android_avd: [Pixel_API_27_AOSP]
+        android_avd: [Pixel_API_32_AOSP]
         include:
-          - android_avd: Pixel_API_27_AOSP
-            android_emu_version: 27
+          # - android_avd: Pixel_API_27_AOSP
+          #   android_emu_version: 27
           # # # Cannot run > 27-emuLevel -_- https://github.com/actions/runner-images/issues/6527
-          # - android_avd: Pixel_API_32_AOSP
-          #   android_emu_version: 32
+          - android_avd: Pixel_API_32_AOSP
+            android_emu_version: 32
     steps:
 
     - uses: actions/checkout@v4
@@ -349,6 +353,7 @@ jobs:
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
+        fail-on-cache-miss: false
 
     - name: Display structure of downloaded files
       run: |
@@ -362,6 +367,21 @@ jobs:
       uses: android-actions/setup-android@v3
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ env.JAVA_VERSION }}
+
+    # Android SDK & NDK (set up once before both emulator creation and tests)
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+    - name: Set up Android NDK
+      run: |
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
+        ls $ANDROID_NDK_HOME
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
     - name: Create Android emulator
       run: |
         # Pin AVD home so avdmanager and emulator agree on the location.
@@ -373,39 +393,18 @@ jobs:
         echo "ANDROID_AVD_HOME=$AVD_HOME" >> "$GITHUB_ENV"
         export ANDROID_AVD_HOME="$AVD_HOME"
 
-        # Install AVD files
-        echo "y" | sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | sdkmanager --licenses
+        # Install system image
+        echo "y" | sdkmanager --install "system-images;android-${MATRIX_E_SDK};default;x86_64"
+        echo "y" | sdkmanager --licenses || true
 
         # Create emulator
-        avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "no" | avdmanager --noui create avd -n "$MATRIX_AVD" -d pixel \
+          --package "system-images;android-${MATRIX_E_SDK};default;x86_64" --force
 
-        # Verify AVD was created before proceeding
+        # Verify AVD was created before proceeding.
         echo "AVDs in $ANDROID_AVD_HOME:"
         ls -la "$ANDROID_AVD_HOME/" 2>/dev/null || echo "WARNING: AVD directory empty after creation!"
         $ANDROID_HOME/emulator/emulator -list-avds
-        if false; then
-        emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
-        # The following madness is to support empty OR populated config.ini files,
-        # the state of which is dependant on the version of the emulator used (which we don't control),
-        # so let's be defensive to be safe.
-        # Replace existing config (NOTE we're on MacOS so sed works differently!)
-        sed -i .bak 's/hw.lcd.density=.*/hw.lcd.density=420/' "$emulator_config"
-        sed -i .bak 's/hw.lcd.height=.*/hw.lcd.height=1920/' "$emulator_config"
-        sed -i .bak 's/hw.lcd.width=.*/hw.lcd.width=1080/' "$emulator_config"
-        # Or, add new config
-        if ! grep -q "hw.lcd.density" "$emulator_config"; then
-          echo "hw.lcd.density=420" >> "$emulator_config"
-        fi
-        if ! grep -q "hw.lcd.height" "$emulator_config"; then
-          echo "hw.lcd.height=1920" >> "$emulator_config"
-        fi
-        if ! grep -q "hw.lcd.width" "$emulator_config"; then
-          echo "hw.lcd.width=1080" >> "$emulator_config"
-        fi
-        echo "Emulator settings ($emulator_config)"
-        cat "$emulator_config"
-        fi
 
     - name: Start Android emulator
       timeout-minutes: 30 # ~4min normal - 3x DOSafety
@@ -415,8 +414,7 @@ jobs:
       run: |
         echo "Starting emulator and waiting for boot to complete...."
         ls -la $ANDROID_HOME/emulator
-        emulator --accel-check  # check for hardware acceleration
-        nohup emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        nohup $ANDROID_HOME/emulator/emulator -avd $MATRIX_AVD -gpu swiftshader_indirect -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
         $ANDROID_HOME/platform-tools/adb devices
@@ -461,21 +459,6 @@ jobs:
     #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
     #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
 
-    - name: Set up JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: ${{ env.JAVA_VERSION }}
-
-    # Android SDK & NDK
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v3
-    - name: Set up Android NDK
-      run: |
-        sdkmanager "ndk;${{ env.NDK_VERSION }}"
-        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
-        ls $ANDROID_NDK_HOME
-        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
     - name: Run E2E tests
       timeout-minutes: 20
