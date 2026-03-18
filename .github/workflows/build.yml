@@ -370,8 +370,9 @@ jobs:
         disable-animations: true
         script: |
           make test-e2e || true
-          adb shell am start -n net.activitywatch.android.debug/net.activitywatch.android.MainActivity
-          sleep 1
+          adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk
+          adb shell monkey -p net.activitywatch.android.debug -c android.intent.category.LAUNCHER 1
+          sleep 3
           adb shell screencap -p /sdcard/screenshot.png
           adb pull /sdcard/screenshot.png .
           mkdir -p mobile/build
