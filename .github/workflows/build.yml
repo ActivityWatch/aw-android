@@ -370,8 +370,12 @@ jobs:
         disable-animations: true
         script: |
           make test-e2e || true
+          adb shell am start -n net.activitywatch.android/.MainActivity
+          sleep 1
           adb shell screencap -p /sdcard/screenshot.png
           adb pull /sdcard/screenshot.png .
+          mkdir -p mobile/build
+          adb logcat -d > mobile/build/logcat.log
 
     - name: Upload screenshot
       uses: actions/upload-artifact@v4
