@@ -83,6 +83,12 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
+    - name: Upload jniLibs artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs/
+
   # This needs to be a seperate job since fastlane update_version,
   # fails if run concurrently (such as in build apk/aab matrix),
   # thus we need to run it once and and reuse the results.
@@ -335,19 +341,13 @@ jobs:
       run: |
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
-    # Restores jniLibs from cache
-    # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v4
-      id: cache-jniLibs
-      env:
-        cache-name: jniLibs
+    - name: Download jniLibs artifact
+      uses: actions/download-artifact@v4
       with:
+        name: jniLibs
         path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: false
 
     - name: Display structure of downloaded files
-      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
@@ -371,21 +371,8 @@ jobs:
         script: |
           make test-e2e || true
           adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk
-
-          # Grant usage stats permission so onboarding is skipped
-          adb shell appops set net.activitywatch.android.debug PACKAGE_USAGE_STATS allow
-
-          # Write isFirstTime=false to SharedPreferences so MainActivity doesn't redirect to OnboardingActivity
-          adb shell "run-as net.activitywatch.android.debug sh -c \
-            'mkdir -p /data/data/net.activitywatch.android.debug/shared_prefs && \
-             echo \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?>\" > /data/data/net.activitywatch.android.debug/shared_prefs/AWPreferences.xml && \
-             echo \"<map><boolean name=\\\"isFirstTime\\\" value=\\\"false\\\" /></map>\" >> /data/data/net.activitywatch.android.debug/shared_prefs/AWPreferences.xml'"
-
-          # Unlock screen and launch app
-          adb shell input keyevent 82
           adb shell monkey -p net.activitywatch.android.debug -c android.intent.category.LAUNCHER 1
-          sleep 8
-
+          sleep 3
           adb shell screencap -p /sdcard/screenshot.png
           adb pull /sdcard/screenshot.png .
           mkdir -p mobile/build
