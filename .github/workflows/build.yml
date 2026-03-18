@@ -371,8 +371,21 @@ jobs:
         script: |
           make test-e2e || true
           adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk
+
+          # Grant usage stats permission so onboarding is skipped
+          adb shell appops set net.activitywatch.android.debug PACKAGE_USAGE_STATS allow
+
+          # Write isFirstTime=false to SharedPreferences so MainActivity doesn't redirect to OnboardingActivity
+          adb shell "run-as net.activitywatch.android.debug sh -c \
+            'mkdir -p /data/data/net.activitywatch.android.debug/shared_prefs && \
+             echo \"<?xml version=\\\"1.0\\\" encoding=\\\"utf-8\\\" standalone=\\\"yes\\\" ?>\" > /data/data/net.activitywatch.android.debug/shared_prefs/AWPreferences.xml && \
+             echo \"<map><boolean name=\\\"isFirstTime\\\" value=\\\"false\\\" /></map>\" >> /data/data/net.activitywatch.android.debug/shared_prefs/AWPreferences.xml'"
+
+          # Unlock screen and launch app
+          adb shell input keyevent 82
           adb shell monkey -p net.activitywatch.android.debug -c android.intent.category.LAUNCHER 1
-          sleep 3
+          sleep 8
+
           adb shell screencap -p /sdcard/screenshot.png
           adb pull /sdcard/screenshot.png .
           mkdir -p mobile/build
