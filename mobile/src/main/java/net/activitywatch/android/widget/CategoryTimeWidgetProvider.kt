@@ -17,8 +17,8 @@ private const val ACTION_REFRESH = "net.activitywatch.android.widget.ACTION_REFR
 
 /**
  * Widget provider for displaying category time stats.
- * Updates are handled every 30 minutes via both Android's widget update mechanism
- * and WorkManager for reliability. Also supports manual refresh via button click.
+ * Updates are handled every 15 mins by the work manager and every 30 mins by
+ * Android's widget update mechanism.
  */
 class CategoryTimeWidgetProvider : AppWidgetProvider() {
 

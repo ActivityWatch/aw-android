@@ -45,7 +45,7 @@ private val CATEGORY_ACCENT_COLORS = intArrayOf(
 )
 
 /**
- * Worker that updates the widget in the background every 30 minutes
+ * Worker that updates the widget in the background every 15 minutes
  */
 class CategoryTimeWidgetWorker(
     private val context: Context,
@@ -89,7 +89,7 @@ class CategoryTimeWidgetWorker(
          */
         fun schedulePeriodicUpdates(context: Context) {
             val workRequest = PeriodicWorkRequestBuilder<CategoryTimeWidgetWorker>(
-                30, TimeUnit.MINUTES
+                15, TimeUnit.MINUTES
             ).build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -97,7 +97,7 @@ class CategoryTimeWidgetWorker(
                 ExistingPeriodicWorkPolicy.KEEP,
                 workRequest
             )
-            Log.d(TAG, "Scheduled periodic widget updates every 30 minutes")
+            Log.d(TAG, "Scheduled periodic widget updates every 15 minutes")
         }
 
         /**
