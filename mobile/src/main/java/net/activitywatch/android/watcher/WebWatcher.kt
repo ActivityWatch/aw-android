@@ -97,7 +97,7 @@ class WebWatcher : AccessibilityService() {
                 }
             }
         } catch(ex : Exception) {
-            Log.e(tag, ex.message!!)
+            Log.e(tag, ex.message ?: ex.toString())
         }
     }
 
