@@ -73,6 +73,7 @@ class SessionEventWatcher(val context: Context) {
 
         val startTimestamp = lastUpdated?.toEpochMilli() ?: 0L
         val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
+        val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
 
         var eventsSent = 0
 
@@ -82,7 +83,12 @@ class SessionEventWatcher(val context: Context) {
             eventsSent++
         }
         
-        Log.i(TAG, "Finished processing events, sent $eventsSent session events")
+        for (timestamp in unlockTimestamps) {
+            val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+            ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+        }
+        
+        Log.i(TAG, "Finished processing events, sent $eventsSent session events and ${unlockTimestamps.size} unlock events")
         return eventsSent
     }
 
@@ -110,8 +116,10 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Sending session events for specific day: ${SessionUtils.formatDate(dayStartMs)}")
 
         val timeline = sessionParser.parseUsageEventsForDay(dayStartMs)
+        val unlockTimestamps = sessionParser.parseUnlockEventsForDay(dayStartMs)
 
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
+        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
         var eventsSent = 0
         for (session in timeline.sessions) {
@@ -119,7 +127,12 @@ class SessionEventWatcher(val context: Context) {
             eventsSent++
         }
 
-        Log.i(TAG, "Sent $eventsSent session events for day")
+        for (timestamp in unlockTimestamps) {
+            val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+            ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+        }
+
+        Log.i(TAG, "Sent $eventsSent session events and ${unlockTimestamps.size} unlock events for day")
     }
 
     /**
@@ -129,8 +142,10 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Sending session events for period: ${SessionUtils.formatDateTime(startTimestamp)} to ${SessionUtils.formatDateTime(endTimestamp)}")
 
         val sessions = sessionParser.parseUsageEventsForPeriod(startTimestamp, endTimestamp)
+        val unlockTimestamps = sessionParser.parseUnlockEventsForPeriod(startTimestamp, endTimestamp)
 
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
+        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
         var eventsSent = 0
         for (session in sessions) {
@@ -138,7 +153,12 @@ class SessionEventWatcher(val context: Context) {
             eventsSent++
         }
 
-        Log.i(TAG, "Sent $eventsSent session events for period")
+        for (timestamp in unlockTimestamps) {
+            val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+            ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+        }
+
+        Log.i(TAG, "Sent $eventsSent session events and ${unlockTimestamps.size} unlock events for period")
     }
 
     /**
@@ -186,22 +206,31 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Sending session events for last $numberOfDays days")
 
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
+        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
         var totalEventsSent = 0
+        var totalUnlocksSent = 0
 
         for (i in 0 until numberOfDays) {
             val dayStart = SessionUtils.getStartOfDayDaysAgo(i)
             val timeline = sessionParser.parseUsageEventsForDay(dayStart)
+            val unlockTimestamps = sessionParser.parseUnlockEventsForDay(dayStart)
 
             for (session in timeline.sessions) {
                 insertSessionAsEvent(session)
                 totalEventsSent++
             }
 
-            Log.d(TAG, "Sent ${timeline.sessions.size} session events for day ${SessionUtils.formatDate(dayStart)}")
+            for (timestamp in unlockTimestamps) {
+                val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+                ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+                totalUnlocksSent++
+            }
+
+            Log.d(TAG, "Sent ${timeline.sessions.size} session events and ${unlockTimestamps.size} unlock events for day ${SessionUtils.formatDate(dayStart)}")
         }
 
-        Log.i(TAG, "Sent total of $totalEventsSent session events for last $numberOfDays days")
+        Log.i(TAG, "Sent total of $totalEventsSent session events and $totalUnlocksSent unlock events for last $numberOfDays days")
     }
 
     /**

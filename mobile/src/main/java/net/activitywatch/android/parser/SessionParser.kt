@@ -96,6 +96,40 @@ class SessionParser(private val context: Context) {
     }
 
     /**
+     * Parse unlock (KEYGUARD_HIDDEN) events for a period starting from a timestamp
+     */
+    fun parseUnlockEventsForPeriod(startTimestamp: Long, endTimestamp: Long): List<Long> {
+        val usageEvents = usageStatsManager.queryEvents(startTimestamp, endTimestamp)
+        val unlockTimestamps = mutableListOf<Long>()
+
+        while (usageEvents.hasNextEvent()) {
+            val event = UsageEvents.Event()
+            usageEvents.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                unlockTimestamps.add(event.timeStamp)
+            }
+        }
+
+        return unlockTimestamps.sorted()
+    }
+
+    /**
+     * Parse unlock events since a specific timestamp
+     */
+    fun parseUnlockEventsSince(lastUpdateTimestamp: Long): List<Long> {
+        val currentTime = System.currentTimeMillis()
+        return parseUnlockEventsForPeriod(lastUpdateTimestamp, currentTime)
+    }
+
+    /**
+     * Parse unlock events for a given day
+     */
+    fun parseUnlockEventsForDay(dayStartMs: Long): List<Long> {
+        val dayEndMs = dayStartMs + 24 * 60 * 60 * 1000 // 24 hours later
+        return parseUnlockEventsForPeriod(dayStartMs, dayEndMs)
+    }
+
+    /**
      * Extract raw events from UsageEvents iterator
      */
     private fun extractRawEvents(usageEvents: UsageEvents): List<UsageEvent> {
