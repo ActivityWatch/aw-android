@@ -80,7 +80,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         })
 
         // Test RustInterface functions (remove after testing)
-        RustInterface(this).test()
     }
 
     override fun onResume() {

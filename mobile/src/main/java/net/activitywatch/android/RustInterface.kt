@@ -148,6 +148,7 @@ class RustInterface (context: Context? = null) {
     fun insertEvent(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), 0.0)
+        Log.d(TAG, "insertEvent response: $msg")
     }
 
     fun getBucketsJSON(): JSONObject {

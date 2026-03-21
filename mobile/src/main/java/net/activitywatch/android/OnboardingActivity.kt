@@ -147,6 +147,14 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantAccessibilityPermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        // Handle grant exact alarm permissions (for widgets)
+        view.findViewById<Button>(R.id.btnGrantExactAlarmPermission).setOnClickListener {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = android.net.Uri.parse("package:" + requireContext().packageName)
+                })
+            }
+        }
         // Handle grant notification access (for media watcher)
         view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -161,15 +169,23 @@ class PermissionsFragment : Fragment() {
         val usagePermissionGranted = UsageStatsWatcher.isUsageAllowed(requireContext())
         val accessibilityPermissionGranted = UsageStatsWatcher.isAccessibilityAllowed(requireContext())
         val notificationPermissionGranted = MediaWatcher.isNotificationAccessGranted(requireContext())
+        val exactAlarmPermissionGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val alarmManager = requireContext().getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true // Granted on Android < 12 by manifest permission
+        }
 
         // Disable buttons if permissions granted
         view?.findViewById<Button>(R.id.btnGrantUsagePermission)?.isEnabled = !usagePermissionGranted
         view?.findViewById<Button>(R.id.btnGrantAccessibilityPermission)?.isEnabled = !accessibilityPermissionGranted
+        view?.findViewById<Button>(R.id.btnGrantExactAlarmPermission)?.isEnabled = !exactAlarmPermissionGranted
         view?.findViewById<Button>(R.id.btnGrantNotificationPermission)?.isEnabled = !notificationPermissionGranted
 
         // Set the checkbox/x mark based on the permission status
         view?.findViewById<ImageView>(R.id.checkmarkUsage)?.setImageResource(if(usagePermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
         view?.findViewById<ImageView>(R.id.checkmarkAccessibility)?.setImageResource(if(accessibilityPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
+        view?.findViewById<ImageView>(R.id.checkmarkExactAlarm)?.setImageResource(if(exactAlarmPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
         view?.findViewById<ImageView>(R.id.checkmarkNotification)?.setImageResource(if(notificationPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
     }
 }
