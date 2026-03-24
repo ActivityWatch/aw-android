@@ -19,6 +19,7 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
+import androidx.core.net.toUri
 
 // enum for the onboarding pages
 enum class OnboardingPage {
@@ -34,7 +35,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         val viewPager = findViewById<ViewPager2>(R.id.viewPager)
         val tabLayout = findViewById<TabLayout>(R.id.tabLayout)
-        val numPages = OnboardingPage.values().size
+        val numPages = OnboardingPage.entries.size
 
         viewPager.adapter = OnboardingAdapter(this)
         TabLayoutMediator(tabLayout, viewPager) { _, _ -> }.attach()
@@ -103,7 +104,7 @@ class OnboardingActivity : AppCompatActivity() {
 
 class OnboardingAdapter(fragmentActivity: FragmentActivity) : FragmentStateAdapter(fragmentActivity) {
 
-    override fun getItemCount(): Int = OnboardingPage.values().size
+    override fun getItemCount(): Int = OnboardingPage.entries.size
 
     override fun createFragment(position: Int): Fragment {
         return when (position) {
@@ -151,7 +152,7 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantExactAlarmPermission).setOnClickListener {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                    data = android.net.Uri.parse("package:" + requireContext().packageName)
+                    data = ("package:" + requireContext().packageName).toUri()
                 })
             }
         }
