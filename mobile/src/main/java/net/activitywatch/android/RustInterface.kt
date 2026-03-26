@@ -15,7 +15,7 @@ import org.threeten.bp.Instant
 
 private const val TAG = "RustInterface"
 
-class RustInterface (context: Context? = null) {
+class RustInterface(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
 
@@ -50,6 +50,7 @@ class RustInterface (context: Context? = null) {
     external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
     external fun query(query: String, timeperiods: String): String
     external fun androidQuery(timeperiods: String): String
+    external fun migrateHostname(hostname: String): String
 
     fun sayHello(to: String): String {
         return greeting(to)
@@ -88,18 +89,18 @@ class RustInterface (context: Context? = null) {
 
     fun createBucketHelper(bucket_id: String, type: String, client: String = "aw-android") {
         val context =
-                appContext
-                        ?: throw IllegalStateException(
-                                "Context is required but was not provided during initialization"
-                        )
+            appContext
+                ?: throw IllegalStateException(
+                    "Context is required but was not provided during initialization"
+                )
         val hostname = getDeviceName(context)
         if (bucket_id in getBucketsJSON().keys().asSequence()) {
             Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
         } else {
             val msg =
-                    createBucket(
-                            """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
-                    )
+                createBucket(
+                    """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
+                )
             Log.w(TAG, msg)
         }
     }
@@ -123,11 +124,11 @@ class RustInterface (context: Context? = null) {
      * @param pulsetime Time window for merging events (default: 60 seconds)
      */
     fun heartbeatHelper(
-            bucket_id: String,
-            timestamp: Instant,
-            duration: Double,
-            data: JSONObject,
-            pulsetime: Double = 60.0
+        bucket_id: String,
+        timestamp: Instant,
+        duration: Double,
+        data: JSONObject,
+        pulsetime: Double = 60.0
     ) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), pulsetime)
@@ -170,9 +171,10 @@ class RustInterface (context: Context? = null) {
             JSONArray()
         }
     }
+
     fun getDeviceName(context: Context): String {
         return Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
-                ?: android.os.Build.MODEL ?: "Unknown"
+            ?: android.os.Build.MODEL ?: "Unknown"
     }
 
     fun test() {

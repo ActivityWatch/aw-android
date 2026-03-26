@@ -28,12 +28,13 @@ android {
     }
     buildTypes {
         release {
-            applicationIdSuffix ".debug"
+            applicationIdSuffix
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             ndk {
                 debugSymbolLevel 'SYMBOL_TABLE'
             }
+            signingConfig signingConfigs.debug
         }
         debug {
             applicationIdSuffix ".debug"
