@@ -26,4 +26,14 @@ class AWPreferences(context: Context) {
         editor.putBoolean("isFirstTime", true)
         editor.apply()
     }
+
+    fun getRemoteServerUrl(): String {
+        return sharedPreferences.getString("remoteServerUrl", "") ?: ""
+    }
+
+    fun setRemoteServerUrl(url: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerUrl", url)
+        editor.apply()
+    }
 }

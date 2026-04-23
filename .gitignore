@@ -6,6 +6,13 @@ mobile/src/main/assets/webui
 vendor
 dist
 
+# Build environment (not part of the project)
+android-sdk/
+jdk-17.0.18+8/
+cmdline-tools.zip
+jdk17.zip
+apk_extracted/
+
 # secrets
 secret*
 *.key

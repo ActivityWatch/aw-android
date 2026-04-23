@@ -1,132 +1,131 @@
 package net.activitywatch.android
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.system.Os
 import android.util.Log
-import android.widget.Toast
 import net.activitywatch.android.models.Event
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.Instant
-import java.io.File
-import java.util.concurrent.Executors
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.StandardCharsets
 
 private const val TAG = "RustInterface"
 
-class RustInterface constructor(context: Context? = null) {
+class RustInterface constructor(private val context: Context? = null) {
 
-    init {
-        // NOTE: This doesn't work, probably because I can't get gradle to not strip symbols on release builds
-        Os.setenv("RUST_BACKTRACE", "1", true)
-
-        if(context != null) {
-            Os.setenv("SQLITE_TMPDIR", context.cacheDir.absolutePath, true)
-        }
-
-        System.loadLibrary("aw_server")
-
-        initialize()
-        if(context != null) {
-            setDataDir(context.filesDir.absolutePath)
-        }
-    }
+    private val prefs: AWPreferences? = context?.let { AWPreferences(it) }
 
     companion object {
         var serverStarted = false
     }
 
-    private external fun initialize(): String
-    private external fun greeting(pattern: String): String
-    private external fun startServer()
-    private external fun setDataDir(path: String)
-    external fun getBuckets(): String
-    external fun createBucket(bucket: String): String
-    external fun getEvents(bucket_id: String, limit: Int): String
-    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
-
-    fun sayHello(to: String): String {
-        return greeting(to)
+    private fun getServerUrl(): String {
+        val remote = prefs?.getRemoteServerUrl()
+        return if (!remote.isNullOrBlank()) remote else "http://127.0.0.1:5600"
     }
 
-    fun startServerTask(context: Context) {
-        if(!serverStarted) {
-            // check if port 5600 is already in use
-            try {
-                val socket = java.net.ServerSocket(5600)
-                socket.close()
-            } catch(e: java.net.BindException) {
-                Log.e(TAG, "Port 5600 is already in use, server probably already started")
-                return
+    private fun httpGet(path: String): String {
+        return try {
+            val url = URL("${getServerUrl()}$path")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                Log.e(TAG, "HTTP GET failed: $path, status=$responseCode")
+                "{}"
             }
-
-            serverStarted = true
-            val executor = Executors.newSingleThreadExecutor()
-            val handler = Handler(Looper.getMainLooper())
-            executor.execute {
-                // will not block the UI thread
-
-                // Start server
-                Log.w(TAG, "Starting server...")
-                startServer()
-
-                handler.post {
-                    // will run on UI thread after the task is done
-                    Log.i(TAG, "Server finished")
-                    serverStarted = false
-                }
-            }
-            Log.w(TAG, "Server started")
+        } catch (e: Exception) {
+            Log.e(TAG, "HTTP GET error: $path, ${e.message}")
+            "{}"
         }
     }
 
+    private fun httpPost(path: String, payload: String): String {
+        return try {
+            val url = URL("${getServerUrl()}$path")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.doOutput = true
+
+            conn.outputStream.use { it.write(payload.toByteArray(StandardCharsets.UTF_8)) }
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                Log.i(TAG, "HTTP POST OK: $path")
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                Log.w(TAG, "HTTP POST failed: $path, status=$responseCode")
+                ""
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "HTTP POST error: $path, ${e.message}")
+            ""
+        }
+    }
+
+    fun startServerTask(context: Context) {
+        // No-op in remote-only mode
+        Log.i(TAG, "Remote-only mode: no local server to start")
+    }
+
     fun createBucketHelper(bucket_id: String, type: String, hostname: String = "unknown", client: String = "aw-android") {
-        if(bucket_id in getBucketsJSON().keys().asSequence()) {
-            Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
-        } else {
-            val msg = createBucket("""{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}""");
-            Log.w(TAG, msg)
+        try {
+            val buckets = getBucketsJSON()
+            if (bucket_id in buckets.keys().asSequence()) {
+                Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
+            } else {
+                val payload = """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
+                httpPost("/api/0/buckets/$bucket_id", payload)
+                Log.w(TAG, "Created bucket: $bucket_id")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "createBucketHelper error: ${e.message}")
         }
     }
 
     fun heartbeatHelper(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double = 60.0) {
-        val event = Event(timestamp, duration, data)
-        val msg = heartbeat(bucket_id, event.toString(), pulsetime)
-        //Log.w(TAG, msg)
+        try {
+            val event = Event(timestamp, duration, data)
+            val eventJson = event.toString()
+            httpPost("/api/0/buckets/$bucket_id/heartbeat?pulsetime=$pulsetime", eventJson)
+        } catch (e: Exception) {
+            Log.e(TAG, "heartbeatHelper error: ${e.message}")
+        }
     }
 
     fun getBucketsJSON(): JSONObject {
-        // TODO: Handle errors
-        val json = JSONObject(getBuckets())
-        if(json.length() <= 0) {
-            Log.w(TAG, "Length: ${json.length()}")
+        return try {
+            val result = httpGet("/api/0/buckets")
+            JSONObject(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "getBucketsJSON error: ${e.message}")
+            JSONObject()
         }
-        return json
     }
 
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
-        // TODO: Handle errors
-        val result = getEvents(bucket_id, limit)
         return try {
+            val limitParam = if (limit > 0) "?limit=$limit" else ""
+            val result = httpGet("/api/0/buckets/$bucket_id/events$limitParam")
+            Log.w(TAG, "getEventsJSON($bucket_id): raw result length=${result.length}")
             JSONArray(result)
-        } catch(e: JSONException) {
-            Log.e(TAG, "Error when trying to fetch events from bucket: $result")
+        } catch (e: JSONException) {
+            Log.e(TAG, "getEventsJSON parse error: ${e.message}")
+            JSONArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "getEventsJSON error: ${e.message}")
             JSONArray()
         }
     }
 
-    fun test() {
-        // TODO: Move to instrumented test
-        Log.w(TAG, sayHello("Android"))
-        createBucketHelper("test", "test")
-        Log.w(TAG, getBucketsJSON().toString(2))
-
-        val event = """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}"""
-        Log.w(TAG, event)
-        Log.w(TAG, heartbeat("test", event, 60.0))
-        Log.w(TAG, getBucketsJSON().toString(2))
-        Log.w(TAG, getEventsJSON("test").toString(2))
-    }
 }

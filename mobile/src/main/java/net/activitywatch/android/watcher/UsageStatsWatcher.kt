@@ -23,13 +23,14 @@ import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
+import org.threeten.bp.Duration
 import org.threeten.bp.Instant
 import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
 
-const val bucket_id = "aw-watcher-android-test"
-const val unlock_bucket_id = "aw-watcher-android-unlock"
+const val bucket_id = "aw-watcher-android-test2"
+const val unlock_bucket_id = "aw-watcher-android-unlock2"
 
 class UsageStatsWatcher constructor(val context: Context) {
     private val ri = RustInterface(context)
@@ -182,8 +183,17 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
             ri.createBucketHelper(unlock_bucket_id, "os.lockscreen.unlocks")
+
+            // 远程模式下，不要使用服务器上的旧时间（可能导致查询不到新数据）
             lastUpdated = getLastEventTime()
-            Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
+            Log.w(TAG, "lastUpdated from server: ${lastUpdated?.toString() ?: "never"}")
+
+            // 如果服务器上的数据太旧（超过7天），使用当前时间减去1小时
+            val now = Instant.now()
+            if (lastUpdated != null && Duration.between(lastUpdated, now).toDays() > 7) {
+                Log.w(TAG, "Server data is too old (>7 days), using now-1hour instead")
+                lastUpdated = now.minus(Duration.ofHours(1))
+            }
 
             val usm = getUSM() ?: return 0
 
@@ -228,6 +238,11 @@ class UsageStatsWatcher constructor(val context: Context) {
                         Log.w(TAG, "This should never happen!")
                         continue@nextEvent
                     }
+                }
+
+                // DEBUG: Log first few events to check timestamps
+                if (heartbeatsSent < 5) {
+                    Log.w(TAG, "DEBUG event timestamp: ${awEvent.timestamp}, app=${awEvent.data.getString("app")}")
                 }
 
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
