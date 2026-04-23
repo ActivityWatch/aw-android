@@ -23,7 +23,11 @@ class RustInterface constructor(private val context: Context? = null) {
 
     private fun getServerUrl(): String {
         val remote = prefs?.getRemoteServerUrl()
-        return if (!remote.isNullOrBlank()) remote else "http://127.0.0.1:5600"
+        return when {
+            remote.isNullOrBlank() -> "http://127.0.0.1:5600"
+            remote.startsWith("http://") || remote.startsWith("https://") -> remote
+            else -> "http://$remote"
+        }
     }
 
     private fun httpGet(path: String): String {
