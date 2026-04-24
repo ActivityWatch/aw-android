@@ -36,4 +36,24 @@ class AWPreferences(context: Context) {
         editor.putString("remoteServerUrl", url)
         editor.apply()
     }
+
+    fun getRemoteServerUsername(): String {
+        return sharedPreferences.getString("remoteServerUsername", "") ?: ""
+    }
+
+    fun setRemoteServerUsername(username: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerUsername", username)
+        editor.apply()
+    }
+
+    fun getRemoteServerPassword(): String {
+        return sharedPreferences.getString("remoteServerPassword", "") ?: ""
+    }
+
+    fun setRemoteServerPassword(password: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerPassword", password)
+        editor.apply()
+    }
 }

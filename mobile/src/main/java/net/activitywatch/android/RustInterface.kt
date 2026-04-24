@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import net.activitywatch.android.models.Event
 import org.json.JSONArray
@@ -30,6 +31,16 @@ class RustInterface constructor(private val context: Context? = null) {
         }
     }
 
+    private fun setAuthHeader(conn: HttpURLConnection) {
+        val username = prefs?.getRemoteServerUsername()
+        val password = prefs?.getRemoteServerPassword()
+        if (!username.isNullOrBlank() && !password.isNullOrBlank()) {
+            val credentials = "$username:$password"
+            val auth = "Basic " + Base64.encodeToString(credentials.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+            conn.setRequestProperty("Authorization", auth)
+        }
+    }
+
     private fun httpGet(path: String): String {
         return try {
             val url = URL("${getServerUrl()}$path")
@@ -37,6 +48,7 @@ class RustInterface constructor(private val context: Context? = null) {
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
+            setAuthHeader(conn)
 
             val responseCode = conn.responseCode
             if (responseCode in 200..299) {
@@ -60,6 +72,7 @@ class RustInterface constructor(private val context: Context? = null) {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.doOutput = true
+            setAuthHeader(conn)
 
             conn.outputStream.use { it.write(payload.toByteArray(StandardCharsets.UTF_8)) }
 

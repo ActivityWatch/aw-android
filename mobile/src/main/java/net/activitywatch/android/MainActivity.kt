@@ -91,25 +91,43 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private fun showRemoteServerDialog() {
         val prefs = AWPreferences(this)
         val currentUrl = prefs.getRemoteServerUrl()
+        val currentUser = prefs.getRemoteServerUsername()
+        val currentPass = prefs.getRemoteServerPassword()
 
         val layout = LinearLayout(this)
         layout.orientation = LinearLayout.VERTICAL
         val padding = (16 * resources.displayMetrics.density).toInt()
         layout.setPadding(padding, padding, padding, 0)
 
-        val input = EditText(this)
-        input.hint = "http://your-server-ip:5600"
-        input.setText(currentUrl)
-        layout.addView(input)
+        val inputUrl = EditText(this)
+        inputUrl.hint = "http://your-server-ip:5600"
+        inputUrl.setText(currentUrl)
+        layout.addView(inputUrl)
+
+        val inputUser = EditText(this)
+        inputUser.hint = "Username (optional)"
+        inputUser.setText(currentUser)
+        layout.addView(inputUser)
+
+        val inputPass = EditText(this)
+        inputPass.hint = "Password (optional)"
+        inputPass.setText(currentPass)
+        inputPass.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        layout.addView(inputPass)
 
         AlertDialog.Builder(this)
             .setTitle("Remote ActivityWatch Server")
             .setMessage("Leave empty to use local server only (127.0.0.1:5600).")
             .setView(layout)
             .setPositiveButton("Save") { _, _ ->
-                val url = input.text.toString().trim()
+                val url = inputUrl.text.toString().trim()
+                val user = inputUser.text.toString().trim()
+                val pass = inputPass.text.toString().trim()
                 prefs.setRemoteServerUrl(url)
-                Snackbar.make(binding.coordinatorLayout, "Remote server set to: ${url.ifBlank { "(local)" }}", Snackbar.LENGTH_LONG).show()
+                prefs.setRemoteServerUsername(user)
+                prefs.setRemoteServerPassword(pass)
+                val msg = if (url.isBlank()) "Remote server set to: (local)" else "Remote server set to: $url"
+                Snackbar.make(binding.coordinatorLayout, msg, Snackbar.LENGTH_LONG).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
