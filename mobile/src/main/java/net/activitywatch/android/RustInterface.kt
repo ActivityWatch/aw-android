@@ -135,7 +135,12 @@ class RustInterface constructor(private val context: Context? = null) {
             val limitParam = if (limit > 0) "?limit=$limit" else ""
             val result = httpGet("/api/0/buckets/$bucket_id/events$limitParam")
             Log.w(TAG, "getEventsJSON($bucket_id): raw result length=${result.length}")
-            JSONArray(result)
+            if (result.isBlank() || result == "{}") {
+                Log.w(TAG, "getEventsJSON returned empty/invalid result, returning empty array")
+                JSONArray()
+            } else {
+                JSONArray(result)
+            }
         } catch (e: JSONException) {
             Log.e(TAG, "getEventsJSON parse error: ${e.message}")
             JSONArray()
