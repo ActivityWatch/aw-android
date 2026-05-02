@@ -132,14 +132,18 @@ class WebWatcher : AccessibilityService() {
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
 
-    private fun findWebView(info : AccessibilityNodeInfo) : AccessibilityNodeInfo? {
+    private fun findWebView(info: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (info.className == "android.webkit.WebView" && info.text != null) return info
-
-        return (0 until info.childCount)
-            .mapNotNull { info.getChild(it) }
-            .firstNotNullOfOrNull { child ->
-                findWebView(child).also { child.recycle() }
+        for (i in 0 until info.childCount) {
+            val child = info.getChild(i) ?: continue
+            val found = findWebView(child)
+            if (found != null) {
+                if (found !== child) child.recycle()
+                return found
             }
+            child.recycle()
+        }
+        return null
     }
 
     private fun handleUrl(newUrl : String?, newBrowser: String?) {
