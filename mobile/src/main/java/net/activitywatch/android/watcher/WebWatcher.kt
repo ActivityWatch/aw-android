@@ -23,6 +23,30 @@ private fun extractTextByViewId(
 
 class WebWatcher : AccessibilityService() {
 
+    // Firefox (Compose toolbar): URL is in content-desc of ADDRESSBAR_URL_BOX as
+    // " {url}. Search or enter address". The toolbar is a sibling of the content area,
+    // so we search from the window root. findAccessibilityNodeInfosByViewId requires
+    // "package:id/name" format and silently rejects bare testTag names, so we traverse manually.
+    private val FIREFOX_SUFFIX_PATTERN = Regex("""^\s*(.+?)\.\s+[A-Z]""")
+    private fun extractFirefoxUrl(event: AccessibilityEvent): String? {
+        val root = rootInActiveWindow ?: return null
+        return findNodeByResourceName(root, "ADDRESSBAR_URL_BOX")
+            ?.contentDescription?.toString()
+            ?.let { FIREFOX_SUFFIX_PATTERN.find(it)?.groupValues?.get(1) }
+            ?.takeIf { it.isNotBlank() && !it.equals("Search or enter address", ignoreCase = true) }
+    }
+
+    private fun findNodeByResourceName(node: AccessibilityNodeInfo, name: String): AccessibilityNodeInfo? {
+        if (node.viewIdResourceName == name) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findNodeByResourceName(child, name)
+            if (found != null) return found
+            child.recycle()
+        }
+        return null
+    }
+
     private val stripProtocol: (String) -> String = { url ->
         url.removePrefix("http://").removePrefix("https://")
     }
@@ -43,8 +67,10 @@ class WebWatcher : AccessibilityService() {
             extractTextByViewId(event, "com.android.chrome:id/url_bar")
         },
         "org.mozilla.firefox" to { event ->
-            // Firefox has multiple variants depending on version
-            extractTextByViewId(event, "org.mozilla.firefox:id/url_bar_title")
+            // Compose toolbar (current): URL in content-desc of ADDRESSBAR_URL_BOX testTag
+            extractFirefoxUrl(event)
+                // View-based toolbar (older Firefox versions)
+                ?: extractTextByViewId(event, "org.mozilla.firefox:id/url_bar_title")
                 ?: extractTextByViewId(event, "org.mozilla.firefox:id/mozac_browser_toolbar_url_view")
         },
         "com.sec.android.app.sbrowser" to { event ->

@@ -66,14 +66,9 @@ class RustInterface constructor(context: Context? = null) {
             val executor = Executors.newSingleThreadExecutor()
             val handler = Handler(Looper.getMainLooper())
             executor.execute {
-                // will not block the UI thread
-
-                // Start server
                 Log.w(TAG, "Starting server...")
                 startServer()
-
                 handler.post {
-                    // will run on UI thread after the task is done
                     Log.i(TAG, "Server finished")
                     serverStarted = false
                 }
