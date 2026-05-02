@@ -53,6 +53,7 @@ class WebWatcher : AccessibilityService() {
 
     private val TAG = "WebWatcher"
     private val bucket_id = "aw-watcher-android-web"
+    private val lastDiagnosticDump = mutableMapOf<String, Long>()
 
     private var ri : RustInterface? = null
 
@@ -117,9 +118,11 @@ class WebWatcher : AccessibilityService() {
             event.source?.let { source ->
                 val newUrl = urlExtractor(event)
 
-                newUrl?.let { handleUrl(it, newBrowser = packageName) }.also {
-                    findWebView(source)
-                        ?.let { handleWindowTitle(it.text.toString()) }
+                if (newUrl == null) {
+                    maybeDumpTree(packageName!!)
+                } else {
+                    handleUrl(newUrl, newBrowser = packageName)
+                    findWebView(source)?.let { handleWindowTitle(it.text.toString()) }
                 }
             }
         } catch(ex : Exception) {
@@ -144,6 +147,32 @@ class WebWatcher : AccessibilityService() {
             child.recycle()
         }
         return null
+    }
+
+    // Dumps the accessibility tree to logcat at debug level, rate-limited to once per minute
+    // per browser. Helps diagnose URL extraction failures when adding support for new browsers
+    // or browser versions that have changed their view hierarchy.
+    private fun maybeDumpTree(packageName: String) {
+        val now = System.currentTimeMillis()
+        if (now - (lastDiagnosticDump[packageName] ?: 0L) < 60_000L) return
+        lastDiagnosticDump[packageName] = now
+        val root = rootInActiveWindow ?: return
+        Log.d(TAG, "URL extraction failed for $packageName — accessibility tree:")
+        dumpNode(root, 0)
+    }
+
+    private fun dumpNode(node: AccessibilityNodeInfo, depth: Int) {
+        val id = node.viewIdResourceName ?: ""
+        val cd = node.contentDescription?.toString()?.take(120) ?: ""
+        val text = node.text?.toString()?.take(120) ?: ""
+        if (id.isNotEmpty() || cd.isNotEmpty() || text.isNotEmpty()) {
+            Log.d(TAG, "${"  ".repeat(depth)}id=$id cd=\"$cd\" text=\"$text\"")
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            dumpNode(child, depth + 1)
+            child.recycle()
+        }
     }
 
     private fun handleUrl(newUrl : String?, newBrowser: String?) {
