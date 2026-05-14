@@ -22,11 +22,14 @@ class ActivityWatcher : AccessibilityService() {
     private var lastAppTimestamp: Instant? = null
     private var bucketCreated = false
     private var refreshTask: ScheduledFuture<*>? = null
+    private var afkWatcher: AfkWatcher? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         try {
             ri = RustInterface(applicationContext)
+            afkWatcher = AfkWatcher(applicationContext)
+            afkWatcher?.register()
             startPeriodicRefresh()
             Log.i(TAG, "ActivityWatcher service connected")
         } catch (e: Exception) {
@@ -68,12 +71,14 @@ class ActivityWatcher : AccessibilityService() {
         if (packageName.startsWith("net.activitywatch.android")) return
         if (packageName == "com.android.systemui") return
 
-        // Skip MIUI system overlays and input methods that trigger false events
+        // Skip MIUI system overlays, input methods, and system search that trigger false events
         val skipPackages = setOf(
             "com.miui.contentextension",   // 传送门
             "com.miui.personalassistant",  // 个人助理（负一屏）
-            "com.miui.home",               // 桌面（只在切换时短暂出现）
-            "com.tencent.wetype"           // 微信输入法
+            "com.miui.home",               // 桌面
+            "com.tencent.wetype",          // 微信输入法
+            "com.android.quicksearchbox",  // 系统搜索框
+            "miui.systemui.plugin"         // MIUI 系统界面组件
         )
         if (packageName in skipPackages) return
 
@@ -138,6 +143,7 @@ class ActivityWatcher : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         refreshTask?.cancel(false)
+        afkWatcher?.unregister()
         if (lastApp != null && lastAppTimestamp != null) {
             val duration = org.threeten.bp.Duration.between(lastAppTimestamp, Instant.now())
             if (duration.seconds > 0) {
