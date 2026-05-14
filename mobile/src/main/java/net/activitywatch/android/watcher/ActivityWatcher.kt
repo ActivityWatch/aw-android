@@ -72,15 +72,9 @@ class ActivityWatcher : AccessibilityService() {
         if (packageName.startsWith("net.activitywatch.android")) return
         if (packageName == "com.android.systemui") return
 
-        // Skip MIUI system overlays, input methods, and system search that trigger false events
-        val skipPackages = setOf(
-            "com.miui.contentextension",   // 传送门
-            "com.miui.personalassistant",  // 个人助理（负一屏）
-            "com.miui.home",               // 桌面
-            "com.tencent.wetype",          // 微信输入法
-            "com.android.quicksearchbox",  // 系统搜索框
-            "miui.systemui.plugin"         // MIUI 系统界面组件
-        )
+        // Skip packages from user-configured skip list
+        val prefs = net.activitywatch.android.AWPreferences(applicationContext)
+        val skipPackages = prefs.getSkipPackages()
         if (packageName in skipPackages) return
 
         // Skip if screen is off (AFK)

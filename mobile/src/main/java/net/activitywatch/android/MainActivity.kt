@@ -88,6 +88,39 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         usw.sendHeartbeats()
     }
 
+    private fun showSkipListDialog() {
+        val prefs = AWPreferences(this)
+        val skipList = prefs.getSkipPackages().toMutableList().sorted().toMutableList()
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        layout.setPadding(padding, padding, padding, 0)
+
+        val currentList = EditText(this)
+        currentList.setText(skipList.joinToString("\n"))
+        currentList.hint = "com.example.app\ncom.example.app2"
+        currentList.minLines = 3
+        layout.addView(currentList)
+
+        AlertDialog.Builder(this)
+            .setTitle("Skip List (one package per line)")
+            .setMessage("Apps listed here will not be tracked by the real-time watcher.")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val text = currentList.text.toString().trim()
+                val newList = if (text.isEmpty()) {
+                    emptySet()
+                } else {
+                    text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                }
+                prefs.setSkipPackages(newList)
+                Snackbar.make(binding.coordinatorLayout, "Skip list saved (${newList.size} packages)", Snackbar.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showRemoteServerDialog() {
         val prefs = AWPreferences(this)
         val currentUrl = prefs.getRemoteServerUrl()
@@ -184,6 +217,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_remote_server -> {
                 showRemoteServerDialog()
+            }
+            R.id.nav_skip_list -> {
+                showSkipListDialog()
             }
             R.id.nav_share -> {
                 Snackbar.make(binding.coordinatorLayout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)

@@ -56,4 +56,26 @@ class AWPreferences(context: Context) {
         editor.putString("remoteServerPassword", password)
         editor.apply()
     }
+
+    fun getSkipPackages(): Set<String> {
+        return sharedPreferences.getStringSet("skipPackages", emptySet()) ?: emptySet()
+    }
+
+    fun setSkipPackages(packages: Set<String>) {
+        val editor = sharedPreferences.edit()
+        editor.putStringSet("skipPackages", packages)
+        editor.apply()
+    }
+
+    fun addSkipPackage(packageName: String) {
+        val current = getSkipPackages().toMutableSet()
+        current.add(packageName)
+        setSkipPackages(current)
+    }
+
+    fun removeSkipPackage(packageName: String) {
+        val current = getSkipPackages().toMutableSet()
+        current.remove(packageName)
+        setSkipPackages(current)
+    }
 }
