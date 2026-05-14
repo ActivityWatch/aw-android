@@ -41,6 +41,7 @@ class ActivityWatcher : AccessibilityService() {
         refreshTask?.cancel(false)
         refreshTask = scheduler.scheduleAtFixedRate({
             try {
+                if (AfkWatcher.isAfk) return@scheduleAtFixedRate
                 if (lastApp != null && lastAppTimestamp != null) {
                     val now = Instant.now()
                     val duration = org.threeten.bp.Duration.between(lastAppTimestamp, now)
