@@ -7,26 +7,55 @@ import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 import org.threeten.bp.Instant
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 class ActivityWatcher : AccessibilityService() {
 
     private val TAG = "ActivityWatcher"
     private val bucket_id = "aw-watcher-android-realtime"
     private val executor = Executors.newSingleThreadExecutor()
+    private val scheduler = Executors.newSingleThreadScheduledExecutor()
 
     private var ri: RustInterface? = null
     private var lastApp: String? = null
     private var lastAppTimestamp: Instant? = null
     private var bucketCreated = false
+    private var refreshTask: ScheduledFuture<*>? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         try {
             ri = RustInterface(applicationContext)
+            startPeriodicRefresh()
             Log.i(TAG, "ActivityWatcher service connected")
         } catch (e: Exception) {
             Log.e(TAG, "ActivityWatcher init error: ${e.message}")
         }
+    }
+
+    private fun startPeriodicRefresh() {
+        refreshTask?.cancel(false)
+        refreshTask = scheduler.scheduleAtFixedRate({
+            try {
+                if (lastApp != null && lastAppTimestamp != null) {
+                    val now = Instant.now()
+                    val duration = org.threeten.bp.Duration.between(lastAppTimestamp, now)
+                    if (duration.seconds >= 60) {
+                        val appPackage = lastApp!!
+                        val start = lastAppTimestamp!!
+                        val dur = duration.seconds.toDouble()
+                        executor.execute {
+                            logAppUsage(appPackage, start, dur)
+                        }
+                        // Reset timestamp to now so next refresh accumulates from here
+                        lastAppTimestamp = now
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Periodic refresh error: ${e.message}")
+            }
+        }, 60, 60, TimeUnit.SECONDS)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -73,7 +102,7 @@ class ActivityWatcher : AccessibilityService() {
             data.put("app", getAppName(appPackage))
             data.put("package", appPackage)
 
-            ri?.heartbeatHelper(bucket_id, start, duration, data, 1.0)
+            ri?.heartbeatHelper(bucket_id, start, duration, data, 60.0)
             Log.d(TAG, "Logged: ${getAppName(appPackage)} for ${duration}s")
         } catch (e: Exception) {
             Log.e(TAG, "logAppUsage error: ${e.message}")
@@ -96,6 +125,7 @@ class ActivityWatcher : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        refreshTask?.cancel(false)
         if (lastApp != null && lastAppTimestamp != null) {
             val duration = org.threeten.bp.Duration.between(lastAppTimestamp, Instant.now())
             if (duration.seconds > 0) {
@@ -108,6 +138,7 @@ class ActivityWatcher : AccessibilityService() {
             }
         }
         executor.shutdown()
+        scheduler.shutdown()
         Log.i(TAG, "ActivityWatcher destroyed")
     }
 }
