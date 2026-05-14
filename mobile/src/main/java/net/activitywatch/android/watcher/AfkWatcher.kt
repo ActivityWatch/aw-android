@@ -3,13 +3,15 @@ package net.activitywatch.android.watcher
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.PowerManager
 import android.util.Log
 import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 import org.threeten.bp.Instant
 import java.util.concurrent.Executors
 
-class AfkWatcher : BroadcastReceiver() {
+class AfkWatcher(private val context: Context) {
 
     companion object {
         private const val TAG = "AfkWatcher"
@@ -22,25 +24,55 @@ class AfkWatcher : BroadcastReceiver() {
     }
 
     private val executor = Executors.newSingleThreadExecutor()
+    private var registered = false
 
-    override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action ?: return
-
-        when (action) {
-            Intent.ACTION_SCREEN_OFF -> {
-                Log.i(TAG, "Screen OFF → AFK")
-                isAfk = true
-                executor.execute { sendAfkEvent(context, true) }
-            }
-            Intent.ACTION_SCREEN_ON -> {
-                Log.i(TAG, "Screen ON → NOT AFK")
-                isAfk = false
-                executor.execute { sendAfkEvent(context, false) }
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    Log.i(TAG, "Screen OFF → AFK")
+                    isAfk = true
+                    executor.execute { sendAfkEvent(true) }
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    Log.i(TAG, "Screen ON → NOT AFK")
+                    isAfk = false
+                    executor.execute { sendAfkEvent(false) }
+                }
             }
         }
     }
 
-    private fun sendAfkEvent(context: Context, afk: Boolean) {
+    fun register() {
+        if (!registered) {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }
+            context.registerReceiver(screenReceiver, filter)
+            registered = true
+            Log.i(TAG, "AfkWatcher registered")
+
+            // Check initial screen state
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            isAfk = !pm.isInteractive
+            Log.i(TAG, "Initial screen state: ${if (isAfk) "AFK" else "NOT AFK"}")
+        }
+    }
+
+    fun unregister() {
+        if (registered) {
+            try {
+                context.unregisterReceiver(screenReceiver)
+            } catch (e: Exception) {
+                Log.e(TAG, "Unregister error: ${e.message}")
+            }
+            registered = false
+            Log.i(TAG, "AfkWatcher unregistered")
+        }
+    }
+
+    private fun sendAfkEvent(afk: Boolean) {
         try {
             val ri = RustInterface(context)
             ri.createBucketHelper(BUCKET_ID, BUCKET_TYPE)

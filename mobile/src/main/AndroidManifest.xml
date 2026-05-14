@@ -58,16 +58,6 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-                android:name=".watcher.AfkWatcher"
-                android:enabled="true"
-                android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_OFF"/>
-                <action android:name="android.intent.action.SCREEN_ON"/>
-            </intent-filter>
-        </receiver>
-
         <service android:name=".watcher.ChromeWatcher"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
