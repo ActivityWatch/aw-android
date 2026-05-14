@@ -77,6 +77,9 @@ class ActivityWatcher : AccessibilityService() {
         )
         if (packageName in skipPackages) return
 
+        // Skip if screen is off (AFK)
+        if (AfkWatcher.isAfk) return
+
         if (packageName != lastApp) {
             val now = Instant.now()
 
