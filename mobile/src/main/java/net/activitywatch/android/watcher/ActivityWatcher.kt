@@ -6,21 +6,27 @@ import android.view.accessibility.AccessibilityEvent
 import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 import org.threeten.bp.Instant
+import java.util.concurrent.Executors
 
 class ActivityWatcher : AccessibilityService() {
 
     private val TAG = "ActivityWatcher"
     private val bucket_id = "aw-watcher-android-realtime"
+    private val executor = Executors.newSingleThreadExecutor()
 
     private var ri: RustInterface? = null
     private var lastApp: String? = null
     private var lastAppTimestamp: Instant? = null
+    private var bucketCreated = false
 
-    override fun onCreate() {
-        super.onCreate()
-        ri = RustInterface(applicationContext)
-        ri?.createBucketHelper(bucket_id, "currentwindow")
-        Log.i(TAG, "ActivityWatcher created")
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        try {
+            ri = RustInterface(applicationContext)
+            Log.i(TAG, "ActivityWatcher service connected")
+        } catch (e: Exception) {
+            Log.e(TAG, "ActivityWatcher init error: ${e.message}")
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -30,24 +36,24 @@ class ActivityWatcher : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString() ?: ""
 
-        // Skip own app to avoid infinite loop
         if (packageName.startsWith("net.activitywatch.android")) return
-
-        // Skip system UI
         if (packageName == "com.android.systemui") return
 
         if (packageName != lastApp) {
             val now = Instant.now()
 
-            // Log the previous app's duration
             if (lastApp != null && lastAppTimestamp != null) {
                 val duration = org.threeten.bp.Duration.between(lastAppTimestamp, now)
                 if (duration.seconds > 0) {
-                    logAppUsage(lastApp!!, lastAppTimestamp!!, duration.seconds.toDouble())
+                    val appPackage = lastApp!!
+                    val start = lastAppTimestamp!!
+                    val dur = duration.seconds.toDouble()
+                    executor.execute {
+                        logAppUsage(appPackage, start, dur)
+                    }
                 }
             }
 
-            // Update current app
             lastApp = packageName
             lastAppTimestamp = now
 
@@ -57,6 +63,12 @@ class ActivityWatcher : AccessibilityService() {
 
     private fun logAppUsage(appPackage: String, start: Instant, duration: Double) {
         try {
+            if (!bucketCreated && ri != null) {
+                ri?.createBucketHelper(bucket_id, "currentwindow")
+                bucketCreated = true
+                Log.i(TAG, "Bucket created: $bucket_id")
+            }
+
             val data = JSONObject()
             data.put("app", getAppName(appPackage))
             data.put("package", appPackage)
@@ -84,13 +96,18 @@ class ActivityWatcher : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Flush the last app's duration
         if (lastApp != null && lastAppTimestamp != null) {
             val duration = org.threeten.bp.Duration.between(lastAppTimestamp, Instant.now())
             if (duration.seconds > 0) {
-                logAppUsage(lastApp!!, lastAppTimestamp!!, duration.seconds.toDouble())
+                val appPackage = lastApp!!
+                val start = lastAppTimestamp!!
+                val dur = duration.seconds.toDouble()
+                executor.execute {
+                    logAppUsage(appPackage, start, dur)
+                }
             }
         }
+        executor.shutdown()
         Log.i(TAG, "ActivityWatcher destroyed")
     }
 }
