@@ -41,6 +41,15 @@ android {
             renderscriptDebuggable true
         }
     }
+
+    flavorDimensions "mode"
+    productFlavors {
+        realtime {
+            dimension "mode"
+            applicationIdSuffix ".realtime"
+            resValue "string", "app_name", "ActivityWatch 实时版"
+        }
+    }
     compileOptions {
         sourceCompatibility = '1.8'
         targetCompatibility = '1.8'
