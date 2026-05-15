@@ -1,6 +1,7 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import net.activitywatch.android.RustInterface
@@ -37,11 +38,16 @@ class ActivityWatcher : AccessibilityService() {
         }
     }
 
+    private fun isScreenOn(): Boolean {
+        val pm = applicationContext.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
+        return pm.isInteractive
+    }
+
     private fun startPeriodicRefresh() {
         refreshTask?.cancel(false)
         refreshTask = scheduler.scheduleAtFixedRate({
             try {
-                if (AfkWatcher.isAfk) return@scheduleAtFixedRate
+                if (!isScreenOn()) return@scheduleAtFixedRate
                 if (lastApp != null && lastAppTimestamp != null) {
                     val now = Instant.now()
                     val duration = org.threeten.bp.Duration.between(lastAppTimestamp, now)
@@ -78,7 +84,7 @@ class ActivityWatcher : AccessibilityService() {
         if (packageName in skipPackages) return
 
         // Skip if screen is off (AFK)
-        if (AfkWatcher.isAfk) return
+        if (!isScreenOn()) return
 
         if (packageName != lastApp) {
             val now = Instant.now()
