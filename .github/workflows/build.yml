@@ -365,13 +365,15 @@ jobs:
 
         SDKMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" sdkmanager)"
         AVDMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" avdmanager)"
-        EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
         # Install AVD files
         echo "y" | "$SDKMANAGER" --install \
           emulator \
           'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         echo "y" | "$SDKMANAGER" --licenses
+
+        # Resolve emulator path after installing the package.
+        EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
         # Create emulator
         "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
@@ -423,7 +425,7 @@ jobs:
         fi
         echo "Starting emulator and waiting for boot to complete...."
         ls -la "${EMULATOR%/*}"
-        "$EMULATOR" --accel-check  # check for hardware acceleration
+        "$EMULATOR" -accel-check  # check for hardware acceleration
         nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         "$ADB" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
