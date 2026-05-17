@@ -342,12 +342,21 @@ jobs:
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
+        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+        if [ ! -x "$SDKMANAGER" ]; then
+          SDKMANAGER="$(command -v sdkmanager)"
+        fi
+        if [ ! -x "$AVDMANAGER" ]; then
+          AVDMANAGER="$(command -v avdmanager)"
+        fi
+
         # Install AVD files
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+        echo "y" | "$SDKMANAGER" --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | "$SDKMANAGER" --licenses
 
         # Create emulator
-        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         $ANDROID_HOME/emulator/emulator -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
