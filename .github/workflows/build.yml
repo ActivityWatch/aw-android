@@ -339,21 +339,33 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install intel-haxm
 
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
-        SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-        AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-        EMULATOR="$ANDROID_HOME/emulator/emulator"
-        if [ ! -x "$SDKMANAGER" ]; then
-          SDKMANAGER="$(command -v sdkmanager)"
-        fi
-        if [ ! -x "$AVDMANAGER" ]; then
-          AVDMANAGER="$(command -v avdmanager)"
-        fi
-        if [ ! -x "$EMULATOR" ]; then
-          EMULATOR="$(command -v emulator)"
-        fi
+        find_android_tool() {
+          local tool_path="$1"
+          local tool_name="$2"
+
+          if [ -x "$tool_path" ]; then
+            printf '%s\n' "$tool_path"
+            return 0
+          fi
+
+          if command -v "$tool_name" >/dev/null 2>&1; then
+            command -v "$tool_name"
+            return 0
+          fi
+
+          echo "Missing required Android tool: $tool_name" >&2
+          return 1
+        }
+
+        SDKMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" sdkmanager)"
+        AVDMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" avdmanager)"
+        EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
         # Install AVD files
         echo "y" | "$SDKMANAGER" --install \
@@ -395,19 +407,33 @@ jobs:
       run: |
         EMULATOR="$ANDROID_HOME/emulator/emulator"
         if [ ! -x "$EMULATOR" ]; then
-          EMULATOR="$(command -v emulator)"
+          EMULATOR="$(command -v emulator || true)"
+        fi
+        if [ -z "$EMULATOR" ]; then
+          echo "Missing required Android tool: emulator" >&2
+          exit 1
+        fi
+        ADB="$ANDROID_HOME/platform-tools/adb"
+        if [ ! -x "$ADB" ]; then
+          ADB="$(command -v adb || true)"
+        fi
+        if [ -z "$ADB" ]; then
+          echo "Missing required Android tool: adb" >&2
+          exit 1
         fi
         echo "Starting emulator and waiting for boot to complete...."
-        ls -la $ANDROID_HOME/emulator
+        ls -la "${EMULATOR%/*}"
         "$EMULATOR" --accel-check  # check for hardware acceleration
         nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
-        $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
+        "$ADB" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
-        $ANDROID_HOME/platform-tools/adb devices
+        "$ADB" devices
         sleep 30
         mkdir -p screenshots
-        screencapture screenshots/screenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
+        if command -v screencapture >/dev/null 2>&1; then
+          screencapture screenshots/screenshot-$SUFFIX.jpg
+        fi
+        "$ADB" exec-out screencap -p > screenshots/emulator-$SUFFIX.png
 
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
