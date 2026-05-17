@@ -425,7 +425,9 @@ jobs:
         fi
         echo "Starting emulator and waiting for boot to complete...."
         ls -la "${EMULATOR%/*}"
-        "$EMULATOR" -accel-check  # check for hardware acceleration
+        if ! "$EMULATOR" -accel-check; then
+          echo "Hardware acceleration unavailable; continuing with emulator default acceleration mode."
+        fi
         nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         "$ADB" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
