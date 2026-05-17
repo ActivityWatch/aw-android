@@ -54,7 +54,8 @@ jobs:
     # Rust
     - name: Set up Rust
       id: toolchain
-      uses: dtolnay/rust-toolchain@stable
+      # aw-server-rust@dc70318 predates its Rust 1.80+ dependency refresh.
+      uses: dtolnay/rust-toolchain@1.79.0
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
 
     - name: Set up Rust toolchain for Android NDK
@@ -108,7 +109,9 @@ jobs:
 
     # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: github.event_name != 'pull_request'
     - name: Load Fastlane secrets
+      if: github.event_name != 'pull_request'
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -121,6 +124,7 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: github.event_name != 'pull_request'
       uses: Wandalen/wretry.action@master
       with:
         command: bundle exec fastlane update_version
