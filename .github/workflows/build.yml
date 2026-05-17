@@ -344,20 +344,26 @@ jobs:
       run: |
         SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
         AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+        EMULATOR="$ANDROID_HOME/emulator/emulator"
         if [ ! -x "$SDKMANAGER" ]; then
           SDKMANAGER="$(command -v sdkmanager)"
         fi
         if [ ! -x "$AVDMANAGER" ]; then
           AVDMANAGER="$(command -v avdmanager)"
         fi
+        if [ ! -x "$EMULATOR" ]; then
+          EMULATOR="$(command -v emulator)"
+        fi
 
         # Install AVD files
-        echo "y" | "$SDKMANAGER" --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | "$SDKMANAGER" --install \
+          emulator \
+          'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         echo "y" | "$SDKMANAGER" --licenses
 
         # Create emulator
         "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        $ANDROID_HOME/emulator/emulator -list-avds
+        "$EMULATOR" -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
         # The following madness is to support empty OR populated config.ini files,
@@ -387,10 +393,14 @@ jobs:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
         HOMEBREW_NO_INSTALL_CLEANUP: 1
       run: |
+        EMULATOR="$ANDROID_HOME/emulator/emulator"
+        if [ ! -x "$EMULATOR" ]; then
+          EMULATOR="$(command -v emulator)"
+        fi
         echo "Starting emulator and waiting for boot to complete...."
         ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
-        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        "$EMULATOR" --accel-check  # check for hardware acceleration
+        nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
         $ANDROID_HOME/platform-tools/adb devices
