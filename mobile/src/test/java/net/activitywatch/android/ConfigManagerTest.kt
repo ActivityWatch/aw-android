@@ -22,18 +22,20 @@ class ConfigManagerTest {
 
     private fun writeApiKey(content: String, key: String?): String {
         val authLine = if (key.isNullOrEmpty()) null else """api_key = "$key""""
-        val authSectionPresent = Regex("""(?m)^\[auth\]""").containsMatchIn(content)
-        val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(content)
-        if (authSectionPresent) {
-            return if (apiKeyLinePresent) {
+        val authSectionRegex = Regex("""(?m)^\[auth\].*?(?=^\[|\z)""", RegexOption.DOT_MATCHES_ALL)
+        val authSectionContent = authSectionRegex.find(content)?.value
+        if (authSectionContent != null) {
+            val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
+            val updatedSection = if (apiKeyLinePresent) {
                 val replaced = Regex("""(?m)^api_key\s*=.*$""")
-                    .replaceFirst(content, authLine ?: "")
+                    .replaceFirst(authSectionContent, authLine ?: "")
                 if (authLine == null) replaced.replace(Regex("\n{3,}"), "\n\n") else replaced
             } else if (authLine != null) {
-                content.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
+                authSectionContent.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
             } else {
-                content
+                authSectionContent
             }
+            return content.replace(authSectionContent, updatedSection)
         }
         return if (authLine != null) {
             val base = content.trimEnd()
