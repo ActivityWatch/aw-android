@@ -99,16 +99,23 @@ jobs:
         submodules: 'recursive'
 
 
-    # Ruby & Fastlane
+    # Ruby & Fastlane — only needed for non-PR builds.
+    # PRs (especially from forks) don't have access to KEY_FASTLANE_API, so
+    # they fall through to the Output step which reads the current versionCode
+    # directly from mobile/build.gradle.  This is fine for build verification;
+    # the real Play Store versionCode is only needed for release builds.
     # version set by .ruby-version
     - name: Set up Ruby and install fastlane
+      if: github.event_name != 'pull_request'
       uses: ruby/setup-ruby@v1
       with:
         bundler-cache: true
 
     # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: github.event_name != 'pull_request'
     - name: Load Fastlane secrets
+      if: github.event_name != 'pull_request'
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -121,6 +128,7 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: github.event_name != 'pull_request'
       uses: Wandalen/wretry.action@master
       with:
         command: bundle exec fastlane update_version
