@@ -118,4 +118,13 @@ class ConfigManagerTest {
         assertEquals("second-key", parseApiKey(second))
         assertFalse(second.contains("first-key"))
     }
+
+    @Test
+    fun `writeApiKey does not overwrite api_key in other sections`() {
+        // Another section also has an api_key field — must not be touched
+        val config = "[logging]\napi_key = \"log-key\"\n\n[auth]\napi_key = \"auth-key\"\n"
+        val result = writeApiKey(config, "new-auth-key")
+        assertEquals("new-auth-key", parseApiKey(result))
+        assertTrue(result.contains("""api_key = "log-key""""))
+    }
 }

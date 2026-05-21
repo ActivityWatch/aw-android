@@ -72,8 +72,12 @@ class ConfigManager(context: Context) {
 
     private fun writeApiKey(content: String, key: String?): String {
         val authLine = if (key.isNullOrEmpty()) null else """api_key = "$key""""
-        val authSectionPresent = Regex("""(?m)^\[auth\]""").containsMatchIn(content)
-        val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(content)
+        val authSectionRegex = Regex("""(?m)^\[auth\].*?(?=^\[|\z)""", RegexOption.DOT_MATCHES_ALL)
+        val authSectionContent = authSectionRegex.find(content)?.value
+        val authSectionPresent = authSectionContent != null
+        // Scope the api_key check to the [auth] section only, not the whole file
+        val apiKeyLinePresent = authSectionContent != null &&
+            Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
 
         if (authSectionPresent) {
             return if (apiKeyLinePresent) {
