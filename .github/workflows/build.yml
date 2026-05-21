@@ -354,15 +354,18 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install intel-haxm
 
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
         # Install AVD files
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+        echo "y" | sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | sdkmanager --licenses
 
         # Create emulator
-        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         $ANDROID_HOME/emulator/emulator -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
@@ -395,8 +398,8 @@ jobs:
       run: |
         echo "Starting emulator and waiting for boot to complete...."
         ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
-        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        $ANDROID_HOME/emulator/emulator --accel-check  # check for hardware acceleration
+        nohup $ANDROID_HOME/emulator/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
         $ANDROID_HOME/platform-tools/adb devices
@@ -448,8 +451,6 @@ jobs:
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
