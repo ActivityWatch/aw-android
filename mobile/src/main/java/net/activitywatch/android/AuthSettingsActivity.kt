@@ -8,10 +8,10 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.Button
 import android.widget.CompoundButton
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.switchmaterial.SwitchMaterial
 
 class AuthSettingsActivity : AppCompatActivity() {
 
@@ -21,7 +21,10 @@ class AuthSettingsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var btnCopy: Button
     private lateinit var btnRegenerate: Button
-    private lateinit var switchAuthEnabled: Switch
+    private lateinit var switchAuthEnabled: SwitchMaterial
+
+    // Guards against the switch listener firing when we set isChecked programmatically
+    private var isUpdatingSwitch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,23 +55,29 @@ class AuthSettingsActivity : AppCompatActivity() {
         btnRegenerate.setOnClickListener {
             val newKey = configManager.generateAndSetApiKey()
             tvApiKey.text = newKey
+            btnCopy.visibility = View.VISIBLE
+            // Update switch without triggering its listener (which would show a second toast)
+            isUpdatingSwitch = true
             switchAuthEnabled.isChecked = true
+            isUpdatingSwitch = false
             tvStatus.text = "Authentication enabled (restart app to apply)"
             Toast.makeText(this, "New API key generated. Restart app to apply.", Toast.LENGTH_LONG).show()
         }
 
         switchAuthEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
+            if (isUpdatingSwitch) return@setOnCheckedChangeListener
             if (isChecked) {
-                // Enable auth — generate a key if none exists
                 val current = configManager.readAuthConfig()
                 if (!current.isEnabled) {
                     val newKey = configManager.generateAndSetApiKey()
                     tvApiKey.text = newKey
                 }
+                btnCopy.visibility = View.VISIBLE
                 tvStatus.text = "Authentication enabled (restart app to apply)"
             } else {
                 configManager.clearApiKey()
                 tvApiKey.text = "(none)"
+                btnCopy.visibility = View.GONE
                 tvStatus.text = "Authentication disabled (restart app to apply)"
             }
             Toast.makeText(this, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
@@ -80,12 +89,16 @@ class AuthSettingsActivity : AppCompatActivity() {
         if (auth.isEnabled) {
             tvApiKey.text = auth.apiKey
             tvStatus.text = "Authentication is enabled"
+            isUpdatingSwitch = true
             switchAuthEnabled.isChecked = true
+            isUpdatingSwitch = false
             btnCopy.visibility = View.VISIBLE
         } else {
             tvApiKey.text = "(none — authentication disabled)"
             tvStatus.text = "Authentication is disabled"
+            isUpdatingSwitch = true
             switchAuthEnabled.isChecked = false
+            isUpdatingSwitch = false
             btnCopy.visibility = View.GONE
         }
     }
