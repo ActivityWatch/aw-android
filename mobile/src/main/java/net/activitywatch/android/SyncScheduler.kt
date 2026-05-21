@@ -37,6 +37,9 @@ class SyncScheduler(private val context: Context) {
             
             // First sync after 1 minute
             handler.postDelayed(syncRunnable, 60 * 1000L)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "aw-sync native library unavailable; sync scheduler disabled", e)
+            isRunning = false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start sync scheduler", e)
             isRunning = false
