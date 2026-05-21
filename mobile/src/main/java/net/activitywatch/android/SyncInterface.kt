@@ -16,11 +16,7 @@ class SyncInterface(context: Context) {
     private val syncDir: String
     
     init {
-        // Use Downloads folder for easy user access: /sdcard/Download/ActivityWatch/
-        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(
-            android.os.Environment.DIRECTORY_DOWNLOADS
-        )
-        syncDir = "$downloadsDir/ActivityWatch"
+        syncDir = resolveSyncDirectory(context).absolutePath
         Os.setenv("AW_SYNC_DIR", syncDir, true)
         
         // Set XDG environment variables to app-writable paths
@@ -32,11 +28,21 @@ class SyncInterface(context: Context) {
         Os.setenv("XDG_CONFIG_HOME", "$filesDir/config", true)
         Os.setenv("XDG_DATA_HOME", "$filesDir/data", true)
         
-        // Create sync directory if it doesn't exist
-        File(syncDir).mkdirs()
-        
         System.loadLibrary("aw_sync")
         Log.i(TAG, "aw-sync initialized with sync dir: $syncDir")
+    }
+
+    private fun resolveSyncDirectory(context: Context): File {
+        val preferredDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "sync")
+        if (preferredDir.exists() || preferredDir.mkdirs()) {
+            return preferredDir
+        }
+
+        val fallbackDir = File(context.filesDir, "sync")
+        if (!fallbackDir.exists() && !fallbackDir.mkdirs()) {
+            Log.e(TAG, "Failed to create sync directory: ${fallbackDir.absolutePath}")
+        }
+        return fallbackDir
     }
     
     // Native JNI functions
@@ -107,6 +113,8 @@ class SyncInterface(context: Context) {
                     Log.e(TAG, "$operation failed", e)
                     callback(false, errorMsg)
                 }
+            } finally {
+                executor.shutdown()
             }
         }
     }
