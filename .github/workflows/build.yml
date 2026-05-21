@@ -248,9 +248,9 @@ jobs:
         make dist/aw-android.${{ matrix.type }}
 
     - name: Upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: aw-android
+        name: aw-android-${{ matrix.type }}
         path: dist/aw-android*.${{ matrix.type }}
 
   test:
@@ -483,7 +483,7 @@ jobs:
 
     - name: Upload logcat
       if: ${{ success() || steps.test.conclusion == 'failure'}}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: logcat
         # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
@@ -499,7 +499,7 @@ jobs:
     #     path: ./*.mov # out.mov
 
     - name: Upload screenshots
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       with:
         name: screenshots
@@ -526,10 +526,11 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Download APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
         path: dist
+        merge-multiple: true
 
     - name: Display structure of downloaded files
       working-directory: dist
@@ -582,10 +583,11 @@ jobs:
 
     # Will download all artifacts to path
     - name: Download release APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
         path: dist
+        merge-multiple: true
 
     - name: Display structure of downloaded files
       working-directory: dist
