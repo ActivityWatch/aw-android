@@ -36,6 +36,8 @@ class SyncAlarmReceiver : BroadcastReceiver() {
                     Log.w(TAG, "Automatic sync failed: $message")
                 }
             }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "aw-sync native library unavailable; skipping sync", e)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to perform sync", e)
         }
