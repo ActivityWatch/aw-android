@@ -64,6 +64,11 @@ class AuthSettingsActivity : AppCompatActivity() {
 
         btnRegenerate.setOnClickListener {
             val newKey = configManager.generateAndSetApiKey()
+            if (newKey == null) {
+                refreshUI()
+                Toast.makeText(this, "Failed to save API key", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
             tvApiKey.text = newKey
             btnCopy.visibility = View.VISIBLE
             // Update switch without triggering its listener (which would show a second toast)
@@ -80,17 +85,33 @@ class AuthSettingsActivity : AppCompatActivity() {
                 val current = configManager.readAuthConfig()
                 if (!current.isEnabled) {
                     val newKey = configManager.generateAndSetApiKey()
+                    if (newKey == null) {
+                        refreshUI()
+                        Toast.makeText(this, "Failed to save API key", Toast.LENGTH_LONG).show()
+                        return@setOnCheckedChangeListener
+                    }
                     tvApiKey.text = newKey
                 }
                 btnCopy.visibility = View.VISIBLE
                 tvStatus.text = "Authentication enabled (restart app to apply)"
             } else {
-                configManager.clearApiKey()
+                if (!configManager.clearApiKey()) {
+                    refreshUI()
+                    Toast.makeText(this, "Failed to save API key setting", Toast.LENGTH_LONG).show()
+                    return@setOnCheckedChangeListener
+                }
                 tvApiKey.text = "(none)"
                 btnCopy.visibility = View.GONE
                 tvStatus.text = "Authentication disabled (restart app to apply)"
             }
             Toast.makeText(this, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::configManager.isInitialized) {
+            refreshUI()
         }
     }
 
