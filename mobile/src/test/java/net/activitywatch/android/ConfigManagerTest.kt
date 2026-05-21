@@ -23,19 +23,21 @@ class ConfigManagerTest {
     private fun writeApiKey(content: String, key: String?): String {
         val authLine = if (key.isNullOrEmpty()) null else """api_key = "$key""""
         val authSectionRegex = Regex("""(?m)^\[auth\].*?(?=^\[|\z)""", RegexOption.DOT_MATCHES_ALL)
-        val authSectionContent = authSectionRegex.find(content)?.value
-        if (authSectionContent != null) {
+        val authSectionMatch = authSectionRegex.find(content)
+        if (authSectionMatch != null) {
+            val authSectionContent = authSectionMatch.value
             val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
             val updatedSection = if (apiKeyLinePresent) {
                 val replaced = Regex("""(?m)^api_key\s*=.*$""")
                     .replaceFirst(authSectionContent, authLine ?: "")
                 if (authLine == null) replaced.replace(Regex("\n{3,}"), "\n\n") else replaced
             } else if (authLine != null) {
-                authSectionContent.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
+                val separator = if (authSectionContent.endsWith("\n")) "" else "\n"
+                "$authSectionContent$separator$authLine\n"
             } else {
                 authSectionContent
             }
-            return content.replace(authSectionContent, updatedSection)
+            return content.replaceRange(authSectionMatch.range, updatedSection)
         }
         return if (authLine != null) {
             val base = content.trimEnd()
@@ -103,6 +105,14 @@ class ConfigManagerTest {
         val config = "address = \"127.0.0.1\"\n\n[auth]\n"
         val result = writeApiKey(config, "inserted-key")
         assertEquals("inserted-key", parseApiKey(result))
+    }
+
+    @Test
+    fun `writeApiKey inserts key when auth section has no trailing newline`() {
+        val config = "address = \"127.0.0.1\"\n\n[auth]"
+        val result = writeApiKey(config, "inserted-key")
+        assertEquals("inserted-key", parseApiKey(result))
+        assertEquals("address = \"127.0.0.1\"\n\n[auth]\napi_key = \"inserted-key\"\n", result)
     }
 
     @Test
