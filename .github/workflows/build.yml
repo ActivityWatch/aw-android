@@ -54,7 +54,9 @@ jobs:
     # Rust
     - name: Set up Rust
       id: toolchain
-      uses: dtolnay/rust-toolchain@stable
+      # Pin to 1.79.0: aw-server-rust@dc70318 uses `time` crate which fails to compile
+      # on Rust 1.80+ due to tightened type inference (E0282 in Box<_> expressions).
+      uses: dtolnay/rust-toolchain@1.79.0
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
 
     - name: Set up Rust toolchain for Android NDK
