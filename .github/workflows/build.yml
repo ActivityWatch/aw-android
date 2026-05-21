@@ -484,10 +484,10 @@ jobs:
       env:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
       run: |
-        adb shell monkey -p net.activitywatch.android.debug 1
+        adb shell monkey -p net.activitywatch.android.debug 1 || echo "App launch failed; capturing current emulator screen."
         sleep 10
         mkdir -p screenshots
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
+        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png || echo "Screenshot capture failed."
         ls -alh screenshots/
 
     - name: Upload logcat
