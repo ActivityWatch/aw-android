@@ -105,36 +105,18 @@ jobs:
         submodules: 'recursive'
 
 
-    - name: Detect Fastlane secrets
-      id: fastlane_secrets
-      env:
-        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
-      run: |
-        if [ -n "$KEY_FASTLANE_API" ]; then
-          echo "available=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "available=false" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Require Fastlane secrets outside pull requests
-      if: steps.fastlane_secrets.outputs.available != 'true' && github.event_name != 'pull_request'
-      run: |
-        echo "::error::KEY_FASTLANE_API is required for non-PR builds"
-        exit 1
-
-    # Ruby & Fastlane
-    # version set by .ruby-version
+    # Ruby & Fastlane steps only run on the main repo (not fork PRs, which lack secrets).
+    # Fork PRs fall through to "Output versionCode" which reads directly from build.gradle.
     - name: Set up Ruby and install fastlane
-      if: steps.fastlane_secrets.outputs.available == 'true'
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: ruby/setup-ruby@v1
       with:
         bundler-cache: true
 
-    # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
-      if: steps.fastlane_secrets.outputs.available == 'true'
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     - name: Load Fastlane secrets
-      if: steps.fastlane_secrets.outputs.available == 'true'
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -147,17 +129,16 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: Wandalen/wretry.action@v3
       with:
         command: bundle exec fastlane update_version
         attempt_limit: 3
         attempt_delay: 20000
 
-    - name: Use checked-in versionCode fallback
-      if: steps.fastlane_secrets.outputs.available != 'true'
-      run: |
-        echo "KEY_FASTLANE_API unavailable for pull_request build; using checked-in versionCode."
-
+    # Always reads versionCode from build.gradle.
+    # On non-fork runs, fastlane has already incremented it above.
+    # On fork PRs, this returns the current committed value as a safe fallback.
     - name: Output versionCode
       id: versionCode
       run: |
@@ -167,8 +148,7 @@ jobs:
     name: Build ${{ matrix.type }}
     runs-on: ubicloud-standard-4
     needs: [build-rust, get-versionCode]
-    # Fork PRs cannot access signing secrets; build/test coverage still runs in
-    # build-rust, test, and test-e2e.
+    # Skip on fork PRs: signing secrets are not available and upload would fail anyway.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: true
