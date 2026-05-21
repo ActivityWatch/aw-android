@@ -41,25 +41,27 @@ class ConfigManager(context: Context) {
         }
     }
 
-    fun setApiKey(key: String?) {
-        try {
+    fun setApiKey(key: String?): Boolean {
+        return try {
             val current = if (configFile.exists()) configFile.readText() else ""
             val updated = writeApiKey(current, key)
             val tmpFile = File(configFile.parent, configFile.name + ".tmp")
             tmpFile.writeText(updated)
             if (!tmpFile.renameTo(configFile)) {
+                tmpFile.delete()
                 throw IOException("Failed to atomically replace config.toml")
             }
             Log.d(TAG, "API key updated in config.toml")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write config.toml: ${e.message}")
+            false
         }
     }
 
-    fun generateAndSetApiKey(): String {
+    fun generateAndSetApiKey(): String? {
         val key = UUID.randomUUID().toString().replace("-", "")
-        setApiKey(key)
-        return key
+        return if (setApiKey(key)) key else null
     }
 
     fun clearApiKey() = setApiKey(null)
