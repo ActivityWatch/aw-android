@@ -74,23 +74,20 @@ class ConfigManager(context: Context) {
         val authLine = if (key.isNullOrEmpty()) null else """api_key = "$key""""
         val authSectionRegex = Regex("""(?m)^\[auth\].*?(?=^\[|\z)""", RegexOption.DOT_MATCHES_ALL)
         val authSectionContent = authSectionRegex.find(content)?.value
-        val authSectionPresent = authSectionContent != null
-        // Scope the api_key check to the [auth] section only, not the whole file
-        val apiKeyLinePresent = authSectionContent != null &&
-            Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
 
-        if (authSectionPresent) {
-            return if (apiKeyLinePresent) {
-                // Replace or remove the existing api_key line
+        if (authSectionContent != null) {
+            // Modify only within the [auth] section to avoid touching other sections
+            val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
+            val updatedSection = if (apiKeyLinePresent) {
                 val replaced = Regex("""(?m)^api_key\s*=.*$""")
-                    .replaceFirst(content, authLine ?: "")
+                    .replaceFirst(authSectionContent, authLine ?: "")
                 if (authLine == null) replaced.replace(Regex("\n{3,}"), "\n\n") else replaced
             } else if (authLine != null) {
-                // [auth] exists but no api_key line yet — insert after the [auth] header
-                content.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
+                authSectionContent.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
             } else {
-                content
+                authSectionContent
             }
+            return content.replace(authSectionContent, updatedSection)
         }
 
         // No [auth] section — append it if we have a key
