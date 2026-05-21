@@ -1,9 +1,12 @@
 package net.activitywatch.android
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.view.MenuItem
 import android.view.View
 import android.widget.Button
@@ -48,7 +51,14 @@ class AuthSettingsActivity : AppCompatActivity() {
         btnCopy.setOnClickListener {
             val key = configManager.readAuthConfig().apiKey ?: return@setOnClickListener
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("API key", key))
+            val clip = ClipData.newPlainText("API key", key)
+            // Suppress plaintext preview toast on Android 13+ (API 33+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                clip.description.extras = PersistableBundle().also {
+                    it.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+            clipboard.setPrimaryClip(clip)
             Toast.makeText(this, "API key copied to clipboard", Toast.LENGTH_SHORT).show()
         }
 
