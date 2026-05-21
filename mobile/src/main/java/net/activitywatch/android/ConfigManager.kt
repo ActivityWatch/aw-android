@@ -80,9 +80,10 @@ class ConfigManager(context: Context) {
     private fun writeApiKey(content: String, key: String?): String {
         val authLine = if (key.isNullOrEmpty()) null else """api_key = "$key""""
         val authSectionRegex = Regex("""(?m)^\[auth\].*?(?=^\[|\z)""", RegexOption.DOT_MATCHES_ALL)
-        val authSectionContent = authSectionRegex.find(content)?.value
+        val authSectionMatch = authSectionRegex.find(content)
 
-        if (authSectionContent != null) {
+        if (authSectionMatch != null) {
+            val authSectionContent = authSectionMatch.value
             // Modify only within the [auth] section to avoid touching other sections
             val apiKeyLinePresent = Regex("""(?m)^api_key\s*=""").containsMatchIn(authSectionContent)
             val updatedSection = if (apiKeyLinePresent) {
@@ -90,11 +91,12 @@ class ConfigManager(context: Context) {
                     .replaceFirst(authSectionContent, authLine ?: "")
                 if (authLine == null) replaced.replace(Regex("\n{3,}"), "\n\n") else replaced
             } else if (authLine != null) {
-                authSectionContent.replaceFirst(oldValue = "[auth]\n", newValue = "[auth]\n$authLine\n")
+                val separator = if (authSectionContent.endsWith("\n")) "" else "\n"
+                "$authSectionContent$separator$authLine\n"
             } else {
                 authSectionContent
             }
-            return content.replace(authSectionContent, updatedSection)
+            return content.replaceRange(authSectionMatch.range, updatedSection)
         }
 
         // No [auth] section — append it if we have a key
