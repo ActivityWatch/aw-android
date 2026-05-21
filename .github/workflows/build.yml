@@ -401,14 +401,13 @@ jobs:
       run: |
         echo "Starting emulator and waiting for boot to complete...."
         ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/emulator/emulator --accel-check  # check for hardware acceleration
+        $ANDROID_HOME/emulator/emulator -accel-check  # check for hardware acceleration
         nohup $ANDROID_HOME/emulator/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
         $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
         $ANDROID_HOME/platform-tools/adb devices
         sleep 30
         mkdir -p screenshots
-        screencapture screenshots/screenshot-$SUFFIX.jpg
         $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
 
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
@@ -481,7 +480,7 @@ jobs:
       run: |
         adb shell monkey -p net.activitywatch.android.debug 1
         sleep 10
-        screencapture screenshots/pscreenshot-$SUFFIX.jpg
+        mkdir -p screenshots
         $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
         ls -alh screenshots/
 
