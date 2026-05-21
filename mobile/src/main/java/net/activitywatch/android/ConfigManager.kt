@@ -3,6 +3,7 @@ package net.activitywatch.android
 import android.content.Context
 import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 private const val TAG = "ConfigManager"
@@ -44,7 +45,11 @@ class ConfigManager(context: Context) {
         try {
             val current = if (configFile.exists()) configFile.readText() else ""
             val updated = writeApiKey(current, key)
-            configFile.writeText(updated)
+            val tmpFile = File(configFile.parent, configFile.name + ".tmp")
+            tmpFile.writeText(updated)
+            if (!tmpFile.renameTo(configFile)) {
+                throw IOException("Failed to atomically replace config.toml")
+            }
             Log.d(TAG, "API key updated in config.toml")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write config.toml: ${e.message}")
