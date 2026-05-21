@@ -99,16 +99,36 @@ jobs:
         submodules: 'recursive'
 
 
+    - name: Detect Fastlane secrets
+      id: fastlane_secrets
+      env:
+        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+      run: |
+        if [ -n "$KEY_FASTLANE_API" ]; then
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "available=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Require Fastlane secrets outside pull requests
+      if: steps.fastlane_secrets.outputs.available != 'true' && github.event_name != 'pull_request'
+      run: |
+        echo "::error::KEY_FASTLANE_API is required for non-PR builds"
+        exit 1
+
     # Ruby & Fastlane
     # version set by .ruby-version
     - name: Set up Ruby and install fastlane
+      if: steps.fastlane_secrets.outputs.available == 'true'
       uses: ruby/setup-ruby@v1
       with:
         bundler-cache: true
 
     # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: steps.fastlane_secrets.outputs.available == 'true'
     - name: Load Fastlane secrets
+      if: steps.fastlane_secrets.outputs.available == 'true'
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -121,11 +141,17 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: steps.fastlane_secrets.outputs.available == 'true'
       uses: Wandalen/wretry.action@master
       with:
         command: bundle exec fastlane update_version
         attempt_limit: 3
         attempt_delay: 20000
+
+    - name: Use checked-in versionCode fallback
+      if: steps.fastlane_secrets.outputs.available != 'true'
+      run: |
+        echo "KEY_FASTLANE_API unavailable for pull_request build; using checked-in versionCode."
 
     - name: Output versionCode
       id: versionCode
@@ -581,4 +607,3 @@ jobs:
           dist/*.apk
           dist/*.aab
         # body_path: dist/release_notes/release_notes.md
-
