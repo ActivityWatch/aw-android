@@ -26,4 +26,14 @@ class AWPreferences(context: Context) {
         editor.putBoolean("isFirstTime", true)
         editor.apply()
     }
+
+    // To check if the hostname migration has already been run
+    fun hasMigratedHostname(): Boolean {
+        return sharedPreferences.getBoolean("hasMigratedHostname", false)
+    }
+
+    // To mark the hostname migration as done so it won't run again
+    fun setHostnameMigrated() {
+        sharedPreferences.edit().putBoolean("hasMigratedHostname", true).apply()
+    }
 }

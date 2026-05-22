@@ -4,9 +4,8 @@ import android.content.Intent
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
-import androidx.test.espresso.matcher.ViewMatchers.*
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
 import org.junit.Test
@@ -50,7 +49,7 @@ class ScreenshotTest {
         Thread.sleep(5000)
         Log.i(TAG, "Taking screenshot")
 
-        val bitmap = takeScreenshot()
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         // Only supported on API levels >=28
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             bitmap.writeToTestStorage("${javaClass.simpleName}_${nameRule.methodName}")

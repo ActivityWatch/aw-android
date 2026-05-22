@@ -4,4 +4,13 @@
     <color name="colorPrimaryDark">#000000</color>
     <color name="colorAccent">#D81B60</color>
     <color name="default_text_color">#000000</color>
+
+    <!-- Widget theme colors (light mode defaults) -->
+    <color name="widget_background">#F5F5F5</color>
+    <color name="widget_text_primary">#1A1A1A</color>
+    <color name="widget_text_secondary">#555555</color>
+    <color name="widget_text_tertiary">#666666</color>
+    <color name="widget_text_muted">#888888</color>
+    <color name="widget_bar_bg">#E0E0E0</color>
+    <color name="widget_icon_tint">#888888</color>
 </resources>

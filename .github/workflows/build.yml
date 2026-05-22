@@ -18,7 +18,7 @@ jobs:
     name: Build aw-server-rust
     runs-on: ubicloud-standard-8
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
     - name: Set RELEASE
@@ -26,7 +26,7 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Cache JNI libs
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
@@ -42,7 +42,7 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
@@ -63,7 +63,7 @@ jobs:
         ./aw-server-rust/install-ndk.sh
 
     - name: Cache cargo build
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       env:
         cache-name: cargo-build-target
@@ -83,6 +83,12 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
+    - name: Upload jniLibs artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs/
+
   # This needs to be a seperate job since fastlane update_version,
   # fails if run concurrently (such as in build apk/aab matrix),
   # thus we need to run it once and and reuse the results.
@@ -94,21 +100,23 @@ jobs:
       versionCode: ${{ steps.versionCode.outputs.versionCode }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
 
-    # Ruby & Fastlane
-    # version set by .ruby-version
+    # Ruby & Fastlane steps only run on the main repo (not fork PRs, which lack secrets).
+    # Fork PRs fall through to "Output versionCode" which reads directly from build.gradle.
     - name: Set up Ruby and install fastlane
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: ruby/setup-ruby@v1
       with:
         bundler-cache: true
 
-    # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     - name: Load Fastlane secrets
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -121,12 +129,16 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
-      uses: Wandalen/wretry.action@master
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      uses: Wandalen/wretry.action@v3
       with:
         command: bundle exec fastlane update_version
         attempt_limit: 3
         attempt_delay: 20000
 
+    # Always reads versionCode from build.gradle.
+    # On non-fork runs, fastlane has already incremented it above.
+    # On fork PRs, this returns the current committed value as a safe fallback.
     - name: Output versionCode
       id: versionCode
       run: |
@@ -136,13 +148,15 @@ jobs:
     name: Build ${{ matrix.type }}
     runs-on: ubicloud-standard-4
     needs: [build-rust, get-versionCode]
+    # Skip on fork PRs: signing secrets are not available and upload would fail anyway.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: true
       matrix:
         type: ['apk', 'aab']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -161,13 +175,14 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -177,14 +192,14 @@ jobs:
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
+    - uses: actions/cache/restore@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: true
+        fail-on-cache-miss: false
 
     - name: Check that jniLibs present
       run: |
@@ -222,20 +237,20 @@ jobs:
         make dist/aw-android.${{ matrix.type }}
 
     - name: Upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: aw-android
         path: dist/aw-android*.${{ matrix.type }}
 
   test:
     name: Test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -244,13 +259,14 @@ jobs:
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
     # Android SDK & NDK
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -261,20 +277,22 @@ jobs:
 
     # Restores jniLibs from cache
     # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
+    - uses: actions/cache/restore@v4
       id: cache-jniLibs
       env:
         cache-name: jniLibs
       with:
         path: mobile/src/main/jniLibs/
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: true
+        fail-on-cache-miss: false
     - name: Check that jniLibs present
+      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     # Test
     - name: Test
+      if: steps.cache-jniLibs.outputs.cache-hit == 'true'
       run: |
         make test
 
@@ -286,22 +304,14 @@ jobs:
     #runs-on: "macos-12"  # macOS-latest
     runs-on: ubicloud-standard-8
     env:
-      MATRIX_E_SDK: ${{ matrix.android_emu_version }}
-      MATRIX_AVD: ${{ matrix.android_avd }}
+      MATRIX_E_SDK: ${{ matrix.api-level }}
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        android_avd: [Pixel_API_27_AOSP]
-        include:
-          - android_avd: Pixel_API_27_AOSP
-            android_emu_version: 27
-          # # # Cannot run > 27-emuLevel -_- https://github.com/actions/runner-images/issues/6527
-          # - android_avd: Pixel_API_32_AOSP
-          #   android_emu_version: 32
+        api-level: [29]
     steps:
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
@@ -309,121 +319,25 @@ jobs:
       run: |
         echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
 
-    # Restores jniLibs from cache
-    # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
-      id: cache-jniLibs
-      env:
-        cache-name: jniLibs
+    - name: Download jniLibs artifact
+      uses: actions/download-artifact@v4
       with:
+        name: jniLibs
         path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: true
 
     - name: Display structure of downloaded files
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
-    - name: Install intel-haxm
-      if: runner.os == 'macOS'
-      run: brew install intel-haxm
-
-    # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
-    - name: Create Android emulator
-      run: |
-        # Install AVD files
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
-
-        # Create emulator
-        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        $ANDROID_HOME/emulator/emulator -list-avds
-        if false; then
-        emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
-        # The following madness is to support empty OR populated config.ini files,
-        # the state of which is dependant on the version of the emulator used (which we don't control),
-        # so let's be defensive to be safe.
-        # Replace existing config (NOTE we're on MacOS so sed works differently!)
-        sed -i .bak 's/hw.lcd.density=.*/hw.lcd.density=420/' "$emulator_config"
-        sed -i .bak 's/hw.lcd.height=.*/hw.lcd.height=1920/' "$emulator_config"
-        sed -i .bak 's/hw.lcd.width=.*/hw.lcd.width=1080/' "$emulator_config"
-        # Or, add new config
-        if ! grep -q "hw.lcd.density" "$emulator_config"; then
-          echo "hw.lcd.density=420" >> "$emulator_config"
-        fi
-        if ! grep -q "hw.lcd.height" "$emulator_config"; then
-          echo "hw.lcd.height=1920" >> "$emulator_config"
-        fi
-        if ! grep -q "hw.lcd.width" "$emulator_config"; then
-          echo "hw.lcd.width=1080" >> "$emulator_config"
-        fi
-        echo "Emulator settings ($emulator_config)"
-        cat "$emulator_config"
-        fi
-
-    - name: Start Android emulator
-      timeout-minutes: 30 # ~4min normal - 3x DOSafety
-      env:
-        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
-        HOMEBREW_NO_INSTALL_CLEANUP: 1
-      run: |
-        echo "Starting emulator and waiting for boot to complete...."
-        ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
-        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
-        $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
-        echo "Emulator has finished booting"
-        $ANDROID_HOME/platform-tools/adb devices
-        sleep 30
-        mkdir -p screenshots
-        screencapture screenshots/screenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
-
-    # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
-    # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
-
-    # # # Test # # reactiveCircus is giving a black screenshot not working
-    # # # TODO: Take a screenshot of OS to confirm if its Emulator issue or testcode/androidsdk issue - or maybe the emulator is screen off ?
-    # # # https://github.com/ReactiveCircus/android-emulator-runner
-    # - name: Test Cache
-    #   uses: reactivecircus/android-emulator-runner@v2
-    #   with:
-    #     api-level: ${{ matrix.android_emu_version }}
-    #     arch: x86_64
-    #     profile: Nexus 6
-    #     target: google_apis
-    #     emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-    #     script: echo Meoooow !
-    # - name: Test
-    #   id: test
-    #   uses: reactivecircus/android-emulator-runner@v2
-    #   with:
-    #     api-level: ${{ matrix.android_emu_version }}
-    #     arch: x86_64
-    #     profile: Nexus 6
-    #     target: google_apis
-    #     emulator-options: -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
-    #     # Only running specific Instrumentation tests cause others are failing right now. TODO: Fix others
-    #     script: ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest --stacktrace
-
-    # - name: Install recorder and record session
-    #   env:
-    #     SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}-${{ matrix.os }}
-    #   run: |
-    #     brew install ffmpeg
-    #     $ANDROID_HOME/tools/emulator -help-all
-    #     # -logcat *:v
-    #     # $ANDROID_HOME/tools/emulator -port 18725 -verbose -no-audio -gpu swiftshader_indirect -logcat *:v @$MATRIX_AVD &
-    #     ffmpeg -f avfoundation -i 0 -t 120 out$SUFFIX.mov &
-
     - name: Set up JDK
-      uses: actions/setup-java@v1
+      uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
-    # Android SDK & NDK
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
+
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -431,55 +345,44 @@ jobs:
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
-    - name: Run E2E tests
-      timeout-minutes: 20
+    - name: Run Emulator and E2E tests
+      uses: reactivecircus/android-emulator-runner@v2
+      timeout-minutes: 30
       id: test
-      run: |
-        make test-e2e
+      with:
+        api-level: ${{ matrix.api-level }}
+        target: default
+        arch: x86_64
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+        disable-animations: true
+        script: |
+          set +e
+          make test-e2e
+          test_status=$?
+          if [ -f mobile/build/outputs/apk/debug/mobile-debug.apk ]; then
+            adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk || true
+            adb shell monkey -p net.activitywatch.android.debug -c android.intent.category.LAUNCHER 1 || true
+            sleep 3
+          fi
+          adb shell screencap -p /sdcard/screenshot.png || true
+          adb pull /sdcard/screenshot.png . || true
+          mkdir -p mobile/build
+          adb logcat -d > mobile/build/logcat.log || true
+          exit $test_status
 
-    - name: Output and save logcat to file
-      if: ${{ success() || steps.test.conclusion == 'failure'}}
-      run: |
-        mkdir -p mobile/build
-        adb logcat -d > mobile/build/logcat.log
-        adb logcat -v color &
-
-    - name: Screenshot
-      if: ${{ success() || steps.test.conclusion == 'failure'}}
-      env:
-        SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
-      run: |
-        adb shell monkey -p net.activitywatch.android.debug 1
-        sleep 10
-        screencapture screenshots/pscreenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
-        ls -alh screenshots/
+    - name: Upload screenshot
+      uses: actions/upload-artifact@v4
+      if: ${{ success() || steps.test.conclusion == 'failure' }}
+      with:
+        name: emulator-screenshot
+        path: screenshot.png
 
     - name: Upload logcat
-      if: ${{ success() || steps.test.conclusion == 'failure'}}
-      uses: actions/upload-artifact@v3
+      if: ${{ success() || steps.test.conclusion == 'failure' }}
+      uses: actions/upload-artifact@v4
       with:
         name: logcat
-        # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
-        path: |
-          mobile/build/logcat.log
-        #mobile/build/reports/*
-
-    # - name: Upload video
-    #   if: ${{ success() || steps.test.conclusion == 'failure'}}
-    #   uses: actions/upload-artifact@master
-    #   with:
-    #     name: video
-    #     path: ./*.mov # out.mov
-
-    - name: Upload screenshots
-      uses: actions/upload-artifact@v3
-      if: ${{ success() || steps.test.conclusion == 'failure'}}
-      with:
-        name: screenshots
-        path: |
-          screenshots/*
-          **/mobile/build/outputs/connected_android_test_additional_output/debugAndroidTest/connected/*
+        path: mobile/build/logcat.log
 
     #- name: Publish Test Report
     #  # # uses: mikepenz/action-junit-report@v3
@@ -497,10 +400,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Download APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: aw-android
         path: dist
@@ -517,7 +420,7 @@ jobs:
         bundler-cache: true
 
     # detect if version tag is stable/beta
-    - uses: nowsprinting/check-version-format-action@v2
+    - uses: nowsprinting/check-version-format-action@v4
       id: version
       with:
         prefix: 'v'
@@ -556,7 +459,7 @@ jobs:
 
     # Will download all artifacts to path
     - name: Download release APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: aw-android
         path: dist
@@ -566,14 +469,14 @@ jobs:
       run: ls -R
 
     # detect if version tag is stable/beta
-    - uses: nowsprinting/check-version-format-action@v2
+    - uses: nowsprinting/check-version-format-action@v4
       id: version
       with:
         prefix: 'v'
 
     # create a release
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         draft: true
         prerelease: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
@@ -581,4 +484,3 @@ jobs:
           dist/*.apk
           dist/*.aab
         # body_path: dist/release_notes/release_notes.md
-

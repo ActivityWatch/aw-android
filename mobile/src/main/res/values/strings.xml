@@ -26,4 +26,7 @@
 
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
+
+    <!-- Widget strings -->
+    <string name="widget_category_time_description">Shows today\'s screen time and top categories</string>
 </resources>

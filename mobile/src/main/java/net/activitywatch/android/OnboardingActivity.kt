@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -16,7 +17,9 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
+import androidx.core.net.toUri
 
 // enum for the onboarding pages
 enum class OnboardingPage {
@@ -32,7 +35,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         val viewPager = findViewById<ViewPager2>(R.id.viewPager)
         val tabLayout = findViewById<TabLayout>(R.id.tabLayout)
-        val numPages = OnboardingPage.values().size
+        val numPages = OnboardingPage.entries.size
 
         viewPager.adapter = OnboardingAdapter(this)
         TabLayoutMediator(tabLayout, viewPager) { _, _ -> }.attach()
@@ -86,20 +89,22 @@ class OnboardingActivity : AppCompatActivity() {
                 updateButtons()
             }
         })
-    }
 
-    override fun onBackPressed() {
-        // If back button is pressed, exit the app,
-        // since we don't want to allow the user to accidentally skip onboarding.
-        // (Google Play policy, due to sensitive permissions)
-        // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
-        finishAffinity()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // If back button is pressed, exit the app,
+                // since we don't want to allow the user to accidentally skip onboarding.
+                // (Google Play policy, due to sensitive permissions)
+                // https://developer.android.com/distribute/best-practices/develop/restrictions-non-sdk-interfaces#back-button
+                finishAffinity()
+            }
+        })
     }
 }
 
 class OnboardingAdapter(fragmentActivity: FragmentActivity) : FragmentStateAdapter(fragmentActivity) {
 
-    override fun getItemCount(): Int = OnboardingPage.values().size
+    override fun getItemCount(): Int = OnboardingPage.entries.size
 
     override fun createFragment(position: Int): Fragment {
         return when (position) {
@@ -143,6 +148,18 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantAccessibilityPermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        // Handle grant exact alarm permissions (for widgets)
+        view.findViewById<Button>(R.id.btnGrantExactAlarmPermission).setOnClickListener {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                    data = ("package:" + requireContext().packageName).toUri()
+                })
+            }
+        }
+        // Handle grant notification access (for media watcher)
+        view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
     }
 
     // When fragment is resumed, check if the permission has been granted
@@ -152,13 +169,24 @@ class PermissionsFragment : Fragment() {
         // Get current permission status
         val usagePermissionGranted = UsageStatsWatcher.isUsageAllowed(requireContext())
         val accessibilityPermissionGranted = UsageStatsWatcher.isAccessibilityAllowed(requireContext())
+        val notificationPermissionGranted = MediaWatcher.isNotificationAccessGranted(requireContext())
+        val exactAlarmPermissionGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val alarmManager = requireContext().getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true // Granted on Android < 12 by manifest permission
+        }
 
         // Disable buttons if permissions granted
         view?.findViewById<Button>(R.id.btnGrantUsagePermission)?.isEnabled = !usagePermissionGranted
         view?.findViewById<Button>(R.id.btnGrantAccessibilityPermission)?.isEnabled = !accessibilityPermissionGranted
+        view?.findViewById<Button>(R.id.btnGrantExactAlarmPermission)?.isEnabled = !exactAlarmPermissionGranted
+        view?.findViewById<Button>(R.id.btnGrantNotificationPermission)?.isEnabled = !notificationPermissionGranted
 
         // Set the checkbox/x mark based on the permission status
         view?.findViewById<ImageView>(R.id.checkmarkUsage)?.setImageResource(if(usagePermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
         view?.findViewById<ImageView>(R.id.checkmarkAccessibility)?.setImageResource(if(accessibilityPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
+        view?.findViewById<ImageView>(R.id.checkmarkExactAlarm)?.setImageResource(if(exactAlarmPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
+        view?.findViewById<ImageView>(R.id.checkmarkNotification)?.setImageResource(if(notificationPermissionGranted) R.drawable.ic_checkmark else R.drawable.ic_x)
     }
 }
