@@ -28,6 +28,10 @@ class SessionEventWatcher(val context: Context) {
         const val TAG = "SessionEventWatcher"
     }
 
+    // queryEvents uses an inclusive lower bound, so replaying the last stored
+    // session's start timestamp would duplicate that session on every run.
+    private fun nextQueryStartTimestamp(): Long = (lastUpdated?.toEpochMilli()?.plus(1L)) ?: 0L
+
     /**
      * Send individual events based on parsed sessions instead of heartbeats
      */
@@ -71,7 +75,7 @@ class SessionEventWatcher(val context: Context) {
         lastUpdated = getLastEventTime()
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-        val startTimestamp = lastUpdated?.toEpochMilli() ?: 0L
+        val startTimestamp = nextQueryStartTimestamp()
         val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
         val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
 
@@ -187,7 +191,7 @@ class SessionEventWatcher(val context: Context) {
      * Get sessions since last update for analysis
      */
     fun getSessionsSinceLastUpdate(): List<AppSession> {
-        val startTimestamp = lastUpdated?.toEpochMilli() ?: 0L
+        val startTimestamp = nextQueryStartTimestamp()
         return sessionParser.parseUsageEventsSince(startTimestamp)
     }
 
