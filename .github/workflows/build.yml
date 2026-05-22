@@ -258,7 +258,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
