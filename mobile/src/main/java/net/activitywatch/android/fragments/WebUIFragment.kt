@@ -37,8 +37,9 @@ internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
         return false
     }
 
+    // java.net.URI.getHost() returns IPv6 addresses with brackets, e.g. "[::1]"
     return when (uri.host?.lowercase()) {
-        "localhost", "127.0.0.1", "::1" -> true
+        "localhost", "127.0.0.1", "[::1]" -> true
         else -> false
     }
 }
