@@ -272,9 +272,14 @@ jobs:
       with:
         java-version: ${{ env.JAVA_VERSION }}
 
-    # Android SDK only (unit tests don't require NDK or jniLibs)
+    # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
+    - name: Set up Android NDK
+      run: |
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
     # Test
     - name: Test
