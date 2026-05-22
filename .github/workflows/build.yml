@@ -10,7 +10,6 @@ on:
 
 env:
   NDK_VERSION: '25.2.9519653'
-  NODE_VERSION: '16'
   JAVA_VERSION: '17'
 
 jobs:
@@ -225,7 +224,7 @@ jobs:
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: aw-android
+        name: aw-android-${{ matrix.type }}
         path: dist/aw-android*.${{ matrix.type }}
 
   test:
@@ -505,8 +504,9 @@ jobs:
     - name: Download APK & AAB
       uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
         path: dist
+        merge-multiple: true
 
     - name: Display structure of downloaded files
       working-directory: dist
@@ -557,12 +557,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    # Will download all artifacts to path
     - name: Download release APK & AAB
       uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
         path: dist
+        merge-multiple: true
 
     - name: Display structure of downloaded files
       working-directory: dist
