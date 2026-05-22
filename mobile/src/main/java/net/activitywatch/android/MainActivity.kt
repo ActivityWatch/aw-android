@@ -24,11 +24,20 @@ const val baseURL = "http://127.0.0.1:5600"
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var dashboardApiKey: String
 
     val version: String
         get() {
             return packageManager.getPackageInfo(packageName, 0).versionName
         }
+
+    private fun authenticatedUrl(url: String = baseURL): String {
+        return buildDashboardUrl(url, dashboardApiKey)
+    }
+
+    private fun openDashboardInBrowser(url: String = baseURL) {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+    }
 
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
@@ -57,12 +66,13 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         binding.navView.setNavigationItemSelectedListener(this)
 
         val ri = RustInterface(this)
+        dashboardApiKey = ensureDashboardApiKey(this)
         ri.startServerTask(this)
 
         if (savedInstanceState != null) {
             return
         }
-        val firstFragment = WebUIFragment.newInstance(baseURL)
+        val firstFragment = WebUIFragment.newInstance(authenticatedUrl())
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
     }
@@ -115,19 +125,18 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/activity/unknown/"
+                url = authenticatedUrl("$baseURL/#/activity/unknown/")
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/buckets/"
+                url = authenticatedUrl("$baseURL/#/buckets/")
             }
             R.id.nav_settings -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/settings/"
+                url = authenticatedUrl("$baseURL/#/settings/")
             }
             R.id.nav_share -> {
-                Snackbar.make(binding.coordinatorLayout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                openDashboardInBrowser()
             }
             R.id.nav_send -> {
                 Snackbar.make(binding.coordinatorLayout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
