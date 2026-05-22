@@ -46,28 +46,30 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             ACTION_REFRESH -> {
                 Log.d(TAG, "Refresh button clicked - re-parsing usage events and updating widgets")
-                
+
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val componentName = ComponentName(context, CategoryTimeWidgetProvider::class.java)
                 val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                
-                // Show loading indicator first
+
+                // Show loading indicator while async work runs
                 for (appWidgetId in appWidgetIds) {
                     showLoadingState(context, appWidgetManager, appWidgetId)
                 }
-                
-                // Re-parse usage events
-                try {
-                    val usageStatsWatcher = UsageStatsWatcher(context)
-                    usageStatsWatcher.sendHeartbeats()
-                    Log.d(TAG, "Triggered usage events re-parsing")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error re-parsing usage events", e)
-                }
-                
-                // Then update with fresh data
-                for (appWidgetId in appWidgetIds) {
-                    updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
+
+                // goAsync() extends BroadcastReceiver lifetime past onReceive() return
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        // Await event persistence before updating the widget
+                        UsageStatsWatcher(context).sendHeartbeatsSuspend()
+                        Log.d(TAG, "Usage events re-parsed; updating widgets")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error re-parsing usage events", e)
+                    }
+                    for (appWidgetId in appWidgetIds) {
+                        updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
+                    }
+                    pendingResult.finish()
                 }
             }
             ACTION_PERIODIC_UPDATE -> {

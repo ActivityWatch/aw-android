@@ -43,6 +43,14 @@ class SessionEventWatcher(val context: Context) {
         }
     }
 
+    suspend fun sendSessionEventsSuspend() {
+        Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
+        withContext(Dispatchers.IO) {
+            val result = processEventsSinceLastUpdate()
+            Log.w(TAG, "Finished SendSessionEventTask, sent $result session events")
+        }
+    }
+
     private fun getLastEventTime(): Instant? {
         val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
         return if (events.length() == 1) {
