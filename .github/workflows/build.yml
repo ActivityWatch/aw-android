@@ -53,7 +53,9 @@ jobs:
     # Rust
     - name: Set up Rust
       id: toolchain
-      uses: dtolnay/rust-toolchain@stable
+      # Pin to 1.79.0: aw-server-rust@dc70318 uses `time` crate which fails to compile
+      # on Rust 1.80+ due to tightened type inference (E0282 in Box<_> expressions).
+      uses: dtolnay/rust-toolchain@1.79.0
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
 
     - name: Set up Rust toolchain for Android NDK
@@ -97,17 +99,18 @@ jobs:
       with:
         submodules: 'recursive'
 
-
-    # Ruby & Fastlane
-    # version set by .ruby-version
+    # Ruby & Fastlane steps only run on the main repo (not fork PRs, which lack secrets).
+    # Fork PRs fall through to "Output versionCode" which reads directly from build.gradle.
     - name: Set up Ruby and install fastlane
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: ruby/setup-ruby@v1
       with:
         bundler-cache: true
 
-    # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     - name: Load Fastlane secrets
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -120,12 +123,16 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
       uses: Wandalen/wretry.action@v3.8.0_js_action
       with:
         command: bundle exec fastlane update_version
         attempt_limit: 3
         attempt_delay: 20000
 
+    # Always reads versionCode from build.gradle.
+    # On non-fork runs, fastlane has already incremented it above.
+    # On fork PRs, this returns the current committed value as a safe fallback.
     - name: Output versionCode
       id: versionCode
       run: |
@@ -135,6 +142,8 @@ jobs:
     name: Build ${{ matrix.type }}
     runs-on: ubicloud-standard-4
     needs: [build-rust, get-versionCode]
+    # Skip on fork PRs: signing secrets are not available and upload would fail anyway.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: true
       matrix:
@@ -329,16 +338,45 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install intel-haxm
 
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
+        find_android_tool() {
+          local tool_path="$1"
+          local tool_name="$2"
+
+          if [ -x "$tool_path" ]; then
+            printf '%s\n' "$tool_path"
+            return 0
+          fi
+
+          if command -v "$tool_name" >/dev/null 2>&1; then
+            command -v "$tool_name"
+            return 0
+          fi
+
+          echo "Missing required Android tool: $tool_name" >&2
+          return 1
+        }
+
+        SDKMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" sdkmanager)"
+        AVDMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" avdmanager)"
+
         # Install AVD files
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+        echo "y" | "$SDKMANAGER" --install \
+          emulator \
+          'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | "$SDKMANAGER" --licenses
+
+        # Resolve emulator path after installing the package.
+        EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
         # Create emulator
-        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        $ANDROID_HOME/emulator/emulator -list-avds
+        "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        "$EMULATOR" -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
         # The following madness is to support empty OR populated config.ini files,
@@ -368,17 +406,37 @@ jobs:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
         HOMEBREW_NO_INSTALL_CLEANUP: 1
       run: |
+        EMULATOR="$ANDROID_HOME/emulator/emulator"
+        if [ ! -x "$EMULATOR" ]; then
+          EMULATOR="$(command -v emulator || true)"
+        fi
+        if [ -z "$EMULATOR" ]; then
+          echo "Missing required Android tool: emulator" >&2
+          exit 1
+        fi
+        ADB="$ANDROID_HOME/platform-tools/adb"
+        if [ ! -x "$ADB" ]; then
+          ADB="$(command -v adb || true)"
+        fi
+        if [ -z "$ADB" ]; then
+          echo "Missing required Android tool: adb" >&2
+          exit 1
+        fi
         echo "Starting emulator and waiting for boot to complete...."
-        ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
-        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
-        $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
+        ls -la "${EMULATOR%/*}"
+        if ! "$EMULATOR" -accel-check; then
+          echo "Hardware acceleration unavailable; continuing with emulator default acceleration mode."
+        fi
+        nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        "$ADB" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
-        $ANDROID_HOME/platform-tools/adb devices
+        "$ADB" devices
         sleep 30
         mkdir -p screenshots
-        screencapture screenshots/screenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
+        if command -v screencapture >/dev/null 2>&1; then
+          screencapture screenshots/screenshot-$SUFFIX.jpg
+        fi
+        "$ADB" exec-out screencap -p > screenshots/emulator-$SUFFIX.png
 
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
@@ -442,19 +500,38 @@ jobs:
     - name: Output and save logcat to file
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       run: |
+        ADB="$ANDROID_HOME/platform-tools/adb"
+        if [ ! -x "$ADB" ]; then
+          ADB="$(command -v adb || true)"
+        fi
+        if [ -z "$ADB" ]; then
+          echo "Missing required Android tool: adb" >&2
+          exit 1
+        fi
         mkdir -p mobile/build
-        adb logcat -d > mobile/build/logcat.log
-        adb logcat -v color &
+        "$ADB" logcat -d > mobile/build/logcat.log
+        "$ADB" logcat -v color &
 
     - name: Screenshot
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       env:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
       run: |
-        adb shell monkey -p net.activitywatch.android.debug 1
+        ADB="$ANDROID_HOME/platform-tools/adb"
+        if [ ! -x "$ADB" ]; then
+          ADB="$(command -v adb || true)"
+        fi
+        if [ -z "$ADB" ]; then
+          echo "Missing required Android tool: adb" >&2
+          exit 1
+        fi
+        "$ADB" shell monkey -p net.activitywatch.android.debug 1
         sleep 10
-        screencapture screenshots/pscreenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
+        mkdir -p screenshots
+        if command -v screencapture >/dev/null 2>&1; then
+          screencapture screenshots/pscreenshot-$SUFFIX.jpg
+        fi
+        "$ADB" exec-out screencap -p > screenshots/pemulator-$SUFFIX.png
         ls -alh screenshots/
 
     - name: Upload logcat
@@ -584,4 +661,3 @@ jobs:
           dist/*.apk
           dist/*.aab
         # body_path: dist/release_notes/release_notes.md
-
