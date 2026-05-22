@@ -259,7 +259,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-22.04
-    needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
 
@@ -268,39 +267,14 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Set RELEASE
-      run: |
-        echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
-
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
         java-version: ${{ env.JAVA_VERSION }}
 
-    # Android SDK & NDK
+    # Android SDK only (unit tests don't require NDK or jniLibs)
     - name: Set up Android SDK
       uses: android-actions/setup-android@v2
-    - name: Set up Android NDK
-      run: |
-        sdkmanager "ndk;${{ env.NDK_VERSION }}"
-        ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}"
-        ls $ANDROID_NDK_HOME
-        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-
-
-    # Restores jniLibs from cache
-    # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v3
-      id: cache-jniLibs
-      env:
-        cache-name: jniLibs
-      with:
-        path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: true
-    - name: Check that jniLibs present
-      run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
     # Test
     - name: Test
