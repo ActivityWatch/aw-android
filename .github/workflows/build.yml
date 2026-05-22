@@ -353,7 +353,7 @@ jobs:
       id: test
       with:
         api-level: ${{ matrix.api-level }}
-        target: google_apis
+        target: default
         arch: x86_64
         emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
         disable-animations: true
