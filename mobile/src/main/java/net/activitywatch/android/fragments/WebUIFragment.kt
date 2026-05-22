@@ -19,10 +19,29 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import net.activitywatch.android.R
 import java.lang.Thread.sleep
+import java.net.URI
 
 private const val TAG = "WebUI"
 
 private const val ARG_URL = "url"
+
+// The embedded server lives on loopback, so keep those navigations inside the app WebView.
+internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
+    val uri = try {
+        URI(url)
+    } catch (_: Exception) {
+        return false
+    }
+
+    if (uri.scheme != "http" && uri.scheme != "https") {
+        return false
+    }
+
+    return when (uri.host?.lowercase()) {
+        "localhost", "127.0.0.1", "::1" -> true
+        else -> false
+    }
+}
 
 /**
  * A simple [Fragment] subclass.
@@ -74,7 +93,7 @@ class WebUIFragment : Fragment() {
                 val url = request?.url.toString()
                 if (URLUtil.isNetworkUrl(url)) {
                     if (url.startsWith("http://") || url.startsWith("https://")) {
-                        if (!url.contains("//localhost:")) {
+                        if (!isEmbeddedActivityWatchUrl(url)) {
                             // Open the URL in an external browser
                             val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                             startActivity(i)
