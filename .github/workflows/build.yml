@@ -240,7 +240,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: ubicloud-standard-4
     needs: [build-rust]
     env:
       SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
@@ -367,6 +367,11 @@ jobs:
         SDKMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" sdkmanager)"
         AVDMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" avdmanager)"
 
+        # Pin the AVD home so avdmanager and emulator agree on the path
+        mkdir -p "$HOME/.android/avd"
+        echo "ANDROID_AVD_HOME=$HOME/.android/avd" >> "$GITHUB_ENV"
+        export ANDROID_AVD_HOME="$HOME/.android/avd"
+
         # Install AVD files
         echo "y" | "$SDKMANAGER" --install \
           emulator \
@@ -376,9 +381,13 @@ jobs:
         # Resolve emulator path after installing the package.
         EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
-        # Create emulator
-        "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        # Create emulator (pipe "no" to skip custom hardware profile prompt)
+        echo "no" | "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64' \
+          || { echo "::error::avdmanager create avd failed"; exit 1; }
+        echo "AVDs after creation:"
         "$EMULATOR" -list-avds
+        "$EMULATOR" -list-avds | grep -q "^$MATRIX_AVD$" \
+          || { echo "::error::AVD $MATRIX_AVD not found after creation"; ls -la "$ANDROID_AVD_HOME/" 2>/dev/null || echo "avd dir missing"; exit 1; }
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
         # The following madness is to support empty OR populated config.ini files,
