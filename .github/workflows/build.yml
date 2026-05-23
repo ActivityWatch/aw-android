@@ -315,7 +315,7 @@ jobs:
 
     - uses: actions/checkout@v4
       with:
-        submodules: 'recursive'
+        submodules: 'true'  # non-recursive: aw-webui (nested inside aw-server-rust) isn't needed for E2E; recursive fails auth on fork PRs
 
     - name: Set RELEASE
       run: |
