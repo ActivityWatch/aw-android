@@ -54,7 +54,8 @@ jobs:
     # Rust
     - name: Set up Rust
       id: toolchain
-      uses: dtolnay/rust-toolchain@stable
+      # aw-server-rust@dc70318 predates its Rust 1.80+ dependency refresh.
+      uses: dtolnay/rust-toolchain@1.79.0
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
 
     - name: Set up Rust toolchain for Android NDK
@@ -108,7 +109,9 @@ jobs:
 
     # Needed for `fastlane update_version`
     - uses: adnsio/setup-age-action@v1.2.0
+      if: github.event_name != 'pull_request'
     - name: Load Fastlane secrets
+      if: github.event_name != 'pull_request'
       env:
         KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
       run: |
@@ -121,6 +124,7 @@ jobs:
     # Retry this, in case there are concurrent jobs, which may lead to the error:
     #   "Google Api Error: Invalid request - This Edit has been deleted."
     - name: Update versionCode
+      if: github.event_name != 'pull_request'
       uses: Wandalen/wretry.action@master
       with:
         command: bundle exec fastlane update_version
@@ -190,13 +194,20 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
-    - name: Set versionName
+    - name: Verify versionName matches tag
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
-        # Sets versionName, tail used to skip "v" at start of tag name
-        SHORT_VERSION=$(echo "${{ github.ref_name }}" | tail -c +2 -)
-        sed -i "s/versionName \".*\"/versionName \"$SHORT_VERSION\"/g" \
-                mobile/build.gradle
+        SHORT_VERSION="${GITHUB_REF_NAME#v}"
+        COMMITTED_VERSION=$(sed -n -E "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\\1/p" mobile/build.gradle)
+        if [ -z "$COMMITTED_VERSION" ]; then
+          echo "Failed to parse versionName from mobile/build.gradle."
+          exit 1
+        fi
+        if [ "$COMMITTED_VERSION" != "$SHORT_VERSION" ]; then
+          echo "mobile/build.gradle versionName must match the release tag."
+          echo "tag=$SHORT_VERSION committed=$COMMITTED_VERSION"
+          exit 1
+        fi
 
     - name: Set versionCode
       run: |
@@ -222,9 +233,9 @@ jobs:
         make dist/aw-android.${{ matrix.type }}
 
     - name: Upload
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: aw-android
+        name: aw-android-${{ matrix.type }}
         path: dist/aw-android*.${{ matrix.type }}
 
   test:
@@ -328,16 +339,45 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install intel-haxm
 
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v2
+
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
+        find_android_tool() {
+          local tool_path="$1"
+          local tool_name="$2"
+
+          if [ -x "$tool_path" ]; then
+            printf '%s\n' "$tool_path"
+            return 0
+          fi
+
+          if command -v "$tool_name" >/dev/null 2>&1; then
+            command -v "$tool_name"
+            return 0
+          fi
+
+          echo "Missing required Android tool: $tool_name" >&2
+          return 1
+        }
+
+        SDKMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" sdkmanager)"
+        AVDMANAGER="$(find_android_tool "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" avdmanager)"
+
         # Install AVD files
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --licenses
+        echo "y" | "$SDKMANAGER" --install \
+          emulator \
+          'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        echo "y" | "$SDKMANAGER" --licenses
+
+        # Resolve emulator path after installing the package.
+        EMULATOR="$(find_android_tool "$ANDROID_HOME/emulator/emulator" emulator)"
 
         # Create emulator
-        $ANDROID_HOME/tools/bin/avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
-        $ANDROID_HOME/emulator/emulator -list-avds
+        "$AVDMANAGER" create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+        "$EMULATOR" -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
         # The following madness is to support empty OR populated config.ini files,
@@ -367,17 +407,37 @@ jobs:
         SUFFIX: ${{ matrix.android_avd }}-eAPI-${{ matrix.android_emu_version }}
         HOMEBREW_NO_INSTALL_CLEANUP: 1
       run: |
+        EMULATOR="$ANDROID_HOME/emulator/emulator"
+        if [ ! -x "$EMULATOR" ]; then
+          EMULATOR="$(command -v emulator || true)"
+        fi
+        if [ -z "$EMULATOR" ]; then
+          echo "Missing required Android tool: emulator" >&2
+          exit 1
+        fi
+        ADB="$ANDROID_HOME/platform-tools/adb"
+        if [ ! -x "$ADB" ]; then
+          ADB="$(command -v adb || true)"
+        fi
+        if [ -z "$ADB" ]; then
+          echo "Missing required Android tool: adb" >&2
+          exit 1
+        fi
         echo "Starting emulator and waiting for boot to complete...."
-        ls -la $ANDROID_HOME/emulator
-        $ANDROID_HOME/tools/emulator --accel-check  # check for hardware acceleration
-        nohup $ANDROID_HOME/tools/emulator -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
-        $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
+        ls -la "${EMULATOR%/*}"
+        if ! "$EMULATOR" -accel-check; then
+          echo "Hardware acceleration unavailable; continuing with emulator default acceleration mode."
+        fi
+        nohup "$EMULATOR" -avd $MATRIX_AVD -gpu host -no-audio -no-boot-anim -camera-back none -camera-front none -qemu -m 2048 2>&1 &
+        "$ADB" wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
         echo "Emulator has finished booting"
-        $ANDROID_HOME/platform-tools/adb devices
+        "$ADB" devices
         sleep 30
         mkdir -p screenshots
-        screencapture screenshots/screenshot-$SUFFIX.jpg
-        $ANDROID_HOME/platform-tools/adb exec-out screencap -p > screenshots/emulator-$SUFFIX.png
+        if command -v screencapture >/dev/null 2>&1; then
+          screencapture screenshots/screenshot-$SUFFIX.jpg
+        fi
+        "$ADB" exec-out screencap -p > screenshots/emulator-$SUFFIX.png
 
     # # # Have to re-setup everything since we need to run emulator for faster performance on masOS ? Other os'es emulator will not startup ?
     # TODO: Optimize the steps taking into consideration all software present by default on macOS runner image
@@ -457,7 +517,7 @@ jobs:
 
     - name: Upload logcat
       if: ${{ success() || steps.test.conclusion == 'failure'}}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: logcat
         # mobile\build\outputs\connected_android_test_additional_output\debugAndroidTest\connected\Pixel_XL_API_32(AVD) - 12\ScreenshotTest_saveDeviceScreenBitmap.png
@@ -473,7 +533,7 @@ jobs:
     #     path: ./*.mov # out.mov
 
     - name: Upload screenshots
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: ${{ success() || steps.test.conclusion == 'failure'}}
       with:
         name: screenshots
@@ -500,9 +560,10 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Download APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
+        merge-multiple: true
         path: dist
 
     - name: Display structure of downloaded files
@@ -556,9 +617,10 @@ jobs:
 
     # Will download all artifacts to path
     - name: Download release APK & AAB
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: aw-android
+        pattern: aw-android-*
+        merge-multiple: true
         path: dist
 
     - name: Display structure of downloaded files
@@ -581,4 +643,3 @@ jobs:
           dist/*.apk
           dist/*.aab
         # body_path: dist/release_notes/release_notes.md
-
