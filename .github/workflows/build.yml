@@ -418,6 +418,10 @@ jobs:
         cat "$emulator_config"
         fi
 
+    - name: Install emulator runtime dependencies
+      if: runner.os == 'Linux'
+      run: sudo apt-get update -qq && sudo apt-get install -y libpulse0
+
     - name: Start Android emulator
       timeout-minutes: 30 # ~4min normal - 3x DOSafety
       env:
