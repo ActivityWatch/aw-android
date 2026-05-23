@@ -27,6 +27,8 @@ import org.threeten.bp.Instant
 import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 const val bucket_id = "aw-watcher-android-test"
 const val unlock_bucket_id = "aw-watcher-android-unlock"
@@ -175,8 +177,62 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
+    // TODO: AsyncTask is deprecated, replace with kotlin concurrency or java.util.concurrent
     private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
-        override fun doInBackground(vararg urls: URL): Int? {
+
+        private val logEventFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        private var heartBeatsSent = 0
+
+        fun logEventDetails(event: UsageEvents.Event) {
+            val formattedTime = logEventFormatter.format(Date(event.timeStamp))
+
+            // Additional logging based on the type of event
+            val eventType = when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> "ACTIVITY_RESUMED"
+                UsageEvents.Event.ACTIVITY_PAUSED -> "ACTIVITY_PAUSED"
+                UsageEvents.Event.ACTIVITY_STOPPED -> "ACTIVITY_STOPPED"
+                UsageEvents.Event.CONFIGURATION_CHANGE -> "CONFIGURATION_CHANGE"
+                UsageEvents.Event.DEVICE_SHUTDOWN -> "DEVICE_SHUTDOWN"
+                UsageEvents.Event.DEVICE_STARTUP -> "DEVICE_STARTUP"
+                UsageEvents.Event.USER_INTERACTION -> "USER_INTERACTION"
+                UsageEvents.Event.SHORTCUT_INVOCATION -> "SHORTCUT_INVOCATION"
+                UsageEvents.Event.STANDBY_BUCKET_CHANGED -> "STANDBY_BUCKET_CHANGED"
+                UsageEvents.Event.SCREEN_INTERACTIVE -> "SCREEN_INTERACTIVE"
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> "SCREEN_NON_INTERACTIVE"
+                UsageEvents.Event.KEYGUARD_SHOWN -> "KEYGUARD_SHOWN"
+                UsageEvents.Event.KEYGUARD_HIDDEN -> "KEYGUARD_HIDDEN"
+                else -> "Unknown Event Type ${event.eventType}"
+            }
+
+            // Log the event details
+            Log.d(TAG, "processing Event: ${formattedTime} ${eventType}  ${event.packageName}  ")
+        }
+
+        /**
+         * Sends a heartbeat to aw-server, based on the Android UsageEvent for a specific app. Note that we do not store if the app
+         * was 'opened' or 'closed', so we have to work around that.
+         *
+         * @longPulse can be set to TRUE if the app in the event is currently still open or just closed, so we want to merge the previous and last events
+         * for this app to determine the duration. Set it to false if the app just (re)opened, so we don't count the duration between e.g.
+         * a phone lock and unlock.
+         *
+         * @timestamp: normally the timestamp of the event will be used, but an alternative timestamp can be provided
+         */
+        private fun sendHeartbeat( event : UsageEvents.Event, longPulse : Boolean, customTimestamp : Long? = null ) {
+            val awEvent = Event.fromUsageEvent(usageEvent = event, context, includeClassname = true, customTimestamp)
+            val pulseTime = if( longPulse ) 60*60*24.0 else 3.0
+            ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data,  pulseTime )
+            Log.d(TAG,"Heartbeat sent: ${awEvent.timestamp} longPulse: $longPulse ${awEvent.data.get("package")} ${awEvent.data.get("app")}")
+
+            heartBeatsSent++;
+
+            if(heartBeatsSent % 100 == 0) {
+                publishProgress(awEvent.timestamp)
+            }
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun doInBackground(vararg urls: URL): Int {
             Log.i(TAG, "Sending heartbeats...")
 
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
@@ -187,42 +243,66 @@ class UsageStatsWatcher constructor(val context: Context) {
 
             val usm = getUSM() ?: return 0
 
-            // Store activities here that have had a RESUMED but not a PAUSED event.
-            // (to handle out-of-order events)
-            //val activeActivities = [];
-
             // TODO: Fix issues that occur when usage stats events are out of order (RESUME before PAUSED)
             var heartbeatsSent = 0
             val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            var activeAppEvent : UsageEvents.Event? = null
+
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
 
-                // Log screen unlock
                 if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
-                    if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
-                        val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
-                        // NOTE: getLastEventTime() returns the last time of an event from  the activity bucket(bucket_id)
-                        // Therefore, if an unlock happens after last event from main bucket, unlock event will get sent twice.
-                        // Fortunately not an issue because identical events will get merged together (see heartbeats)
-                        ri.heartbeatHelper(unlock_bucket_id, timestamp, 0.0, JSONObject(), 0.0)
-                    }
-                    // Not sure which events are triggered here, so we use a (probably safe) fallback
-                    //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
                     continue@nextEvent
                 }
 
-                // Log activity
-                val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
-                val pulsetime: Double
+                // do not include launchers, since they are used all the time to switch between apps. It distorts the timeline while
+                // it is more part of the OS than an app which we want to monitor
+                if( event.packageName.contains("launcher", false) ) {
+                    Log.d(TAG,"Skipping launcher event for package " + event.packageName)
+                    continue@nextEvent
+                }
+
+                if( Log.isLoggable(TAG, Log.DEBUG)) {
+                    logEventDetails(event)
+                }
+
                 when(event.eventType) {
                     UsageEvents.Event.ACTIVITY_RESUMED -> {
-                        // ACTIVITY_RESUMED: Activity was opened/reopened
-                        pulsetime = 1.0
+
+                        if( activeAppEvent != null ) {
+                            if( activeAppEvent.packageName.equals(event.packageName) ) {
+                                continue@nextEvent
+                            }
+
+                            // another app is resumed than the current app. Close the current app by sending a heartbeat with a long pulsetime
+                            // immediately followed up by the heartbeat for the new app that is currently open
+                            sendHeartbeat(activeAppEvent, longPulse = true, customTimestamp = event.timeStamp)
+                        }
+
+                        // send a heartbeat for the newly opened app
+                        // it could be that the app was closed before (e.g. screen was turned off) and now reopened, so these events will be
+                        // consecutive. We do not want the time in between these events to count as duration, so send a heartbeat with short pulsetime.
+                        sendHeartbeat(event, longPulse = false )
+
+                        activeAppEvent = event;
                     }
                     UsageEvents.Event.ACTIVITY_PAUSED -> {
                         // ACTIVITY_PAUSED: Activity was moved to background
-                        pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                        if( activeAppEvent == null ) {
+                            continue@nextEvent
+                        }
+
+                        if( !activeAppEvent.packageName.equals(event.packageName) ) {
+                            // if the active app does not match this ACTIVITY_PAUSED event,
+                            // we can safely ignore this event. Android has many apps (especially sytem related apps such as launchers)
+                            // closing all the time, also in random order between the actual user app and the system app.
+                            continue@nextEvent
+                        }
+
+                        sendHeartbeat(event, longPulse = true)
+
+                        activeAppEvent = null
                     }
                     else -> {
                         Log.w(TAG, "This should never happen!")
@@ -230,11 +310,7 @@ class UsageStatsWatcher constructor(val context: Context) {
                     }
                 }
 
-                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                if(heartbeatsSent % 100 == 0) {
-                    publishProgress(awEvent.timestamp)
-                }
-                heartbeatsSent++
+
             }
             return heartbeatsSent
         }
@@ -249,11 +325,11 @@ class UsageStatsWatcher constructor(val context: Context) {
         override fun onPostExecute(result: Int?) {
             Log.w(TAG, "Finished SendHeartbeatTask, sent $result events")
             // The below is useful in testing, but otherwise just noisy.
-            /*
-            if(result != 0) {
+
+            if(result != 0 && Log.isLoggable(TAG, Log.DEBUG)) {
                 Toast.makeText(context, "Completed logging of data! Logged events: $result", Toast.LENGTH_LONG).show()
             }
-            */
+
         }
     }
 
