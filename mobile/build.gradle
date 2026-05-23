@@ -41,6 +41,15 @@ android {
             renderscriptDebuggable true
         }
     }
+
+    flavorDimensions "mode"
+    productFlavors {
+        realtime {
+            dimension "mode"
+            applicationIdSuffix ".realtime"
+            resValue "string", "app_name", "ActivityWatch 实时版"
+        }
+    }
     compileOptions {
         sourceCompatibility = '1.8'
         targetCompatibility = '1.8'
@@ -82,6 +91,7 @@ dependencies {
 
     implementation 'com.google.android.material:material:1.7.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.4.3'
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
 
     testImplementation "junit:junit:4.13.2"
     androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"

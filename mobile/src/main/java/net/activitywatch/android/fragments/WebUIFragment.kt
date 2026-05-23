@@ -14,9 +14,11 @@ import android.webkit.WebView
 
 import android.content.Intent.ACTION_VIEW
 import android.util.Log
+import android.webkit.HttpAuthHandler
 import android.webkit.URLUtil
 import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.R
 import java.lang.Thread.sleep
 import java.net.URI
@@ -74,6 +76,23 @@ class WebUIFragment : Fragment() {
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
 
         class MyWebViewClient : WebViewClient() {
+            override fun onReceivedHttpAuthRequest(
+                view: WebView,
+                handler: HttpAuthHandler,
+                host: String,
+                realm: String
+            ) {
+                val context = view.context
+                val prefs = AWPreferences(context)
+                val user = prefs.getRemoteServerUsername()
+                val pass = prefs.getRemoteServerPassword()
+                if (!user.isNullOrBlank() && !pass.isNullOrBlank()) {
+                    handler.proceed(user, pass)
+                } else {
+                    super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView,
                 errorCode: Int,

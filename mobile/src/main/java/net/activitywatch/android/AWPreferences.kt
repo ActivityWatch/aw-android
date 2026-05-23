@@ -26,4 +26,56 @@ class AWPreferences(context: Context) {
         editor.putBoolean("isFirstTime", true)
         editor.apply()
     }
+
+    fun getRemoteServerUrl(): String {
+        return sharedPreferences.getString("remoteServerUrl", "") ?: ""
+    }
+
+    fun setRemoteServerUrl(url: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerUrl", url)
+        editor.apply()
+    }
+
+    fun getRemoteServerUsername(): String {
+        return sharedPreferences.getString("remoteServerUsername", "") ?: ""
+    }
+
+    fun setRemoteServerUsername(username: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerUsername", username)
+        editor.apply()
+    }
+
+    fun getRemoteServerPassword(): String {
+        return sharedPreferences.getString("remoteServerPassword", "") ?: ""
+    }
+
+    fun setRemoteServerPassword(password: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("remoteServerPassword", password)
+        editor.apply()
+    }
+
+    fun getSkipPackages(): Set<String> {
+        return sharedPreferences.getStringSet("skipPackages", emptySet()) ?: emptySet()
+    }
+
+    fun setSkipPackages(packages: Set<String>) {
+        val editor = sharedPreferences.edit()
+        editor.putStringSet("skipPackages", packages)
+        editor.apply()
+    }
+
+    fun addSkipPackage(packageName: String) {
+        val current = getSkipPackages().toMutableSet()
+        current.add(packageName)
+        setSkipPackages(current)
+    }
+
+    fun removeSkipPackage(packageName: String) {
+        val current = getSkipPackages().toMutableSet()
+        current.remove(packageName)
+        setSkipPackages(current)
+    }
 }
