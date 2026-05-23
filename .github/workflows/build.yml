@@ -340,6 +340,13 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install intel-haxm
 
+    - name: Enable KVM group perms
+      if: runner.os == 'Linux'
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
