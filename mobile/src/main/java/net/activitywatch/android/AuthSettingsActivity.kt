@@ -14,7 +14,11 @@ import android.widget.CompoundButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AuthSettingsActivity : AppCompatActivity() {
 
@@ -46,77 +50,92 @@ class AuthSettingsActivity : AppCompatActivity() {
         btnRegenerate = findViewById(R.id.btn_regenerate_key)
         switchAuthEnabled = findViewById(R.id.switch_auth_enabled)
 
-        refreshUI()
+        scheduleRefreshUI()
 
         btnCopy.setOnClickListener {
-            val key = configManager.readAuthConfig().apiKey ?: return@setOnClickListener
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("API key", key)
-            // Suppress plaintext preview toast on Android 13+ (API 33+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                clip.description.extras = PersistableBundle().also {
-                    it.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            lifecycleScope.launch {
+                val key = withContext(Dispatchers.IO) { configManager.readAuthConfig().apiKey }
+                    ?: return@launch
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("API key", key)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    clip.description.extras = PersistableBundle().also {
+                        it.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
                 }
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this@AuthSettingsActivity, "API key copied to clipboard", Toast.LENGTH_SHORT).show()
             }
-            clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "API key copied to clipboard", Toast.LENGTH_SHORT).show()
         }
 
         btnRegenerate.setOnClickListener {
-            val newKey = configManager.generateAndSetApiKey()
-            if (newKey == null) {
-                refreshUI()
-                Toast.makeText(this, "Failed to save API key", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
+            lifecycleScope.launch {
+                val newKey = withContext(Dispatchers.IO) { configManager.generateAndSetApiKey() }
+                if (newKey == null) {
+                    scheduleRefreshUI()
+                    Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                tvApiKey.text = newKey
+                btnCopy.visibility = View.VISIBLE
+                isUpdatingSwitch = true
+                switchAuthEnabled.isChecked = true
+                isUpdatingSwitch = false
+                tvStatus.text = "Authentication enabled (restart app to apply)"
+                Toast.makeText(this@AuthSettingsActivity, "New API key generated. Restart app to apply.", Toast.LENGTH_LONG).show()
             }
-            tvApiKey.text = newKey
-            btnCopy.visibility = View.VISIBLE
-            // Update switch without triggering its listener (which would show a second toast)
-            isUpdatingSwitch = true
-            switchAuthEnabled.isChecked = true
-            isUpdatingSwitch = false
-            tvStatus.text = "Authentication enabled (restart app to apply)"
-            Toast.makeText(this, "New API key generated. Restart app to apply.", Toast.LENGTH_LONG).show()
         }
 
         switchAuthEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             if (isUpdatingSwitch) return@setOnCheckedChangeListener
-            if (isChecked) {
-                val current = configManager.readAuthConfig()
-                if (!current.isEnabled) {
-                    val newKey = configManager.generateAndSetApiKey()
-                    if (newKey == null) {
-                        refreshUI()
-                        Toast.makeText(this, "Failed to save API key", Toast.LENGTH_LONG).show()
-                        return@setOnCheckedChangeListener
+            lifecycleScope.launch {
+                if (isChecked) {
+                    val current = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
+                    if (!current.isEnabled) {
+                        val newKey = withContext(Dispatchers.IO) { configManager.generateAndSetApiKey() }
+                        if (newKey == null) {
+                            scheduleRefreshUI()
+                            Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+                        tvApiKey.text = newKey
+                        // Only show the toast when a write actually happened
+                        Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                     }
-                    tvApiKey.text = newKey
+                    btnCopy.visibility = View.VISIBLE
+                    tvStatus.text = "Authentication enabled (restart app to apply)"
+                } else {
+                    val success = withContext(Dispatchers.IO) { configManager.clearApiKey() }
+                    if (!success) {
+                        scheduleRefreshUI()
+                        Toast.makeText(this@AuthSettingsActivity, "Failed to save API key setting", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    tvApiKey.text = "(none)"
+                    btnCopy.visibility = View.GONE
+                    tvStatus.text = "Authentication disabled (restart app to apply)"
+                    Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                 }
-                btnCopy.visibility = View.VISIBLE
-                tvStatus.text = "Authentication enabled (restart app to apply)"
-            } else {
-                if (!configManager.clearApiKey()) {
-                    refreshUI()
-                    Toast.makeText(this, "Failed to save API key setting", Toast.LENGTH_LONG).show()
-                    return@setOnCheckedChangeListener
-                }
-                tvApiKey.text = "(none)"
-                btnCopy.visibility = View.GONE
-                tvStatus.text = "Authentication disabled (restart app to apply)"
             }
-            Toast.makeText(this, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onResume() {
         super.onResume()
         if (::configManager.isInitialized) {
-            refreshUI()
+            scheduleRefreshUI()
         }
     }
 
-    private fun refreshUI() {
-        val auth = configManager.readAuthConfig()
+    // Reads config on IO thread, then updates UI on main thread.
+    private fun scheduleRefreshUI() {
+        lifecycleScope.launch {
+            val auth = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
+            applyAuthToUI(auth)
+        }
+    }
+
+    private fun applyAuthToUI(auth: ConfigManager.AuthConfig) {
         if (auth.isEnabled) {
             tvApiKey.text = auth.apiKey
             tvStatus.text = "Authentication is enabled"
