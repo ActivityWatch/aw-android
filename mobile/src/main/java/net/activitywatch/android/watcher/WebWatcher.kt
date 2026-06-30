@@ -41,7 +41,10 @@ class WebWatcher : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findNodeByResourceName(child, name)
-            if (found != null) return found
+            if (found != null) {
+                child.recycle()
+                return found
+            }
             child.recycle()
         }
         return null
@@ -126,7 +129,7 @@ class WebWatcher : AccessibilityService() {
                 }
             }
         } catch(ex : Exception) {
-            Log.e(TAG, ex.message!!)
+            Log.e(TAG, ex.message ?: ex.toString())
         }
     }
 

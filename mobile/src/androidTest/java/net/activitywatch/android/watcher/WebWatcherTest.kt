@@ -81,7 +81,7 @@ class WebWatcherTest {
     private fun executeShellCmd(cmd: String) {
         InstrumentationRegistry.getInstrumentation()
             .getUiAutomation(FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-            .executeShellCommand(cmd)
+            .executeShellCommand(cmd).close()
     }
 
     private fun getAvailableBrowsers() : List<String> {

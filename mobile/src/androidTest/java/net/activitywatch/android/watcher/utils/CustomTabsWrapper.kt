@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.toJavaDuration
 
-private const val FLAGS = Intent.FLAG_ACTIVITY_NEW_TASK + Intent.FLAG_ACTIVITY_NO_HISTORY
+private const val FLAGS = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY
 
 fun createCustomTabsWrapper(browser: String, context: Context) : CustomTabsWrapper {
     val navigationEventsQueue = LinkedBlockingQueue<Int>()
@@ -112,7 +112,7 @@ private class EventBasedNavigationCompletionAwaiter(
                 .pollDelay(pageVisitTime.toJavaDuration())
                 .atMost(maxWaitTime.toJavaDuration())
                 .until { navigationEventsQueue.peek() == NAVIGATION_FINISHED }
-            navigationEventsQueue.peek()
+            navigationEventsQueue.poll()
         } else {
             useFallback = true
             fallback.waitForNavigationCompleted(pageVisitTime, maxWaitTime)
