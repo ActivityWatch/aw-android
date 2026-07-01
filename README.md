@@ -57,12 +57,10 @@ Once both aw-server-rust and aw-webui is built, you can build the Android app as
 
 ### Making a release
 
-Before tagging, update `mobile/build.gradle` so `versionName` matches the
-release you are about to cut. The release workflow verifies the committed
-`versionName` instead of patching it after checkout, which keeps tagged source,
-GitHub release builds, and F-Droid builds on the same version.
-
-Then make a signed tag and push it to GitHub:
+Push a signed tag matching the version you want to release. The release
+workflow will automatically set `versionName` in `mobile/build.gradle` to
+match the tag before building, so there is no need to manually update it
+beforehand.
 
 ```sh
 git tag -s v0.1.0
