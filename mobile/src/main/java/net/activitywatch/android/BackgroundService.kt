@@ -16,6 +16,8 @@ import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONException
+import org.json.JSONObject
 
 private const val TAG = "BackgroundService"
 private const val CHANNEL_ID = "aw_background_channel"
@@ -59,10 +61,15 @@ class BackgroundService : Service() {
                 val hostname = rustInterface.getDeviceName(this@BackgroundService)
                 val result = rustInterface.migrateHostname(hostname)
                 Log.i(TAG, "Hostname migration result: $result")
-                if (!result.contains("error", ignoreCase = true)) {
+                val migrationSucceeded = try {
+                    JSONObject(result).optBoolean("success", true)
+                } catch (e: JSONException) {
+                    true  // non-JSON response treated as success (native didn't signal failure)
+                }
+                if (migrationSucceeded) {
                     prefs.setHostnameMigrated()
                 } else {
-                    Log.w(TAG, "Hostname migration reported an error; will retry on next start")
+                    Log.w(TAG, "Hostname migration reported failure; will retry on next start")
                 }
             }
         }
