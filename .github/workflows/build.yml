@@ -219,13 +219,20 @@ jobs:
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
 
-    - name: Set versionName
+    - name: Verify versionName matches tag
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
       run: |
-        # Sets versionName, tail used to skip "v" at start of tag name
-        SHORT_VERSION=$(echo "${{ github.ref_name }}" | tail -c +2 -)
-        sed -i "s/versionName \".*\"/versionName \"$SHORT_VERSION\"/g" \
-                mobile/build.gradle
+        SHORT_VERSION="${GITHUB_REF_NAME#v}"
+        COMMITTED_VERSION=$(sed -n -E "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\\1/p" mobile/build.gradle)
+        if [ -z "$COMMITTED_VERSION" ]; then
+          echo "Failed to parse versionName from mobile/build.gradle."
+          exit 1
+        fi
+        if [ "$COMMITTED_VERSION" != "$SHORT_VERSION" ]; then
+          echo "mobile/build.gradle versionName must match the release tag."
+          echo "tag=$SHORT_VERSION committed=$COMMITTED_VERSION"
+          exit 1
+        fi
 
     - name: Set versionCode
       run: |
