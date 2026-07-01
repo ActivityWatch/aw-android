@@ -42,7 +42,7 @@ jobs:
     # Android SDK & NDK
     - name: Set up Android SDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       if: steps.cache-jniLibs.outputs.cache-hit != 'true'
       run: |
@@ -196,7 +196,7 @@ jobs:
 
     # Android SDK & NDK
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -281,7 +281,7 @@ jobs:
 
     # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
     - name: Set up Android NDK
       run: |
         sdkmanager "ndk;${{ env.NDK_VERSION }}"
@@ -344,7 +344,7 @@ jobs:
       run: brew install intel-haxm
 
     - name: Set up Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
 
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
