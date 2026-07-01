@@ -26,6 +26,14 @@
                         android:icon="@drawable/ic_menu_manage"
                         android:title="Settings"/>
                 <item
+                        android:id="@+id/nav_remote_server"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="Remote Server"/>
+                <item
+                        android:id="@+id/nav_skip_list"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="Skip List"/>
+                <item
                         android:id="@+id/nav_share"
                         android:icon="@drawable/ic_menu_share"
                         android:title="Share"/>

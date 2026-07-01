@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">ActivityWatch</string>
+    <string name="app_name_realtime">ActivityWatch 实时版</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
     <string name="nav_header_title">ActivityWatch for Android</string>
@@ -20,6 +21,7 @@
     </string>
     <string name="button_log_text">Click me to log data!</string>
     <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
+    <string name="accessibility_service_realtime_description">Allows ActivityWatch Realtime to monitor app usage in real-time by detecting app switches.</string>
 
     <!-- This is overridden by gradle config
     <string name="versionName">unknown version</string>-->

@@ -1,14 +1,18 @@
 package net.activitywatch.android
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.navigation.NavigationView
 import androidx.core.view.GravityCompat
+import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.fragment.app.Fragment
 import android.util.Log
 import net.activitywatch.android.databinding.ActivityMainBinding
@@ -18,12 +22,15 @@ import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
 
-const val baseURL = "http://127.0.0.1:5600"
-
-
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
+
+    private val baseURL: String
+        get() {
+            val remote = AWPreferences(this).getRemoteServerUrl()
+            return if (remote.isNotBlank()) remote else "http://127.0.0.1:5600"
+        }
 
     val version: String
         get() {
@@ -56,8 +63,13 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         binding.navView.setNavigationItemSelectedListener(this)
 
-        val ri = RustInterface(this)
-        ri.startServerTask(this)
+        setSupportActionBar(binding.appBar.toolbar)
+        val toggle = ActionBarDrawerToggle(
+            this, binding.drawerLayout, binding.appBar.toolbar,
+            R.string.navigation_drawer_open, R.string.navigation_drawer_close
+        )
+        binding.drawerLayout.addDrawerListener(toggle)
+        toggle.syncState()
 
         if (savedInstanceState != null) {
             return
@@ -74,6 +86,84 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // even if it was up to an hour since the last logging-alarm was triggered.
         val usw = UsageStatsWatcher(this)
         usw.sendHeartbeats()
+    }
+
+    private fun showSkipListDialog() {
+        val prefs = AWPreferences(this)
+        val skipList = prefs.getSkipPackages().toMutableList().sorted().toMutableList()
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        layout.setPadding(padding, padding, padding, 0)
+
+        val currentList = EditText(this)
+        currentList.setText(skipList.joinToString("\n"))
+        currentList.hint = "com.example.app\ncom.example.app2"
+        currentList.minLines = 3
+        layout.addView(currentList)
+
+        AlertDialog.Builder(this)
+            .setTitle("Skip List (one package per line)")
+            .setMessage("Apps listed here will not be tracked by the real-time watcher.")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val text = currentList.text.toString().trim()
+                val newList = if (text.isEmpty()) {
+                    emptySet()
+                } else {
+                    text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                }
+                prefs.setSkipPackages(newList)
+                Snackbar.make(binding.coordinatorLayout, "Skip list saved (${newList.size} packages)", Snackbar.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showRemoteServerDialog() {
+        val prefs = AWPreferences(this)
+        val currentUrl = prefs.getRemoteServerUrl()
+        val currentUser = prefs.getRemoteServerUsername()
+        val currentPass = prefs.getRemoteServerPassword()
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        layout.setPadding(padding, padding, padding, 0)
+
+        val inputUrl = EditText(this)
+        inputUrl.hint = "http://your-server-ip:5600"
+        inputUrl.setText(currentUrl)
+        layout.addView(inputUrl)
+
+        val inputUser = EditText(this)
+        inputUser.hint = "Username (optional)"
+        inputUser.setText(currentUser)
+        layout.addView(inputUser)
+
+        val inputPass = EditText(this)
+        inputPass.hint = "Password (optional)"
+        inputPass.setText(currentPass)
+        inputPass.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        layout.addView(inputPass)
+
+        AlertDialog.Builder(this)
+            .setTitle("Remote ActivityWatch Server")
+            .setMessage("Leave empty to use local server only (127.0.0.1:5600).")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val url = inputUrl.text.toString().trim()
+                val user = inputUser.text.toString().trim()
+                val pass = inputPass.text.toString().trim()
+                prefs.setRemoteServerUrl(url)
+                prefs.setRemoteServerUsername(user)
+                prefs.setRemoteServerPassword(pass)
+                val msg = if (url.isBlank()) "Remote server set to: (local)" else "Remote server set to: $url"
+                Snackbar.make(binding.coordinatorLayout, msg, Snackbar.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onBackPressed() {
@@ -123,6 +213,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             R.id.nav_settings -> {
                 fragmentClass = WebUIFragment::class.java
                 url = "$baseURL/#/settings/"
+            }
+            R.id.nav_remote_server -> {
+                showRemoteServerDialog()
+            }
+            R.id.nav_skip_list -> {
+                showSkipListDialog()
             }
             R.id.nav_share -> {
                 Snackbar.make(binding.coordinatorLayout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)

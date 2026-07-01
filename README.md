@@ -1,71 +1,122 @@
-aw-android
-==========
+# aw-android (Remote Fork)
 
-[![GitHub Actions badge](https://github.com/ActivityWatch/aw-android/workflows/Build/badge.svg)](https://github.com/ActivityWatch/aw-android/actions)
-[![Play Store ratings](https://PlayBadges.pavi2410.me/badge/ratings?id=net.activitywatch.android&country=us)](https://play.google.com/store/apps/details?id=net.activitywatch.android)
+A fork of [ActivityWatch/aw-android](https://github.com/ActivityWatch/aw-android) with **remote ActivityWatch server forwarding** support.
 
-A very work-in-progress ActivityWatch app for Android.
+---
 
-Available on Google Play:
+## Features
 
-<a title="Get it on Google Play" href="https://play.google.com/store/apps/details?id=net.activitywatch.android">
-    <img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" width="240px"/>
-</a>
+This fork changes the data collection from "local storage" to "remote HTTP forwarding". Captured app usage, browser visits, screen-unlock events, etc. are sent directly to a user-configured remote ActivityWatch server via HTTP API.
 
+### Key Features
 
-## Usage
+- **Pure Remote Forwarding** — Data is sent directly to the remote server via HTTP, no local storage
+- **Configurable Remote Address** — In-app UI to set the remote server address
+- **Dynamic WebUI** — The embedded WebUI automatically shows the remote dashboard after configuration
+- **Native Menu** — Toolbar restored; tap the top ☰ button to open the navigation drawer
+- **Cleartext HTTP Support** — Allows sending data to HTTP servers (for LAN/internal deployments)
 
-Install the APK from the Play Store or from the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
+---
 
-### For Oculus Quest
+## Modified Files
 
-> **Note** 
-> At some point a Quest system upgrade broke the ability to allow ActivityWatch access to usage stats. This can be fixed by manually assigning the needed permission using adb: `adb shell appops set net.activitywatch.android android:get_usage_stats allow`
+| File | Changes |
+|------|---------|
+| `RustInterface.kt` | Changed from JNI client to HTTP client; removed local aw-server calls; all operations access remote server via HTTP API |
+| `UsageStatsWatcher.kt` | Bucket names changed to `aw-watcher-android-test2` and `aw-watcher-android-unlock2` |
+| `MainActivity.kt` | Removed `ri.startServerTask()` (no local server); `baseURL` reads remote address from config; added `showRemoteServerDialog()`; enabled Toolbar + ActionBarDrawerToggle |
+| `AWPreferences.kt` | Added `getRemoteServerUrl()` / `setRemoteServerUrl()` for persisting remote address |
+| `activity_main_drawer.xml` | Added `nav_remote_server` menu item |
+| `app_bar_main.xml` | Enabled Toolbar |
+| `activity_main.xml` | Added `android:id` to `app_bar_main` include |
+| `network_security_config.xml` | Added `<base-config cleartextTrafficPermitted="true"/>` to allow plaintext HTTP |
 
-It's available [on SideQuest](https://sidequestvr.com/#/app/201). 
+---
 
+## Configuration Guide
 
-## Building
+### 1. Prepare Remote Server
 
-To build this app you first need to build aw-server-rust (`./aw-server-rust`) and aw-webui (`./aw-server-rust/aw-webui`).
+You need a running ActivityWatch server, such as:
+- `aw-server-rust` (recommended)
+- `aw-server` (Python version)
 
-If you haven't already, initialize the submodules with: `git submodule update --init --recursive`
+The server must expose the HTTP API, default port is `5600`.
 
-### Building aw-server-rust
+### 2. Install APK
 
-> **Note**
-> If you don't want to go through the hassle of getting Rust up and running, you can download the jniLibs from [aw-server-rust CI artifacts](https://github.com/ActivityWatch/aw-server-rust/actions/workflows/build.yml) and place them in `mobile/src/main/jniLibs` manually instead of following this section.
-
-To build aw-server-rust you need to have Rust nightly installed (with rustup). Then you can build it with:
-
-```
-export ANDROID_NDK_HOME=`pwd`/aw-server-rust/NDK  # The path to your NDK
-pushd aw-server-rust && ./install-ndk.sh; popd    # This configures the NDK for use with Rust, and installs the NDK if missing
-env RELEASE=false make aw-server-rust             # Set RELEASE=true to build in release mode (slower build, harder to debug)
-```
-
-> **Note**
-> The Android NDK will be downloaded by `install-ndk.sh` to `aw-server-rust/NDK` if `ANDROID_NDK_HOME` not set. You can create a symlink pointing to the real location if you already have it elsewhere (such as /opt/android-ndk/ on Arch Linux).
-
-### Building aw-webui
-
-To build aw-webui you need a recent version of node/npm installed. You can then build it with `make aw-webui`.
-
-### Putting it all together
-
-Once both aw-server-rust and aw-webui is built, you can build the Android app as any other Android app using Android Studio.
-
-### Making a release
-
-To make a release, make a signed tag and push it to GitHub:
-
-```sh
-git tag -s v0.1.0
-git push origin refs/tags/v0.1.0
+```bash
+./gradlew assembleDebug
+adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk
 ```
 
-This will trigger a GitHub Actions workflow which will build the app and upload it to GitHub releases, and deploy it to the Play Store (including the metadata in `./fastlane/metadata/android`).
+### 3. Configure Remote Address
 
-## More info
+1. Open the app and grant **Usage Access** permission
+2. Tap the top **☰** button to open the navigation drawer (top-left of the white Toolbar)
+3. Tap **Remote Server**
+4. Enter the remote server address, e.g. `http://192.168.1.100:5600`
+5. Tap **Save**
 
-For more info, check out the main [ActivityWatch repo](https://github.com/ActivityWatch/activitywatch).
+> **Note**: Leaving it blank falls back to the local server `http://127.0.0.1:5600`
+
+### 4. Verify Data
+
+After using your phone normally for 1-2 hours, visit in a browser:
+```
+http://your-server-ip:5600/#/timeline
+```
+
+You should see the phone's collected data.
+
+---
+
+## Debugging
+
+Check remote forwarding logs:
+```bash
+adb logcat -s RustInterface:D
+```
+
+You should see:
+```
+HTTP POST OK: /api/0/buckets/aw-watcher-android-test2/heartbeat?pulsetime=1.0
+```
+
+---
+
+## Build Environment
+
+This project was set up from scratch on Windows 11 without Android Studio.
+
+| Component | Path |
+|-----------|------|
+| JDK 17 | `./jdk-17.0.18+8` |
+| Android SDK | `./android-sdk` |
+| Output APK | `mobile/build/outputs/apk/debug/mobile-debug.apk` |
+
+Build commands:
+```bash
+export JAVA_HOME="$(pwd)/jdk-17.0.18+8"
+export ANDROID_HOME="$(pwd)/android-sdk"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+
+./gradlew assembleDebug
+```
+
+> **Note**: This project depends on pre-built Rust JNI libraries (`libaw_server.so`), which are included in `jniLibs/`. You do not need to compile Rust/NDK yourself.
+
+---
+
+## Known Limitations
+
+- App usage data from UsageStats is batched hourly (AlarmManager), not real-time
+- Chrome browser data is captured in real-time via AccessibilityService; forwarding delay is ~hundreds of milliseconds
+- The remote server must expose the standard ActivityWatch API (`aw-server-rust` or `aw-server`)
+- Data will be lost when network is disconnected (fire-and-forget, no local cache)
+
+---
+
+## Original Project
+
+https://github.com/ActivityWatch/aw-android

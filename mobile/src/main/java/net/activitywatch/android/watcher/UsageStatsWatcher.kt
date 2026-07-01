@@ -1,11 +1,8 @@
 package net.activitywatch.android.watcher
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.AlertDialog
 import android.app.AppOpsManager
-import android.app.PendingIntent
-import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -19,17 +16,18 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
+import androidx.work.*
 import net.activitywatch.android.RustInterface
-import net.activitywatch.android.models.Event
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
+import org.threeten.bp.Duration
 import org.threeten.bp.Instant
-import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
+import java.util.concurrent.TimeUnit
 
-const val bucket_id = "aw-watcher-android-test"
-const val unlock_bucket_id = "aw-watcher-android-unlock"
+const val bucket_id = "aw-watcher-android-plus"
+const val unlock_bucket_id = "aw-watcher-android-plus-unlock"
 
 class UsageStatsWatcher constructor(val context: Context) {
     private val ri = RustInterface(context)
@@ -113,23 +111,21 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    private var alarmMgr: AlarmManager? = null
-    private lateinit var alarmIntent: PendingIntent
-
     fun setupAlarm() {
-        alarmMgr = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarmIntent = Intent(context, AlarmReceiver::class.java).let { intent ->
-            intent.action = "net.activitywatch.android.watcher.LOG_DATA"
-            PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        }
+        val workRequest = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
 
-        val interval = AlarmManager.INTERVAL_HOUR   // Or if testing: AlarmManager.INTERVAL_HOUR / 60
-        alarmMgr?.setInexactRepeating(
-            AlarmManager.ELAPSED_REALTIME,
-            SystemClock.elapsedRealtime() + interval,
-            interval,
-            alarmIntent
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "heartbeat_periodic",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            workRequest
         )
+        Log.i(TAG, "Periodic heartbeat work scheduled every 15 minutes")
     }
 
 
@@ -175,94 +171,15 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
-        override fun doInBackground(vararg urls: URL): Int? {
-            Log.i(TAG, "Sending heartbeats...")
-
-            // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
-            ri.createBucketHelper(bucket_id, "currentwindow")
-            ri.createBucketHelper(unlock_bucket_id, "os.lockscreen.unlocks")
-            lastUpdated = getLastEventTime()
-            Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
-
-            val usm = getUSM() ?: return 0
-
-            // Store activities here that have had a RESUMED but not a PAUSED event.
-            // (to handle out-of-order events)
-            //val activeActivities = [];
-
-            // TODO: Fix issues that occur when usage stats events are out of order (RESUME before PAUSED)
-            var heartbeatsSent = 0
-            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
-            nextEvent@ while(usageEvents.hasNextEvent()) {
-                val event = UsageEvents.Event()
-                usageEvents.getNextEvent(event)
-
-                // Log screen unlock
-                if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
-                    if(event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN){
-                        val timestamp = DateTimeUtils.toInstant(java.util.Date(event.timeStamp))
-                        // NOTE: getLastEventTime() returns the last time of an event from  the activity bucket(bucket_id)
-                        // Therefore, if an unlock happens after last event from main bucket, unlock event will get sent twice.
-                        // Fortunately not an issue because identical events will get merged together (see heartbeats)
-                        ri.heartbeatHelper(unlock_bucket_id, timestamp, 0.0, JSONObject(), 0.0)
-                    }
-                    // Not sure which events are triggered here, so we use a (probably safe) fallback
-                    //Log.d(TAG, "Rare eventType: ${event.eventType}, skipping")
-                    continue@nextEvent
-                }
-
-                // Log activity
-                val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
-                val pulsetime: Double
-                when(event.eventType) {
-                    UsageEvents.Event.ACTIVITY_RESUMED -> {
-                        // ACTIVITY_RESUMED: Activity was opened/reopened
-                        pulsetime = 1.0
-                    }
-                    UsageEvents.Event.ACTIVITY_PAUSED -> {
-                        // ACTIVITY_PAUSED: Activity was moved to background
-                        pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
-                    }
-                    else -> {
-                        Log.w(TAG, "This should never happen!")
-                        continue@nextEvent
-                    }
-                }
-
-                ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
-                if(heartbeatsSent % 100 == 0) {
-                    publishProgress(awEvent.timestamp)
-                }
-                heartbeatsSent++
-            }
-            return heartbeatsSent
-        }
-
-        override fun onProgressUpdate(vararg progress: Instant) {
-            lastUpdated = progress[0]
-            Log.i(TAG, "Progress: ${lastUpdated.toString()}")
-            // The below is useful in testing, but otherwise just noisy.
-            //Toast.makeText(context, "Logging data, progress: $lastUpdated", Toast.LENGTH_LONG).show()
-        }
-
-        override fun onPostExecute(result: Int?) {
-            Log.w(TAG, "Finished SendHeartbeatTask, sent $result events")
-            // The below is useful in testing, but otherwise just noisy.
-            /*
-            if(result != 0) {
-                Toast.makeText(context, "Completed logging of data! Logged events: $result", Toast.LENGTH_LONG).show()
-            }
-            */
-        }
-    }
-
-    /***
-     * Returns the number of events sent
-     */
     fun sendHeartbeats() {
-        Log.w(TAG, "Starting SendHeartbeatTask")
-        SendHeartbeatsTask().execute()
+        Log.w(TAG, "Enqueueing one-time heartbeat work")
+        val workRequest = OneTimeWorkRequestBuilder<HeartbeatWorker>()
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            HeartbeatWorker.WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            workRequest
+        )
     }
 
 }
