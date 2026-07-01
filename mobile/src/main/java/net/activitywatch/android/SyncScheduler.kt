@@ -53,10 +53,13 @@ class SyncScheduler(private val context: Context) {
     }
 
     fun stop() {
-        Log.i(TAG, "Stopping sync scheduler")
+        Log.i(TAG, "Stopping sync scheduler (Handler chain stopped; AlarmManager fallback kept alive)")
         isRunning = false
         handler.removeCallbacks(syncRunnable)
-        cancelAlarm()
+        // Intentionally do NOT cancel the AlarmManager alarm here: if the service is killed by
+        // the OS (including on OEM devices that suppress START_STICKY restarts), the alarm must
+        // survive to fire SyncAlarmReceiver. The alarm is only ever registered once (in start())
+        // and is idempotent across service restarts.
     }
 
     private fun getSyncPendingIntent(): PendingIntent {
@@ -78,12 +81,6 @@ class SyncScheduler(private val context: Context) {
             getSyncPendingIntent()
         )
         Log.i(TAG, "Scheduled AlarmManager fallback sync every 15 minutes")
-    }
-
-    private fun cancelAlarm() {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.cancel(getSyncPendingIntent())
-        Log.i(TAG, "Cancelled AlarmManager fallback sync alarm")
     }
 
     private fun performSync() {
