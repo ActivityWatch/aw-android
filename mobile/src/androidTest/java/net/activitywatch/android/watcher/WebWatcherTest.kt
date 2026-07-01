@@ -64,8 +64,7 @@ class WebWatcherTest {
             val matchers = testWebPages.map { it.toMatcher(browser) }
 
             await("expected events for: $browser").atMost(MAX_CONDITION_WAIT_TIME_MILLIS, MILLISECONDS).until {
-                val rawEvents = ri.getEvents(BUCKET_NAME, 100)
-                val events = JSONArray(rawEvents).asListOfJsonObjects()
+                val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
                     .filter { it.getJSONObject("data").getString("browser") == browser }
 
                 matchers.all { matcher -> events.any { matcher.matches(it) } }

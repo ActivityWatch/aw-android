@@ -96,9 +96,11 @@ private class EventBasedNavigationCompletionAwaiter(
     private val fallback: NavigationCompletionAwaiter,
 ) : NavigationCompletionAwaiter {
 
-    private var useFallback = false
-
+    // Drop any events left over from a previous page (e.g. a late NAVIGATION_FINISHED that
+    // arrived after we'd already given up and moved on) so they can't be mistaken for this
+    // page's events.
     private fun waitForNavigationStarted() : Boolean {
+        navigationEventsQueue.clear()
         val event = navigationEventsQueue.poll(NAVIGATION_STARTED_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
         return event == NAVIGATION_STARTED
     }
@@ -107,14 +109,16 @@ private class EventBasedNavigationCompletionAwaiter(
         pageVisitTime: Duration,
         maxWaitTime: Duration
     ) {
-        if (!useFallback && waitForNavigationStarted()) {
+        // Re-attempt the event-based path on every page rather than sticking with the
+        // fallback forever after a single miss - a transient timeout on one page shouldn't
+        // permanently downgrade every later page in the same browser session.
+        if (waitForNavigationStarted()) {
             await()
                 .pollDelay(pageVisitTime.toJavaDuration())
                 .atMost(maxWaitTime.toJavaDuration())
                 .until { navigationEventsQueue.peek() == NAVIGATION_FINISHED }
             navigationEventsQueue.poll()
         } else {
-            useFallback = true
             fallback.waitForNavigationCompleted(pageVisitTime, maxWaitTime)
         }
     }
