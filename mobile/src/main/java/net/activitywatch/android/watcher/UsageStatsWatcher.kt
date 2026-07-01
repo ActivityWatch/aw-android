@@ -265,9 +265,7 @@ class UsageStatsWatcher constructor(val context: Context) {
      * Returns the number of events sent
      */
     fun sendHeartbeats() {
-        if (useSessionBasedEvents) {
-            Log.w(TAG, "Starting Session-based events (legacy non-suspend call; prefer sendHeartbeatsSuspend)")
-        } else {
+        if (!useSessionBasedEvents) {
             Log.w(TAG, "Starting SendHeartbeatTask (individual events)")
             SendHeartbeatsTask().execute()
         }
