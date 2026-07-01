@@ -13,6 +13,9 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val TAG = "BackgroundService"
 private const val CHANNEL_ID = "aw_background_channel"
@@ -48,17 +51,19 @@ class BackgroundService : Service() {
         // Start the server
         rustInterface.startServerTask()
 
-        // Run hostname migration exactly once (migrates buckets with "unknown" hostname to the real device name).
+        // Run hostname migration off the main thread — migrateHostname() is a blocking JNI call.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
         val prefs = AWPreferences(this)
         if (!prefs.hasMigratedHostname()) {
-            val hostname = rustInterface.getDeviceName(this)
-            val result = rustInterface.migrateHostname(hostname)
-            Log.i(TAG, "Hostname migration result: $result")
-            if (!result.contains("error", ignoreCase = true)) {
-                prefs.setHostnameMigrated()
-            } else {
-                Log.w(TAG, "Hostname migration reported an error; will retry on next start")
+            CoroutineScope(Dispatchers.IO).launch {
+                val hostname = rustInterface.getDeviceName(this@BackgroundService)
+                val result = rustInterface.migrateHostname(hostname)
+                Log.i(TAG, "Hostname migration result: $result")
+                if (!result.contains("error", ignoreCase = true)) {
+                    prefs.setHostnameMigrated()
+                } else {
+                    Log.w(TAG, "Hostname migration reported an error; will retry on next start")
+                }
             }
         }
 
@@ -78,6 +83,7 @@ class BackgroundService : Service() {
         dueDate.set(java.util.Calendar.HOUR_OF_DAY, 0)
         dueDate.set(java.util.Calendar.MINUTE, 0)
         dueDate.set(java.util.Calendar.SECOND, 0)
+        dueDate.set(java.util.Calendar.MILLISECOND, 0)
         if (dueDate.before(currentDate)) {
             dueDate.add(java.util.Calendar.HOUR_OF_DAY, 24)
         }
