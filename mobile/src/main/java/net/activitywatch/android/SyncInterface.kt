@@ -8,10 +8,17 @@ import android.util.Log
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "SyncInterface"
 
 class SyncInterface(context: Context) {
+
+    companion object {
+        // Shared across all SyncInterface instances (both Handler chain and AlarmManager path)
+        // to prevent concurrent syncBoth() calls from different entry points.
+        private val syncInFlight = AtomicBoolean(false)
+    }
     private val appContext: Context = context.applicationContext
     private val syncDir: String
     
@@ -77,8 +84,16 @@ class SyncInterface(context: Context) {
     
     // Async wrapper for syncBoth
     fun syncBothAsync(callback: (Boolean, String) -> Unit) {
+        if (!syncInFlight.compareAndSet(false, true)) {
+            Log.i(TAG, "Sync already in flight; skipping concurrent call")
+            callback(false, "skipped: sync already in flight")
+            return
+        }
         val hostname = getDeviceName()
-        performSyncAsync("Full Sync", callback) {
+        performSyncAsync("Full Sync", { success, message ->
+            syncInFlight.set(false)
+            callback(success, message)
+        }) {
             syncBoth(5600, hostname)
         }
     }
