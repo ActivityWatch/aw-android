@@ -35,9 +35,17 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray
     ) {
         Log.d(TAG, "onUpdate called for ${appWidgetIds.size} widgets")
-        
-        for (appWidgetId in appWidgetIds) {
-            updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                for (appWidgetId in appWidgetIds) {
+                    updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in onUpdate", e)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
