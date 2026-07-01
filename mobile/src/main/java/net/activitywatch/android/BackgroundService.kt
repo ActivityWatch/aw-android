@@ -48,13 +48,18 @@ class BackgroundService : Service() {
         // Start the server
         rustInterface.startServerTask()
 
-        // Run hostname migration exactly once (migrates buckets with "unknown" hostname to the real device name)
+        // Run hostname migration exactly once (migrates buckets with "unknown" hostname to the real device name).
+        // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
         val prefs = AWPreferences(this)
         if (!prefs.hasMigratedHostname()) {
             val hostname = rustInterface.getDeviceName(this)
             val result = rustInterface.migrateHostname(hostname)
             Log.i(TAG, "Hostname migration result: $result")
-            prefs.setHostnameMigrated()
+            if (!result.contains("error", ignoreCase = true)) {
+                prefs.setHostnameMigrated()
+            } else {
+                Log.w(TAG, "Hostname migration reported an error; will retry on next start")
+            }
         }
 
         // Start the sync scheduler

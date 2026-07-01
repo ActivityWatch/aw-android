@@ -16,9 +16,7 @@ class SyncScheduler(private val context: Context) {
         override fun run() {
             if (isRunning) {
                 performSync()
-                // Schedule next sync in 15 minutes
-                Log.i(TAG, "Scheduling next sync in 15 minutes")
-                handler.postDelayed(this, 15 * 60 * 1000L)
+                // Next sync is scheduled inside the performSync callback, after the current one completes.
             }
         }
     }
@@ -54,12 +52,17 @@ class SyncScheduler(private val context: Context) {
     
     private fun performSync() {
         Log.i(TAG, "Performing automatic sync...")
-        
+
         syncInterface.syncBothAsync { success, message ->
             if (success) {
                 Log.i(TAG, "Automatic sync completed successfully: $message")
             } else {
                 Log.w(TAG, "Automatic sync failed: $message")
+            }
+            // Schedule next sync only after this one completes, preventing overlapping JNI calls.
+            if (isRunning) {
+                Log.i(TAG, "Scheduling next sync in 15 minutes")
+                handler.postDelayed(syncRunnable, 15 * 60 * 1000L)
             }
         }
     }
