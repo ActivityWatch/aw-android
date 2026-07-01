@@ -4,6 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val TAG = "AlarmReceiver"
 
@@ -20,10 +23,17 @@ class AlarmReceiver : BroadcastReceiver() {
             } else {
                 context.startService(serviceIntent)
             }
-        } else if(intent.action == "net.activitywatch.android.watcher.LOG_DATA") {
+        } else if (intent.action == "net.activitywatch.android.watcher.LOG_DATA") {
             Log.w(TAG, "Action ${intent.action}, running sendHeartbeats")
-            if(UsageStatsWatcher.isUsageAllowed(context)) {
-                usw.sendHeartbeats()
+            if (UsageStatsWatcher.isUsageAllowed(context)) {
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        usw.sendHeartbeatsSuspend()
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
             }
         } else {
             Log.w(TAG, "Unknown intent $intent with action ${intent.action}, doing nothing")
