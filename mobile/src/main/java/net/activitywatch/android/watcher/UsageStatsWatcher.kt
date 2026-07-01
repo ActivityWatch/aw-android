@@ -30,7 +30,7 @@ import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-const val bucket_id = "aw-watcher-android-test"
+const val bucket_id = "aw-watcher-android"
 const val unlock_bucket_id = "aw-watcher-android-unlock"
 
 class UsageStatsWatcher constructor(val context: Context) {

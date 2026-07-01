@@ -14,7 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.*
 
-const val SESSION_BUCKET_ID = "aw-watcher-android-test"
+const val SESSION_BUCKET_ID = "aw-watcher-android"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
 
 class SessionEventWatcher(val context: Context) {
