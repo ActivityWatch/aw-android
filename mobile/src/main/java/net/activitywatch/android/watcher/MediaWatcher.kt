@@ -13,6 +13,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import net.activitywatch.android.RustInterface
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import org.threeten.bp.Instant
 
 /**
@@ -49,11 +50,11 @@ class MediaWatcher : NotificationListenerService() {
     private var ri: RustInterface? = null
     private var sessionManager: MediaSessionManager? = null
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
-    private val activeControllers = mutableMapOf<MediaSession.Token, MediaController>()
-    private val activeCallbacks = mutableMapOf<MediaSession.Token, MediaController.Callback>()
-
-    // Track last sent event per package to avoid duplicate heartbeats
-    private val lastEventKeys = mutableMapOf<String, String>()
+    // ConcurrentHashMap: onDestroy (main thread) and pollActiveSessions (handlerThread) may
+    // access these maps concurrently; CHM prevents ConcurrentModificationException.
+    private val activeControllers = ConcurrentHashMap<MediaSession.Token, MediaController>()
+    private val activeCallbacks = ConcurrentHashMap<MediaSession.Token, MediaController.Callback>()
+    private val lastEventKeys = ConcurrentHashMap<String, String>()
 
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
