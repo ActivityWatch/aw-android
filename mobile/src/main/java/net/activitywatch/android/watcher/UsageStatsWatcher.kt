@@ -264,6 +264,11 @@ class UsageStatsWatcher constructor(val context: Context) {
     /***
      * Returns the number of events sent
      */
+    @Deprecated(
+        "Use sendHeartbeatsSuspend() from a coroutine scope. In session mode this is a no-op; " +
+            "callers should switch to the suspend variant to avoid silent data loss.",
+        ReplaceWith("sendHeartbeatsSuspend()")
+    )
     fun sendHeartbeats() {
         if (!useSessionBasedEvents) {
             Log.w(TAG, "Starting SendHeartbeatTask (individual events)")
