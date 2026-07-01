@@ -192,7 +192,7 @@ class RustInterface(context: Context? = null) {
         val timeintervals = "[\"2026-01-31T00:00:00+03:00/2026-01-31T23:59:59+03:00\"]"
         Log.w(TAG, query("events = query_bucket(\"test\"); RETURN = events;", timeintervals))
 
-        // Test androidQuery (queries aw-watcher-android-test bucket)
+        // Test androidQuery (queries aw-watcher-android bucket)
         Log.w(TAG, "Testing androidQuery for Jan 31, 2026")
         Log.w(TAG, androidQuery(timeintervals))
     }
