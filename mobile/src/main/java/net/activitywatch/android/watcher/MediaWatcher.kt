@@ -47,7 +47,9 @@ class MediaWatcher : NotificationListenerService() {
         }
     }
 
-    private var ri: RustInterface? = null
+    // Written from the handlerThread (see onCreate), read from handlerThread callbacks/polling;
+    // @Volatile guarantees the initialized instance is visible once the init post completes.
+    @Volatile private var ri: RustInterface? = null
     private var sessionManager: MediaSessionManager? = null
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
     // ConcurrentHashMap: onDestroy (main thread) and pollActiveSessions (handlerThread) may
@@ -64,10 +66,19 @@ class MediaWatcher : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "MediaWatcher created")
-        ri = RustInterface(applicationContext)
-        ri?.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
         handler = android.os.Handler(handlerThread.looper)
-        
+
+        // RustInterface construction and createBucketHelper() make blocking JNI/HTTP calls to the
+        // local aw-server (which may not be running yet at boot). Run them on the handlerThread so
+        // they never block the NotificationListenerService main thread. This is posted before the
+        // polling runnable and per-session callbacks (all on the same looper), so ri is initialized
+        // before the first poll; any event arriving earlier is dropped by the ri?. null-safe calls.
+        handler?.post {
+            val r = RustInterface(applicationContext)
+            r.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
+            ri = r
+        }
+
         val localRunnable = object : Runnable {
             override fun run() {
                 pollActiveSessions()
