@@ -18,7 +18,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "CategoryTimeWidget"
-private const val ACTION_REFRESH = "net.activitywatch.android.widget.ACTION_REFRESH"
+internal const val ACTION_REFRESH = "net.activitywatch.android.widget.ACTION_REFRESH"
 const val ACTION_PERIODIC_UPDATE = "net.activitywatch.android.widget.ACTION_PERIODIC_UPDATE"
 private const val UPDATE_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
 
@@ -63,13 +63,14 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                         // Await event persistence before updating the widget
                         UsageStatsWatcher(context).sendHeartbeatsSuspend()
                         Log.d(TAG, "Usage events re-parsed; updating widgets")
+                        for (appWidgetId in appWidgetIds) {
+                            updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error re-parsing usage events", e)
+                    } finally {
+                        pendingResult.finish()
                     }
-                    for (appWidgetId in appWidgetIds) {
-                        updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
-                    }
-                    pendingResult.finish()
                 }
             }
             ACTION_PERIODIC_UPDATE -> {

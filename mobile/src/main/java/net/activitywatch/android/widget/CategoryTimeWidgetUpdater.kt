@@ -135,7 +135,7 @@ object CategoryTimeWidgetUpdater {
 
             // Set up tap-to-refresh on the whole widget
             val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
-                action = "net.activitywatch.android.widget.ACTION_REFRESH"
+                action = ACTION_REFRESH
             }
             val refreshPendingIntent = PendingIntent.getBroadcast(
                 context,
