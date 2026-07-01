@@ -155,7 +155,7 @@ class MediaWatcher : NotificationListenerService() {
         // Register callbacks for new sessions
         for (controller in controllers) {
             val token = controller.sessionToken
-            if (token !in activeControllers) {
+            if (!activeControllers.containsKey(token)) {
                 val callback = createMediaCallback(controller)
                 // Pass handler so all callback methods run on handlerThread, same as the polling loop.
                 controller.registerCallback(callback, handler)

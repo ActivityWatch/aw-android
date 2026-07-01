@@ -283,16 +283,12 @@ jobs:
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
 
-    # Restores jniLibs from cache; fail hard on miss so tests are never silently skipped.
-    # `actions/cache/restore` only restores, without saving back in a post-hook
-    - uses: actions/cache/restore@v4
-      id: cache-jniLibs
-      env:
-        cache-name: jniLibs
+    - name: Download jniLibs artifact
+      uses: actions/download-artifact@v4
       with:
+        name: jniLibs
         path: mobile/src/main/jniLibs/
-        key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
-        fail-on-cache-miss: true
+
     - name: Check that jniLibs present
       run: |
         test -e mobile/src/main/jniLibs/x86_64/libaw_server.so

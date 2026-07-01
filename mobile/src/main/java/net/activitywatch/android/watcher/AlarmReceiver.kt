@@ -30,6 +30,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         usw.sendHeartbeatsSuspend()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to send heartbeats from alarm", e)
                     } finally {
                         pendingResult.finish()
                     }
