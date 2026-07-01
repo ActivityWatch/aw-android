@@ -78,7 +78,7 @@ class BackgroundService : Service() {
 
         androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "EventParsingWorker",
-            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
             saveRequest
         )
         Log.i(TAG, "Scheduled event parsing worker with initial delay: ${timeDiff}ms")
