@@ -376,17 +376,19 @@ jobs:
 
     - name: Upload screenshot
       uses: actions/upload-artifact@v4
-      if: ${{ success() || steps.test.conclusion == 'failure' }}
+      if: ${{ always() }}
       with:
         name: emulator-screenshot
         path: screenshot.png
+        if-no-files-found: ignore
 
     - name: Upload logcat
-      if: ${{ success() || steps.test.conclusion == 'failure' }}
+      if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: logcat
         path: mobile/build/logcat.log
+        if-no-files-found: ignore
 
     #- name: Publish Test Report
     #  # # uses: mikepenz/action-junit-report@v3
