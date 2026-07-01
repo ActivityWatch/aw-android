@@ -275,6 +275,10 @@ jobs:
       with:
         submodules: 'true'  # non-recursive: aw-webui (nested) isn't needed for unit tests; recursive fails auth on fork PRs
 
+    - name: Set RELEASE
+      run: |
+        echo "RELEASE=${{ startsWith(github.ref_name, 'v') }}" >> $GITHUB_ENV
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
