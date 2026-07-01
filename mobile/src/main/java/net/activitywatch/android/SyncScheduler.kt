@@ -1,17 +1,22 @@
 package net.activitywatch.android
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 
 private const val TAG = "SyncScheduler"
+private const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
+private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var syncInterface: SyncInterface
     private var isRunning = false
-    
+
     private val syncRunnable = object : Runnable {
         override fun run() {
             if (isRunning) {
@@ -20,21 +25,24 @@ class SyncScheduler(private val context: Context) {
             }
         }
     }
-    
+
     fun start() {
         if (isRunning) {
             Log.w(TAG, "Sync scheduler already running")
             return
         }
-        
+
         Log.i(TAG, "Starting sync scheduler - first sync in 1 minute, then every 15 minutes")
         isRunning = true
-        
+
         try {
             syncInterface = SyncInterface(context)
-            
-            // First sync after 1 minute
+
+            // Primary path: Handler-based chain while BackgroundService is alive.
             handler.postDelayed(syncRunnable, 60 * 1000L)
+
+            // Fallback path: AlarmManager fires SyncAlarmReceiver if BackgroundService is killed.
+            scheduleAlarm()
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "aw-sync native library unavailable; sync scheduler disabled", e)
             isRunning = false
@@ -43,13 +51,41 @@ class SyncScheduler(private val context: Context) {
             isRunning = false
         }
     }
-    
+
     fun stop() {
         Log.i(TAG, "Stopping sync scheduler")
         isRunning = false
         handler.removeCallbacks(syncRunnable)
+        cancelAlarm()
     }
-    
+
+    private fun getSyncPendingIntent(): PendingIntent {
+        val intent = Intent(ACTION_SYNC_ALARM).setPackage(context.packageName)
+        return PendingIntent.getBroadcast(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun scheduleAlarm() {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.setInexactRepeating(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            android.os.SystemClock.elapsedRealtime() + SYNC_INTERVAL_MS,
+            SYNC_INTERVAL_MS,
+            getSyncPendingIntent()
+        )
+        Log.i(TAG, "Scheduled AlarmManager fallback sync every 15 minutes")
+    }
+
+    private fun cancelAlarm() {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.cancel(getSyncPendingIntent())
+        Log.i(TAG, "Cancelled AlarmManager fallback sync alarm")
+    }
+
     private fun performSync() {
         Log.i(TAG, "Performing automatic sync...")
 
@@ -62,7 +98,7 @@ class SyncScheduler(private val context: Context) {
             // Schedule next sync only after this one completes, preventing overlapping JNI calls.
             if (isRunning) {
                 Log.i(TAG, "Scheduling next sync in 15 minutes")
-                handler.postDelayed(syncRunnable, 15 * 60 * 1000L)
+                handler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
             }
         }
     }
