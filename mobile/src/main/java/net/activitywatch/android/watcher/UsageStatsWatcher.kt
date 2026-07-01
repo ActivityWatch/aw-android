@@ -293,17 +293,6 @@ class UsageStatsWatcher constructor(val context: Context) {
     /**
      * Send session-based events for today only
      */
-    fun sendSessionEventsForToday() {
-        sessionWatcher.forceRefreshToday()
-    }
-
-    /**
-     * Send session-based events for the last N days
-     */
-    fun sendSessionEventsForLastDays(numberOfDays: Int) {
-        sessionWatcher.sendSessionEventsForLastDays(numberOfDays)
-    }
-
     /**
      * Enable or disable session-based events
      */
