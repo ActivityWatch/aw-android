@@ -119,7 +119,8 @@ class MediaWatcher : NotificationListenerService() {
                 onActiveSessionsChanged(controllers)
             }
             activeSessionsListener = listener
-            sessionManager?.addOnActiveSessionsChangedListener(listener, componentName)
+            // Pass handler so session-change callbacks run on handlerThread, same as the polling loop.
+            sessionManager?.addOnActiveSessionsChangedListener(listener, componentName, handler)
             // Process currently active sessions
             val activeSessions = sessionManager?.getActiveSessions(componentName)
             if (activeSessions != null) {
@@ -155,7 +156,8 @@ class MediaWatcher : NotificationListenerService() {
             val token = controller.sessionToken
             if (token !in activeControllers) {
                 val callback = createMediaCallback(controller)
-                controller.registerCallback(callback)
+                // Pass handler so all callback methods run on handlerThread, same as the polling loop.
+                controller.registerCallback(callback, handler)
                 activeControllers[token] = controller
                 activeCallbacks[token] = callback
                 Log.i(TAG, "Registered callback for ${controller.packageName}")
