@@ -7,6 +7,9 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val TAG = "SyncScheduler"
 private const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
@@ -35,20 +38,23 @@ class SyncScheduler(private val context: Context) {
         Log.i(TAG, "Starting sync scheduler - first sync in 1 minute, then every 15 minutes")
         isRunning = true
 
-        try {
-            syncInterface = SyncInterface(context)
+        // Construct SyncInterface on IO — its init{} block resolves the sync directory,
+        // sets XDG env vars, and calls JNI (getDeviceName), all of which can block on
+        // cold starts and would risk an ANR if done on the main thread.
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                syncInterface = SyncInterface(context)
 
-            // Primary path: Handler-based chain while BackgroundService is alive.
-            handler.postDelayed(syncRunnable, 60 * 1000L)
-
-            // Fallback path: AlarmManager fires SyncAlarmReceiver if BackgroundService is killed.
-            scheduleAlarm()
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "aw-sync native library unavailable; sync scheduler disabled", e)
-            isRunning = false
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start sync scheduler", e)
-            isRunning = false
+                // Handler and AlarmManager calls are thread-safe; post from IO is fine.
+                handler.postDelayed(syncRunnable, 60 * 1000L)
+                scheduleAlarm()
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "aw-sync native library unavailable; sync scheduler disabled", e)
+                isRunning = false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start sync scheduler", e)
+                isRunning = false
+            }
         }
     }
 
