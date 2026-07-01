@@ -6,6 +6,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.watcher.SessionEventWatcher
+import net.activitywatch.android.watcher.UsageStatsWatcher
 import org.json.JSONException
 
 private const val TAG = "EventParsingWorker"
@@ -14,6 +15,12 @@ class EventParsingWorker(context: Context, params: WorkerParameters) : Worker(co
 
     override fun doWork(): Result {
         Log.i(TAG, "Starting periodic event parsing")
+        if (!UsageStatsWatcher.isUsageAllowed(applicationContext)) {
+            // Without usage access, queryEvents() returns nothing; skip cleanly rather than
+            // spinning up RustInterface and retrying forever.
+            Log.w(TAG, "Usage access not granted; skipping event parsing")
+            return Result.success()
+        }
         return try {
             // Guard against cursor reset to epoch-0 when the aw-server is not yet running.
             // getBucketsJSON() throws JSONException when the server returns a non-JSON error
