@@ -322,11 +322,4 @@ class UsageStatsWatcher constructor(val context: Context) {
      */
     fun isUsingDiscreteEvents(): Boolean = useSessionBasedEvents
 
-    /**
-     * Get current timeline for analysis
-     */
-    fun getTodayTimeline() = sessionWatcher.getTimelineForDay(
-        net.activitywatch.android.utils.SessionUtils.getStartOfDay()
-    )
-
 }
