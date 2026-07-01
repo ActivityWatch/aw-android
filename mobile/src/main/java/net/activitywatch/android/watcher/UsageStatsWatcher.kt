@@ -30,8 +30,10 @@ import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-const val bucket_id = "aw-watcher-android"
-const val unlock_bucket_id = "aw-watcher-android-unlock"
+// Single source of truth lives in SessionEventWatcher; alias here so the two watchers
+// can never drift to different bucket names.
+const val bucket_id = SESSION_BUCKET_ID
+const val unlock_bucket_id = UNLOCK_BUCKET_ID
 
 class UsageStatsWatcher constructor(val context: Context) {
     private val ri = RustInterface(context)
