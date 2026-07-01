@@ -61,10 +61,14 @@ class BackgroundService : Service() {
                 val hostname = rustInterface.getDeviceName(this@BackgroundService)
                 val result = rustInterface.migrateHostname(hostname)
                 Log.i(TAG, "Hostname migration result: $result")
+                // Conservative defaults: treat ambiguous responses (non-JSON or absent "success" key)
+                // as failures so the migration is retried on the next start rather than being
+                // permanently silenced before the server was actually ready.
                 val migrationSucceeded = try {
-                    JSONObject(result).optBoolean("success", true)
+                    JSONObject(result).optBoolean("success", false)
                 } catch (e: JSONException) {
-                    true  // non-JSON response treated as success (native didn't signal failure)
+                    Log.w(TAG, "Migration result was not valid JSON; will retry on next start")
+                    false
                 }
                 if (migrationSucceeded) {
                     prefs.setHostnameMigrated()
