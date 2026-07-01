@@ -6,6 +6,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.watcher.SessionEventWatcher
+import org.json.JSONException
 
 private const val TAG = "EventParsingWorker"
 
@@ -15,13 +16,15 @@ class EventParsingWorker(context: Context, params: WorkerParameters) : Worker(co
         Log.i(TAG, "Starting periodic event parsing")
         return try {
             // Guard against cursor reset to epoch-0 when the aw-server is not yet running.
-            // getBucketsJSON() throws JSONException on a non-JSON (error) response, and returns
-            // an empty object {} when the server is up but the bucket list is genuinely empty.
-            // Either way, an empty bucket list means the server isn't ready — retry later.
+            // getBucketsJSON() throws JSONException when the server returns a non-JSON error
+            // response (server down or starting up). An empty {} response means the server IS
+            // reachable — it just has no buckets yet (e.g. fresh install) — so we proceed and
+            // let processEventsSinceLastUpdate() create the bucket.
             val ri = RustInterface(applicationContext)
-            val buckets = ri.getBucketsJSON()
-            if (buckets.length() == 0) {
-                Log.w(TAG, "Server not ready (no buckets returned); retrying later")
+            try {
+                ri.getBucketsJSON()
+            } catch (e: JSONException) {
+                Log.w(TAG, "Server not reachable (non-JSON response); retrying later")
                 return Result.retry()
             }
 
@@ -30,7 +33,7 @@ class EventParsingWorker(context: Context, params: WorkerParameters) : Worker(co
             Log.i(TAG, "Successfully processed events: $eventsSent")
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Server unreachable or error processing events; retrying later", e)
+            Log.e(TAG, "Error processing events; retrying later", e)
             Result.retry()
         }
     }
