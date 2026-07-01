@@ -7,6 +7,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.HandlerThread
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -57,13 +58,14 @@ class MediaWatcher : NotificationListenerService() {
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
     private var pollingRunnable: Runnable? = null
+    private val handlerThread = HandlerThread("MediaWatcher").also { it.start() }
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "MediaWatcher created")
         ri = RustInterface(applicationContext)
         ri?.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
-        handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler = android.os.Handler(handlerThread.looper)
         
         val localRunnable = object : Runnable {
             override fun run() {
@@ -94,6 +96,7 @@ class MediaWatcher : NotificationListenerService() {
         Log.i(TAG, "MediaWatcher destroyed")
         unregisterAllCallbacks()
         handler?.removeCallbacksAndMessages(null)
+        handlerThread.quitSafely()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
