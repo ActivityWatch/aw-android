@@ -349,12 +349,25 @@ jobs:
     # # # Below code is majorly from https://github.com/actions/runner-images/issues/6152#issuecomment-1243718140
     - name: Create Android emulator
       run: |
+        # Pin AVD home so avdmanager and emulator agree on the location.
+        # android-actions/setup-android@v3 no longer exports ANDROID_SDK_HOME
+        # (it was deprecated by Google), so we set ANDROID_AVD_HOME explicitly
+        # and persist it for subsequent steps via GITHUB_ENV.
+        AVD_HOME="$HOME/.android/avd"
+        mkdir -p "$AVD_HOME"
+        echo "ANDROID_AVD_HOME=$AVD_HOME" >> "$GITHUB_ENV"
+        export ANDROID_AVD_HOME="$AVD_HOME"
+
         # Install AVD files
         echo "y" | sdkmanager --install 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
         echo "y" | sdkmanager --licenses
 
         # Create emulator
         avdmanager create avd -n $MATRIX_AVD -d pixel --package 'system-images;android-'$MATRIX_E_SDK';default;x86_64'
+
+        # Verify AVD was created before proceeding
+        echo "AVDs in $ANDROID_AVD_HOME:"
+        ls -la "$ANDROID_AVD_HOME/" 2>/dev/null || echo "WARNING: AVD directory empty after creation!"
         $ANDROID_HOME/emulator/emulator -list-avds
         if false; then
         emulator_config=~/.android/avd/$MATRIX_AVD.avd/config.ini
