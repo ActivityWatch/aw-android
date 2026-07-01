@@ -35,6 +35,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray
     ) {
         Log.d(TAG, "onUpdate called for ${appWidgetIds.size} widgets")
+        // Restore the periodic alarm after reboot (Android calls onUpdate for existing widgets on boot).
+        schedulePeriodicUpdates(context)
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
