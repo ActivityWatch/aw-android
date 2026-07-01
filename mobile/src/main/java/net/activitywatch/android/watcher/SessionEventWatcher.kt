@@ -26,6 +26,7 @@ class SessionEventWatcher(val context: Context) {
 
     companion object {
         const val TAG = "SessionEventWatcher"
+        private val lock = java.util.concurrent.locks.ReentrantLock()
     }
 
     // queryEvents uses an inclusive lower bound, so replaying the last stored
@@ -76,6 +77,18 @@ class SessionEventWatcher(val context: Context) {
      * Returns the number of events sent.
      */
     fun processEventsSinceLastUpdate(): Int {
+        if (!lock.tryLock()) {
+            Log.i(TAG, "processEventsSinceLastUpdate already running, skipping concurrent call")
+            return 0
+        }
+        try {
+            return processEventsSinceLastUpdateLocked()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    private fun processEventsSinceLastUpdateLocked(): Int {
         Log.i(TAG, "Processing session events...")
 
         // Create bucket for session events
