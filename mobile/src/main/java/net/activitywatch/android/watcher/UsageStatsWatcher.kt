@@ -276,8 +276,13 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
-    /** Awaitable variant — use when the caller needs to wait for events to be persisted
-     * before querying (e.g. widget refresh). */
+    /**
+     * Awaitable variant — use when the caller needs to wait for events to be persisted
+     * before querying (e.g. widget refresh).
+     *
+     * In legacy mode (useSessionBasedEvents=false) this is intentionally a no-op because
+     * SendHeartbeatsTask is not awaitable; callers on the legacy path should use sendHeartbeats().
+     */
     suspend fun sendHeartbeatsSuspend() {
         if (useSessionBasedEvents) {
             sessionWatcher.sendSessionEventsSuspend()

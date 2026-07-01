@@ -136,11 +136,10 @@ class RustInterface(context: Context? = null) {
     }
 
     /**
-     * Insert a discrete event that will not be merged with other events.
+     * Insert a discrete event by calling heartbeat() with pulsetime=0, which prevents
+     * the server from merging it with adjacent events. Prefer this over heartbeatHelper()
+     * when the session duration is already known and should be stored exactly as-is.
      *
-     * This method is preferred for accurate app usage tracking because:
-     * - Each event represents a complete app session with precise start time and duration
-     * - Events are not merged or modified by the heartbeat system
      * @param bucket_id The bucket to insert the event into
      * @param timestamp The exact start time of the event
      * @param duration The precise duration in seconds
@@ -177,23 +176,4 @@ class RustInterface(context: Context? = null) {
             ?: android.os.Build.MODEL ?: "Unknown"
     }
 
-    fun test() {
-        // TODO: Move to instrumented test
-        Log.w(TAG, sayHello("Android"))
-        createBucketHelper("test", "test")
-        Log.w(TAG, getBucketsJSON().toString(2))
-
-        val event = """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}"""
-        Log.w(TAG, event)
-        Log.w(TAG, heartbeat("test", event, 60.0))
-        Log.w(TAG, getBucketsJSON().toString(2))
-        Log.w(TAG, getBucketsJSON().toString(2))
-        Log.w(TAG, getEventsJSON("test").toString(2))
-        val timeintervals = "[\"2026-01-31T00:00:00+03:00/2026-01-31T23:59:59+03:00\"]"
-        Log.w(TAG, query("events = query_bucket(\"test\"); RETURN = events;", timeintervals))
-
-        // Test androidQuery (queries aw-watcher-android bucket)
-        Log.w(TAG, "Testing androidQuery for Jan 31, 2026")
-        Log.w(TAG, androidQuery(timeintervals))
-    }
 }
