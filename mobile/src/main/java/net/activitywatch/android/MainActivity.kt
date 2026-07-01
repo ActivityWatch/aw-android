@@ -15,6 +15,8 @@ import com.google.android.material.snackbar.Snackbar
 import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
@@ -88,7 +90,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val usw = UsageStatsWatcher(this)
         val mode = if (usw.isUsingDiscreteEvents()) "discrete event insertion" else "heartbeat merging"
         Log.i("MainActivity", "Using $mode mode for event tracking")
-        usw.sendHeartbeats()
+        lifecycleScope.launch { usw.sendHeartbeatsSuspend() }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

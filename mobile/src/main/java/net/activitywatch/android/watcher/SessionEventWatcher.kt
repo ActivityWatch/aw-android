@@ -33,17 +33,6 @@ class SessionEventWatcher(val context: Context) {
     // session's start timestamp would duplicate that session on every run.
     private fun nextQueryStartTimestamp(): Long = (lastUpdated?.toEpochMilli()?.plus(1L)) ?: 0L
 
-    /**
-     * Send individual events based on parsed sessions instead of heartbeats
-     */
-    fun sendSessionEvents() {
-        Log.w(TAG, "Starting SendSessionEventTask")
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = processEventsSinceLastUpdate()
-            Log.w(TAG, "Finished SendSessionEventTask, sent $result session events")
-        }
-    }
-
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
         withContext(Dispatchers.IO) {

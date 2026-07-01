@@ -3,7 +3,6 @@ package net.activitywatch.android
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 
 private const val TAG = "SyncAlarmReceiver"
@@ -32,15 +31,6 @@ class SyncAlarmReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to perform sync", e)
                     pendingResult.finish()
-                }
-            }
-            "android.intent.action.BOOT_COMPLETED" -> {
-                Log.i(TAG, "Device booted, starting BackgroundService")
-                val serviceIntent = Intent(context, BackgroundService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
                 }
             }
             else -> {
