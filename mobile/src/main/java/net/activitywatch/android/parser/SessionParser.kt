@@ -167,8 +167,18 @@ class SessionParser(private val context: Context) {
     }
 
     /**
-     * Parse events into app sessions using strict Digital Wellbeing logic
-     * Only counts proper RESUME->PAUSE pairs with no intervening RESUME events
+     * Parse events into app sessions using a sequential foreground state machine.
+     *
+     * At any instant only one app is in the foreground, so we track a single open session and
+     * close it at whichever comes first: the foreground app's own PAUSE, or another app's RESUME
+     * (which implicitly backgrounds the previous app even if its PAUSE is late or missing). This
+     * avoids the overlapping-session double-counting that strict RESUME->PAUSE pair-matching
+     * produced when events for different apps interleaved.
+     *
+     * The trailing still-open session is intentionally NOT emitted: its duration isn't known until
+     * it ends, and emitting it with an arbitrary end would either overcount or, combined with the
+     * lastUpdated+1ms incremental cursor, risk duplicating it on the next run. It is captured on a
+     * later run once its PAUSE (or the next app's RESUME) arrives.
      */
     private fun parseEventsIntoSessions(
         events: List<UsageEvent>,
@@ -176,52 +186,54 @@ class SessionParser(private val context: Context) {
     ): List<AppSession> {
         val sessions = mutableListOf<AppSession>()
 
-        Log.d(TAG, "Parsing ${events.size} events into sessions (strict Digital Wellbeing mode)")
+        Log.d(TAG, "Parsing ${events.size} events into sessions (foreground state machine)")
 
-        // Use strict pair matching - only count clean RESUME/PAUSE pairs
-        var i = 0
-        while (i < events.size - 1) {
-            val event = events[i]
+        var openPackage: String? = null
+        var openClassName = ""
+        var openStart = 0L
 
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                // Look for immediate matching PAUSE event for same package
-                // without any intervening RESUME events for the same package
-                var j = i + 1
-                var foundValidPause = false
-
-                while (j < events.size && !foundValidPause) {
-                    val nextEvent = events[j]
-
-                    if (nextEvent.packageName == event.packageName) {
-                        if (nextEvent.eventType == UsageEvents.Event.ACTIVITY_PAUSED) {
-                            // Found matching PAUSE - create session
-                            val duration = nextEvent.timeStamp - event.timeStamp
-                            if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
-                                val appName = SessionUtils.getAppName(context, event.packageName)
-                                val session = AppSession(
-                                    packageName = event.packageName,
-                                    appName = appName,
-                                    className = event.className,
-                                    startTime = event.timeStamp,
-                                    endTime = nextEvent.timeStamp
-                                )
-                                sessions.add(session)
-                                Log.d(TAG, "Strict session: ${appName} ${duration}ms")
-                            }
-                            foundValidPause = true
-                        } else if (nextEvent.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                            // Found another RESUME for same package - invalid pair, skip this RESUME
-                            Log.d(TAG, "Skipping session for ${event.packageName}: RESUME without PAUSE at ${java.util.Date(nextEvent.timeStamp)}")
-                            break
-                        }
-                    }
-                    j++
-                }
+        fun closeSession(endTime: Long) {
+            val pkg = openPackage ?: return
+            openPackage = null
+            val duration = endTime - openStart
+            if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
+                val appName = SessionUtils.getAppName(context, pkg)
+                sessions.add(
+                    AppSession(
+                        packageName = pkg,
+                        appName = appName,
+                        className = openClassName,
+                        startTime = openStart,
+                        endTime = endTime
+                    )
+                )
+                Log.d(TAG, "Session: $appName ${duration}ms")
             }
-            i++
         }
 
-        Log.d(TAG, "Created ${sessions.size} strict sessions")
+        for (event in events) {
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    // Same app re-resumed without an intervening PAUSE: keep the original session
+                    // open (earliest start) rather than restarting it.
+                    if (openPackage == event.packageName) continue
+                    // A different app came to the foreground: end the previous session here.
+                    closeSession(event.timeStamp)
+                    openPackage = event.packageName
+                    openClassName = event.className
+                    openStart = event.timeStamp
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED -> {
+                    // Only the currently-foreground app's PAUSE ends the session; stale/out-of-order
+                    // PAUSEs for other apps are ignored.
+                    if (openPackage == event.packageName) {
+                        closeSession(event.timeStamp)
+                    }
+                }
+            }
+        }
+
+        Log.d(TAG, "Created ${sessions.size} sessions")
 
         return sessions
     }
