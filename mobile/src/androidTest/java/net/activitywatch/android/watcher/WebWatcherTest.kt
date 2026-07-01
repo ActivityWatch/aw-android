@@ -16,11 +16,10 @@ import net.activitywatch.android.watcher.utils.PAGE_MAX_WAIT_TIME_MILLIS
 import net.activitywatch.android.watcher.utils.PAGE_VISIT_TIME_MILLIS
 import net.activitywatch.android.watcher.utils.createCustomTabsWrapper
 import org.awaitility.Awaitility.await
-import org.hamcrest.CoreMatchers.not
-import org.hamcrest.MatcherAssert.assertThat
 import org.hamcrest.TypeSafeMatcher
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,6 +27,13 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val BUCKET_NAME = "aw-watcher-android-web"
+private val SUPPORTED_BROWSERS = setOf(
+    "com.android.chrome",
+    "org.mozilla.firefox",
+    "com.sec.android.app.sbrowser",
+    "com.opera.browser",
+    "com.microsoft.emmx",
+)
 
 @LargeTest
 @RunWith(AndroidJUnit4::class)
@@ -54,8 +60,12 @@ class WebWatcherTest {
             .also { serviceTestRule.bindService(it) }
             .also { enableAccessibilityService(serviceName = it.component!!.flattenToString()) }
 
-        val browsers = getAvailableBrowsers()
-            .also { assertThat(it, not(emptyList())) }
+        val availableBrowsers = getAvailableBrowsers()
+        val browsers = availableBrowsers.filter { it in SUPPORTED_BROWSERS }
+        assumeTrue(
+            "No supported browsers installed. VIEW handlers on device: $availableBrowsers",
+            browsers.isNotEmpty()
+        )
 
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
