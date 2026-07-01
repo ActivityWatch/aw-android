@@ -38,7 +38,7 @@ class RustInterface constructor(context: Context? = null) {
         var serverStarted = false
     }
 
-    private external fun initialize(): String
+    private external fun initialize()
     private external fun greeting(pattern: String): String
     private external fun startServer()
     private external fun setDataDir(path: String)
