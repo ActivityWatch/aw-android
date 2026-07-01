@@ -92,8 +92,12 @@ class WebWatcher : AccessibilityService() {
                 val newUrl = urlExtractor(event)
 
                 newUrl?.let { handleUrl(it, newBrowser = packageName) }.also {
-                    findWebView(source)
-                        ?.let { handleWindowTitle(it.text.toString()) }
+                    findWebView(source)?.let { webView ->
+                        handleWindowTitle(webView.text.toString())
+                        // Recycle the returned node (API 26-32 leaks otherwise), unless it is the
+                        // shared event.source, which the framework owns.
+                        if (webView !== source) webView.recycle()
+                    }
                 }
             }
         } catch(ex : Exception) {
