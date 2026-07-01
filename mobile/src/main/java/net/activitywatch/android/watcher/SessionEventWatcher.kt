@@ -63,8 +63,10 @@ class SessionEventWatcher(val context: Context) {
                 Log.e(TAG, "Unable to parse timestamp: $timestampString")
                 null
             }
+        } else if (events.length() == 0) {
+            null  // normal on first run
         } else {
-            Log.w(TAG, "More or less than one event was retrieved when trying to get last event")
+            Log.w(TAG, "Expected 1 event for last-event lookup, got ${events.length()}")
             null
         }
     }

@@ -25,7 +25,6 @@ const val baseURL = "http://127.0.0.1:5600"
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var syncScheduler: SyncScheduler
 
     val version: String
         get() {
@@ -79,7 +78,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
         })
 
-        // Test RustInterface functions (remove after testing)
     }
 
     override fun onResume() {
@@ -166,6 +164,5 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onDestroy() {
         super.onDestroy()
-        // syncScheduler.stop() // Handled by BackgroundService
     }
 }
