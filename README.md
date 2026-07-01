@@ -57,17 +57,25 @@ Once both aw-server-rust and aw-webui is built, you can build the Android app as
 
 ### Making a release
 
-Push a signed tag matching the version you want to release. The release
-workflow will automatically set `versionName` in `mobile/build.gradle` to
-match the tag before building, so there is no need to manually update it
-beforehand.
+Use the **Release** workflow to bump the version, commit it, and create the
+tag in one atomic step. This ensures the committed `versionName` matches the
+tag (required for F-Droid, which builds from tagged source).
 
-```sh
-git tag -s v0.1.0
-git push origin refs/tags/v0.1.0
-```
+1. Go to **Actions → Release → Run workflow**
+2. Enter the version number (e.g. `0.12.2`, without the `v` prefix)
+3. Click **Run workflow**
+
+The workflow will:
+- Update `versionName` in `mobile/build.gradle`
+- Commit the change to master
+- Create and push tag `v{version}`
+- Trigger the Build workflow (requires a `RELEASE_PAT` secret — a GitHub PAT with `repo` scope)
 
 This will trigger a GitHub Actions workflow which will build the app and upload it to GitHub releases, and deploy it to the Play Store (including the metadata in `./fastlane/metadata/android`).
+
+> **Note for maintainers:** Add a `RELEASE_PAT` secret (repo-scoped GitHub PAT) so
+> the tag push from the Release workflow triggers the Build workflow. Without it,
+> the Build workflow must be triggered manually after the tag is pushed.
 
 ## More info
 

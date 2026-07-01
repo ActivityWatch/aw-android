@@ -1,0 +1,71 @@
+name: Release
+
+# Full release workflow: bumps versionName in source, commits, tags, and pushes.
+# The tag push (via RELEASE_PAT) triggers the Build workflow automatically.
+#
+# Prerequisites:
+#   - Add a RELEASE_PAT secret: a GitHub PAT with `repo` scope.
+#     Using a PAT instead of GITHUB_TOKEN ensures the tag push triggers Build.
+#
+# Usage: Actions → Release → Run workflow → enter version (e.g. 0.12.2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without v prefix (e.g. 0.12.2)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    name: Bump versionName, commit, and tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # RELEASE_PAT is a repo-scoped PAT; its pushes trigger the Build workflow.
+          # Falls back to GITHUB_TOKEN (build won't auto-trigger, but tag is still created).
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must be X.Y.Z (e.g. 0.12.2). Got: ${VERSION}"
+            exit 1
+          fi
+          if git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists."
+            exit 1
+          fi
+
+      - name: Bump versionName in mobile/build.gradle
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Replace quoted versionName value; works for both single and double quotes.
+          sed -i -E "s/^([[:space:]]*versionName[[:space:]]+)[\"'][^\"']+[\"']/\1'${VERSION}'/" \
+            mobile/build.gradle
+          # Verify: the line must end with the closing quote (no dangling chars).
+          grep -qE "^[[:space:]]*versionName[[:space:]]+'${VERSION}'[[:space:]]*$" \
+            mobile/build.gradle || {
+              echo "::error::versionName update failed. Current state:"
+              grep "versionName" mobile/build.gradle
+              exit 1
+            }
+          echo "Updated versionName to '${VERSION}'"
+
+      - name: Commit and tag
+        run: |
+          VERSION="${{ inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add mobile/build.gradle
+          git commit -m "chore: bump versionName to ${VERSION}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin HEAD:master
+          git push origin "v${VERSION}"
