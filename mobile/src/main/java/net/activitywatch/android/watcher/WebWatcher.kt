@@ -106,13 +106,21 @@ class WebWatcher : AccessibilityService() {
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
 
-    private fun findWebView(info : AccessibilityNodeInfo) : AccessibilityNodeInfo? {
+    private fun findWebView(info: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (info.className == "android.webkit.WebView" && info.text != null) return info
 
-        return (0 until info.childCount).asSequence()
-            .mapNotNull { info.getChild(it) }
-            .mapNotNull { child -> findWebView(child) }
-            .firstOrNull()
+        for (i in 0 until info.childCount) {
+            val child = info.getChild(i) ?: continue
+            val result = findWebView(child)
+            if (result != null) {
+                // Recycle the intermediate node when a deeper descendant was returned.
+                if (result !== child) child.recycle()
+                return result
+            }
+            // Recycle nodes whose subtrees contain no WebView.
+            child.recycle()
+        }
+        return null
     }
 
     private fun handleUrl(newUrl : String?, newBrowser: String?) {
