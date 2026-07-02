@@ -31,11 +31,10 @@ class BackgroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "BackgroundService created")
-        rustInterface = RustInterface(this)
-        syncScheduler = SyncScheduler(this)
-        // Promote to foreground immediately in onCreate() so the OS 5-second
-        // startForegroundService() countdown can't expire before onStartCommand() runs.
-        // This is especially important on slow emulators (no KVM) used in CI.
+        // Promote to foreground BEFORE slow native init so the OS 5-second
+        // startForegroundService() countdown can't expire.  RustInterface loads
+        // libaw_server.so + calls initialize() which can take several seconds on
+        // slow/no-KVM emulators (CI).
         createNotificationChannel()
         val notification = createNotification()
         ServiceCompat.startForeground(
@@ -47,6 +46,8 @@ class BackgroundService : Service() {
             else
                 0
         )
+        rustInterface = RustInterface(this)
+        syncScheduler = SyncScheduler(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
