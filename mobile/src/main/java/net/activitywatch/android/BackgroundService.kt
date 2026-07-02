@@ -121,7 +121,7 @@ class BackgroundService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "BackgroundService destroyed")
-        syncScheduler.stop()
+        if (::syncScheduler.isInitialized) syncScheduler.stop()
         super.onDestroy()
     }
 
