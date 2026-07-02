@@ -74,9 +74,13 @@ class MediaWatcher : NotificationListenerService() {
         // polling runnable and per-session callbacks (all on the same looper), so ri is initialized
         // before the first poll; any event arriving earlier is dropped by the ri?. null-safe calls.
         handler?.post {
-            val r = RustInterface(applicationContext)
-            r.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
-            ri = r
+            try {
+                val r = RustInterface(applicationContext)
+                r.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
+                ri = r
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize media bucket", e)
+            }
         }
 
         val localRunnable = object : Runnable {
