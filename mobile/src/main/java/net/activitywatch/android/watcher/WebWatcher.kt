@@ -1,6 +1,8 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -30,7 +32,9 @@ class WebWatcher : AccessibilityService() {
     private val tag = "WebWatcher"
     private val bucketId = "aw-watcher-android-web"
 
-    private var ri : RustInterface? = null
+    @Volatile private var ri : RustInterface? = null
+    private var handler: Handler? = null
+    private val handlerThread = HandlerThread("WebWatcher").also { it.start() }
 
     private var lastUrlTimestamp : Instant? = null
     private var lastUrl : String? = null
@@ -61,8 +65,18 @@ class WebWatcher : AccessibilityService() {
     )
 
     override fun onCreate() {
+        super.onCreate()
         Log.i(tag, "Creating WebWatcher")
-        ri = RustInterface(applicationContext).also { it.createBucketHelper(bucketId, "web.tab.current") }
+        handler = Handler(handlerThread.looper)
+        handler?.post {
+            try {
+                val r = RustInterface(applicationContext)
+                r.createBucketHelper(bucketId, "web.tab.current")
+                ri = r
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to initialize web bucket", e)
+            }
+        }
     }
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
@@ -171,4 +185,10 @@ class WebWatcher : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler?.removeCallbacksAndMessages(null)
+        handlerThread.quitSafely()
+    }
 }
