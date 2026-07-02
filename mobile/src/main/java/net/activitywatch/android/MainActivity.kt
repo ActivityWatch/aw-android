@@ -46,6 +46,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             Log.i(TAG, "First time or usage not allowed, starting onboarding activity")
             val intent = Intent(this, OnboardingActivity::class.java)
             startActivity(intent)
+            finish()
+            return
         }
 
         // Set up UI
