@@ -83,37 +83,7 @@ jobs:
 
     - name: Check that jniLibs present and valid ELF
       run: |
-        python3 - <<'EOF'
-        import os, struct, sys
-        abis = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64']
-        ok = True
-        for abi in abis:
-            path = f'mobile/src/main/jniLibs/{abi}/libaw_server.so'
-            if not os.path.exists(path):
-                print(f'MISSING  {path}', file=sys.stderr)
-                ok = False
-                continue
-            fsize = os.path.getsize(path)
-            with open(path, 'rb') as f:
-                header = f.read(64)
-            if header[:4] != b'\x7fELF':
-                print(f'NOT_ELF  {path}', file=sys.stderr)
-                ok = False
-                continue
-            e_class = header[4]  # 1=32-bit, 2=64-bit
-            if e_class == 1:
-                e_shoff = struct.unpack('<I', header[32:36])[0]
-            else:
-                e_shoff = struct.unpack('<Q', header[40:48])[0]
-            if e_shoff != 0 and e_shoff >= fsize:
-                print(f'CORRUPT  {path}: section header past EOF '
-                      f'(e_shoff=0x{e_shoff:x}, size={fsize})', file=sys.stderr)
-                ok = False
-                continue
-            print(f'OK       {abi}/libaw_server.so  ({fsize:,} bytes)')
-        if not ok:
-            sys.exit(1)
-        EOF
+        python3 scripts/check-jnilibs.py
 
     - name: Upload jniLibs artifact
       uses: actions/upload-artifact@v4
@@ -235,9 +205,9 @@ jobs:
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
         fail-on-cache-miss: false
 
-    - name: Check that jniLibs present
+    - name: Check that jniLibs present and valid ELF
       run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+        python3 scripts/check-jnilibs.py
 
     - name: Verify versionName matches tag
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
@@ -319,9 +289,9 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs/
 
-    - name: Check that jniLibs present
+    - name: Check that jniLibs present and valid ELF
       run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+        python3 scripts/check-jnilibs.py
 
     # Test
     - name: Test
