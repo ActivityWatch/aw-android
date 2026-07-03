@@ -72,7 +72,7 @@ class BackgroundService : Service() {
                     true
                 } else {
                     val errorMsg = try {
-                        JSONObject(result).optString("error", null)
+                        JSONObject(result).optString("error", result)
                     } catch (e: JSONException) {
                         result.ifEmpty { "empty response" }
                     }
