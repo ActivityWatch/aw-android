@@ -38,6 +38,13 @@ android {
             applicationIdSuffix ".debug"
             jniDebuggable true
             renderscriptDebuggable true
+            // Limit debug APK to modern ABIs used by CI emulators and physical devices.
+            // armeabi-v7a debug Rust binaries are very large and can corrupt the CI
+            // artifact when disk space is tight; they aren't needed for x86_64 emulator
+            // runs or any arm64-v8a device released since ~2014.
+            ndk {
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
         }
     }
     compileOptions {
