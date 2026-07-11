@@ -64,19 +64,23 @@ class BackgroundService : Service() {
                 val hostname = rustInterface.getDeviceName(this@BackgroundService)
                 val result = rustInterface.migrateHostname(hostname)
                 Log.i(TAG, "Hostname migration result: $result")
-                // Conservative defaults: treat ambiguous responses (non-JSON or absent "success" key)
-                // as failures so the migration is retried on the next start rather than being
-                // permanently silenced before the server was actually ready.
-                val migrationSucceeded = try {
-                    JSONObject(result).optBoolean("success", false)
-                } catch (e: JSONException) {
-                    Log.w(TAG, "Migration result was not valid JSON; will retry on next start")
+                // The native migrateHostname() returns a plain-text success string
+                // ("Migrated hostname for N bucket(s)") or a JSON error object
+                // ({"error": "..."}).  Treat the plain-text prefix as success; only
+                // retry when the native lib explicitly reports an error.
+                val migrationSucceeded = if (result.startsWith("Migrated hostname for")) {
+                    true
+                } else {
+                    val errorMsg = try {
+                        JSONObject(result).optString("error", result)
+                    } catch (e: JSONException) {
+                        result.ifEmpty { "empty response" }
+                    }
+                    Log.w(TAG, "Hostname migration failed ($errorMsg); will retry on next start")
                     false
                 }
                 if (migrationSucceeded) {
                     prefs.setHostnameMigrated()
-                } else {
-                    Log.w(TAG, "Hostname migration reported failure; will retry on next start")
                 }
             }
         }
