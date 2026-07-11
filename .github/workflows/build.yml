@@ -81,9 +81,9 @@ jobs:
       run: |
         make aw-server-rust
 
-    - name: Check that jniLibs present
+    - name: Check that jniLibs present and valid ELF
       run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+        python3 scripts/check-jnilibs.py
 
     - name: Upload jniLibs artifact
       uses: actions/upload-artifact@v4
@@ -205,9 +205,9 @@ jobs:
         key: ${{ env.cache-name }}-release-${{ env.RELEASE }}-ndk-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/aw-server-rust/HEAD') }}
         fail-on-cache-miss: false
 
-    - name: Check that jniLibs present
+    - name: Check that jniLibs present and valid ELF
       run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+        python3 scripts/check-jnilibs.py
 
     - name: Verify versionName matches tag
       if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
@@ -289,9 +289,9 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs/
 
-    - name: Check that jniLibs present
+    - name: Check that jniLibs present and valid ELF
       run: |
-        test -e mobile/src/main/jniLibs/x86_64/libaw_server.so
+        python3 scripts/check-jnilibs.py
 
     # Test
     - name: Test
