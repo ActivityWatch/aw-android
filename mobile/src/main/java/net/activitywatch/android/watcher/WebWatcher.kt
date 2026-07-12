@@ -70,7 +70,9 @@ class WebWatcher : AccessibilityService() {
         Log.i(TAG, "Creating WebWatcher")
         try {
             ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
-        } catch (ex: Exception) {
+        } catch (ex: Throwable) {
+            // Catch Throwable (not just Exception) because System.loadLibrary() throws
+            // UnsatisfiedLinkError (an Error subclass) when the native library is missing.
             Log.e(TAG, "Failed to initialize RustInterface: ${ex.message}")
         }
     }
