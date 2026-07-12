@@ -435,8 +435,13 @@ jobs:
 
     - name: Set SUPPLY_TRACK
       run: |
-        # Set SUPPLY_TRACK (used by fastlane) depending on is_stable
-        if [[ "${{ steps.version.outputs.is_stable }}" == "true" ]]; then
+        # Set SUPPLY_TRACK based on whether this is a stable (x.y.z) or pre-release tag.
+        # NOTE: nowsprinting/check-version-format-action classifies 0.x.x as not stable
+        # (semver convention), but aw-android uses 0.x.x for production releases.
+        # Check for pre-release suffixes directly instead.
+        TAG="${{ github.ref_name }}"
+        VERSION="${TAG#v}"
+        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           SUPPLY_TRACK="production"
         else
           SUPPLY_TRACK="internal"
