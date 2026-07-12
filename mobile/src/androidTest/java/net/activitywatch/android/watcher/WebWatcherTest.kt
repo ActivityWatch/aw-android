@@ -16,10 +16,11 @@ import net.activitywatch.android.watcher.utils.PAGE_MAX_WAIT_TIME_MILLIS
 import net.activitywatch.android.watcher.utils.PAGE_VISIT_TIME_MILLIS
 import net.activitywatch.android.watcher.utils.createCustomTabsWrapper
 import org.awaitility.Awaitility.await
+import org.hamcrest.CoreMatchers.not
+import org.hamcrest.MatcherAssert.assertThat
 import org.hamcrest.TypeSafeMatcher
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,13 +28,6 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val BUCKET_NAME = "aw-watcher-android-web"
-private val SUPPORTED_BROWSERS = setOf(
-    "com.android.chrome",
-    "org.mozilla.firefox",
-    "com.sec.android.app.sbrowser",
-    "com.opera.browser",
-    "com.microsoft.emmx",
-)
 
 @LargeTest
 @RunWith(AndroidJUnit4::class)
@@ -60,12 +54,8 @@ class WebWatcherTest {
             .also { serviceTestRule.bindService(it) }
             .also { enableAccessibilityService(serviceName = it.component!!.flattenToString()) }
 
-        val availableBrowsers = getAvailableBrowsers()
-        val browsers = availableBrowsers.filter { it in SUPPORTED_BROWSERS }
-        assumeTrue(
-            "No supported browsers installed. VIEW handlers on device: $availableBrowsers",
-            browsers.isNotEmpty()
-        )
+        val browsers = getAvailableBrowsers()
+            .also { assertThat(it, not(emptyList())) }
 
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
@@ -74,8 +64,7 @@ class WebWatcherTest {
             val matchers = testWebPages.map { it.toMatcher(browser) }
 
             await("expected events for: $browser").atMost(MAX_CONDITION_WAIT_TIME_MILLIS, MILLISECONDS).until {
-                val rawEvents = ri.getEvents(BUCKET_NAME, 100)
-                val events = JSONArray(rawEvents).asListOfJsonObjects()
+                val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
                     .filter { it.getJSONObject("data").getString("browser") == browser }
 
                 matchers.all { matcher -> events.any { matcher.matches(it) } }
@@ -91,7 +80,7 @@ class WebWatcherTest {
     private fun executeShellCmd(cmd: String) {
         InstrumentationRegistry.getInstrumentation()
             .getUiAutomation(FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-            .executeShellCommand(cmd)
+            .executeShellCommand(cmd).close()
     }
 
     private fun getAvailableBrowsers() : List<String> {
