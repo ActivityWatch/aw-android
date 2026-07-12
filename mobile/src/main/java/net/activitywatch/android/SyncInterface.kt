@@ -60,10 +60,11 @@ class SyncInterface(context: Context) {
     external fun getSyncDir(): String
     
     private fun getDeviceName(): String {
-        return android.provider.Settings.Global.getString(
-            appContext.contentResolver, 
+        val raw = android.provider.Settings.Global.getString(
+            appContext.contentResolver,
             android.provider.Settings.Global.DEVICE_NAME
-        ) ?: android.os.Build.DEVICE ?: "Unknown"
+        ) ?: android.os.Build.DEVICE ?: "unknown"
+        return raw.trim().replace(' ', '_').lowercase()
     }
     
     // Async wrapper for syncPullAll
