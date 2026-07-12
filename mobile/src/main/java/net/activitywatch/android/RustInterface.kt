@@ -175,7 +175,11 @@ class RustInterface(context: Context? = null) {
         val raw = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
             ?: android.os.Build.DEVICE
             ?: "unknown"
-        return raw.trim().replace(' ', '_').lowercase()
+        return raw.trim()
+            .lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^a-z0-9_-]+"), "_")
+            .trim('_')
+            .ifEmpty { "unknown" }
     }
 
 }

@@ -63,8 +63,13 @@ class SyncInterface(context: Context) {
         val raw = android.provider.Settings.Global.getString(
             appContext.contentResolver,
             android.provider.Settings.Global.DEVICE_NAME
-        ) ?: android.os.Build.DEVICE ?: "unknown"
-        return raw.trim().replace(' ', '_').lowercase()
+        )?.trim()?.takeIf { it.isNotEmpty() }
+            ?: android.os.Build.DEVICE ?: "unknown"
+        return raw.trim()
+            .lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^a-z0-9_-]+"), "_")
+            .trim('_')
+            .ifEmpty { "unknown" }
     }
     
     // Async wrapper for syncPullAll
