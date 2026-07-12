@@ -14,6 +14,7 @@ private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): Stri
             return processExtractedText(nodes.firstOrNull()?.text?.toString())
         } finally {
             nodes.forEach { it.recycle() }
+            source.recycle()
         }
     }
     return null
@@ -99,17 +100,21 @@ class WebWatcher : AccessibilityService() {
 
         try {
             event.source?.let { source ->
-                val browser = packageName!!
-                val newUrl = extractUrl(browser, event)
+                try {
+                    val browser = packageName!!
+                    val newUrl = extractUrl(browser, event)
 
-                if (newUrl == null) {
-                    maybeDumpTree(browser)
-                } else {
-                    handleUrl(newUrl, newBrowser = browser)
-                }
-                findWebView(source)?.let { webView ->
-                    handleWindowTitle(webView.text.toString())
-                    if (webView !== source) webView.recycle()
+                    if (newUrl == null) {
+                        maybeDumpTree(browser)
+                    } else {
+                        handleUrl(newUrl, newBrowser = browser)
+                    }
+                    findWebView(source)?.let { webView ->
+                        handleWindowTitle(webView.text.toString())
+                        if (webView !== source) webView.recycle()
+                    }
+                } finally {
+                    source.recycle()
                 }
             }
         } catch(ex : Exception) {
