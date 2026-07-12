@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
@@ -18,6 +20,7 @@ import android.webkit.URLUtil
 import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import net.activitywatch.android.R
+import java.io.File
 import java.lang.Thread.sleep
 import java.net.URI
 
@@ -117,6 +120,7 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
+        myWebView.addJavascriptInterface(WebAppInterface(requireContext()), "Android")
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
@@ -163,5 +167,32 @@ class WebUIFragment : Fragment() {
                     putString(ARG_URL, url)
                 }
             }
+    }
+}
+
+class WebAppInterface(private val mContext: Context) {
+    @JavascriptInterface
+    fun downloadCSV(csv: String, filename: String) {
+        downloadFile(csv, filename, "text/csv")
+    }
+
+    @JavascriptInterface
+    fun downloadJSON(json: String, filename: String) {
+        downloadFile(json, filename, "application/json")
+    }
+
+    private fun downloadFile(content: String, filename: String, mimetype: String) {
+        val file = File(mContext.getExternalFilesDir(null), filename)
+        file.writeText(content)
+        // FileProvider required on API 24+: Uri.fromFile() throws FileUriExposedException
+        val uri = FileProvider.getUriForFile(
+            mContext,
+            "${mContext.packageName}.provider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_VIEW)
+        intent.setDataAndType(uri, mimetype)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NO_HISTORY)
+        mContext.startActivity(intent)
     }
 }
