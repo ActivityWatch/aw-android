@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     val version: String
         get() {
-            return packageManager.getPackageInfo(packageName, 0).versionName
+            return packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
         }
 
     override fun onFragmentInteraction(item: Uri) {
