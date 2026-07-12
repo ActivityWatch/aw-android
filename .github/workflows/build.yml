@@ -456,6 +456,9 @@ jobs:
 
     - name: Release with fastlane
       run: |
+        # Newer fastlane versions fail hard if rubygems.org isn't in the system gem sources list.
+        # This is idempotent (exits 0 if already present).
+        gem sources --add https://rubygems.org
         # bundle exec fastlane supply run --apk dist/*.apk
         bundle exec fastlane supply run --aab dist/*.aab
 
