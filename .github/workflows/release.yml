@@ -25,6 +25,16 @@ jobs:
       contents: write
 
     steps:
+      - name: Check for RELEASE_PAT
+        run: |
+          if [ -z "${{ secrets.RELEASE_PAT }}" ]; then
+            echo "::warning::RELEASE_PAT secret is not set. Falling back to GITHUB_TOKEN."
+            echo "::warning::GitHub prevents GITHUB_TOKEN pushes from triggering other workflows."
+            echo "::warning::After this run, manually trigger the Build workflow:"
+            echo "::warning::  gh workflow run build.yml --repo ActivityWatch/aw-android --ref refs/tags/v${{ inputs.version }}"
+            echo "::warning::Or add RELEASE_PAT (Settings → Secrets → Actions) to fix this permanently."
+          fi
+
       - uses: actions/checkout@v4
         with:
           # RELEASE_PAT is a repo-scoped PAT; its pushes trigger the Build workflow.
