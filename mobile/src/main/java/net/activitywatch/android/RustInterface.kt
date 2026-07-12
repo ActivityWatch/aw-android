@@ -3,7 +3,6 @@ package net.activitywatch.android
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.system.Os
 import android.util.Log
 import java.util.concurrent.Executors
@@ -172,11 +171,11 @@ class RustInterface(context: Context? = null) {
     }
 
     fun getDeviceName(context: Context): String {
-        val raw = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: android.os.Build.DEVICE
-            ?: "unknown"
+        // Use Build.DEVICE (hardware codename, e.g. "poco_f8_ultra") rather than
+        // Settings.Global.DEVICE_NAME (OEM marketing name, e.g. "Poco F8 Ultra").
+        // Marketing names contain spaces and vary by locale, breaking hostname-based
+        // bucket lookup in aw-webui. Build.DEVICE is stable and already underscore-delimited.
+        val raw = android.os.Build.DEVICE?.takeIf { it.isNotEmpty() } ?: "unknown"
         return raw.trim()
             .lowercase(java.util.Locale.ROOT)
             .replace(Regex("[^a-z0-9_-]+"), "_")
