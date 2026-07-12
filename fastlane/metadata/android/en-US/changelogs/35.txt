@@ -1,0 +1,4 @@
+v0.14.0
+
+- Updated to target Android 15 (API 35)
+- Bug fixes and stability improvements
