@@ -85,8 +85,14 @@ class BackgroundService : Service() {
             }
         }
 
-        // Start the sync scheduler
-        syncScheduler.start()
+        // Start the sync scheduler only when the user has enabled sync.
+        // Default is off — the sync directory is not accessible to other apps
+        // (Android scoped storage), so auto-sync would silently no-op for most users.
+        if (prefs.isSyncEnabled()) {
+            syncScheduler.start()
+        } else {
+            Log.i(TAG, "Sync is disabled (default). Enable it in settings to start syncing.")
+        }
 
         // Schedule event parsing
         scheduleEventParsing()
