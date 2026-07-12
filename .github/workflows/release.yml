@@ -3,17 +3,24 @@ name: Release
 # Full release workflow: bumps versionName in source, commits, tags, and pushes.
 # The tag push (via RELEASE_PAT) triggers the Build workflow automatically.
 #
+# Supports stable and pre-release versions:
+#   - Stable (X.Y.Z):         published to Play Store production track + stable GitHub release
+#   - Pre-release (X.Y.ZbN):  published to Play Store internal track + GitHub pre-release
+#
+# Pre-release formats accepted: alpha (X.Y.ZaN), beta (X.Y.ZbN), RC (X.Y.ZrcN)
+# Examples: 0.14.0b1, 0.14.0rc1
+#
 # Prerequisites:
 #   - Add a RELEASE_PAT secret: a GitHub PAT with `repo` scope.
 #     Using a PAT instead of GITHUB_TOKEN ensures the tag push triggers Build.
 #
-# Usage: Actions → Release → Run workflow → enter version (e.g. 0.12.2)
+# Usage: Actions → Release → Run workflow → enter version (e.g. 0.12.2 or 0.14.0b1)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release, without v prefix (e.g. 0.12.2)'
+        description: 'Version without v prefix. Stable: X.Y.Z (e.g. 0.12.2). Pre-release: X.Y.ZbN (e.g. 0.14.0b1)'
         required: true
         type: string
 
@@ -47,8 +54,13 @@ jobs:
       - name: Validate version format
         run: |
           VERSION="${{ inputs.version }}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Version must be X.Y.Z (e.g. 0.12.2). Got: ${VERSION}"
+          # Accept stable (X.Y.Z) and pre-release (X.Y.ZaN / X.Y.ZbN / X.Y.ZrcN) formats.
+          # Pre-releases are routed to the Play Store internal track and published as
+          # GitHub pre-releases via the nowsprinting/check-version-format-action in Build.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+            echo "::error::Invalid version format: ${VERSION}"
+            echo "::error::Accepted formats: X.Y.Z (stable) or X.Y.ZbN / X.Y.ZrcN (pre-release)"
+            echo "::error::Examples: 0.12.2, 0.14.0b1, 0.14.0rc1"
             exit 1
           fi
           if git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
