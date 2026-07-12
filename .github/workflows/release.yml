@@ -3,17 +3,22 @@ name: Release
 # Full release workflow: bumps versionName in source, commits, tags, and pushes.
 # The tag push (via RELEASE_PAT) triggers the Build workflow automatically.
 #
+# Supports stable and pre-release versions:
+#   Stable:      0.14.0         → full Play Store production release
+#   Beta:        0.14.0b1       → GitHub pre-release, Play Store internal track
+#   Dev:         0.14.0dev20260712 → GitHub pre-release, Play Store internal track
+#
 # Prerequisites:
 #   - Add a RELEASE_PAT secret: a GitHub PAT with `repo` scope.
 #     Using a PAT instead of GITHUB_TOKEN ensures the tag push triggers Build.
 #
-# Usage: Actions → Release → Run workflow → enter version (e.g. 0.12.2)
+# Usage: Actions → Release → Run workflow → enter version (e.g. 0.14.0 or 0.14.0b1)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release, without v prefix (e.g. 0.12.2)'
+        description: 'Version to release, without v prefix (e.g. 0.14.0 for stable, 0.14.0b1 for beta, 0.14.0dev20260712 for dev)'
         required: true
         type: string
 
@@ -47,8 +52,9 @@ jobs:
       - name: Validate version format
         run: |
           VERSION="${{ inputs.version }}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Version must be X.Y.Z (e.g. 0.12.2). Got: ${VERSION}"
+          # Accept stable (X.Y.Z) and pre-release (X.Y.ZbN, X.Y.ZrcN, X.Y.ZdevYYYYMMDD, etc.)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+[a-z0-9._-]*$ ]]; then
+            echo "::error::Version must start with X.Y.Z (e.g. 0.14.0, 0.14.0b1, 0.14.0dev20260712). Got: ${VERSION}"
             exit 1
           fi
           if git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
