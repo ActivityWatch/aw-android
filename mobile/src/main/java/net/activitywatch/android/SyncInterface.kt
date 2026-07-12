@@ -63,7 +63,7 @@ class SyncInterface(context: Context) {
         return android.provider.Settings.Global.getString(
             appContext.contentResolver, 
             android.provider.Settings.Global.DEVICE_NAME
-        ) ?: android.os.Build.MODEL ?: "Unknown"
+        ) ?: android.os.Build.DEVICE ?: "Unknown"
     }
     
     // Async wrapper for syncPullAll
