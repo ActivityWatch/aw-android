@@ -12,7 +12,7 @@ android {
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
-        versionName '0.14.0'
+        versionName '0.14.0dev20260712'
 
         // Set in CI by `bundle exec fastlane update_version`
         versionCode 34
