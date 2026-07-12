@@ -7,6 +7,10 @@ on:
       - v*
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
+    # Allows manually triggering a build on any branch or tag.
+    # Useful when RELEASE_PAT is missing and a tag push didn't auto-trigger this workflow.
+    # Usage: gh workflow run build.yml --repo ActivityWatch/aw-android --ref refs/tags/v<version>
 
 env:
   NDK_VERSION: '25.2.9519653'
