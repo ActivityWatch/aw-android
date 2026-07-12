@@ -1,6 +1,7 @@
 package net.activitywatch.android.fragments
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -182,8 +183,19 @@ class WebAppInterface(private val mContext: Context) {
     }
 
     private fun downloadFile(content: String, filename: String, mimetype: String) {
-        val file = File(mContext.getExternalFilesDir(null), filename)
-        file.writeText(content)
+        // Strip path components from the JS-supplied name to prevent export-root escape
+        val safeName = File(filename).name.takeIf { it.isNotEmpty() } ?: "export"
+        val externalDir = mContext.getExternalFilesDir(null) ?: run {
+            Log.e(TAG, "External files directory unavailable")
+            return
+        }
+        val file = File(externalDir, safeName)
+        try {
+            file.writeText(content)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write export file: ${e.message}")
+            return
+        }
         // FileProvider required on API 24+: Uri.fromFile() throws FileUriExposedException
         val uri = FileProvider.getUriForFile(
             mContext,
@@ -193,6 +205,10 @@ class WebAppInterface(private val mContext: Context) {
         val intent = Intent(Intent.ACTION_VIEW)
         intent.setDataAndType(uri, mimetype)
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NO_HISTORY)
-        mContext.startActivity(intent)
+        try {
+            mContext.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "No viewer app found for $mimetype", e)
+        }
     }
 }
