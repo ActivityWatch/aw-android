@@ -105,4 +105,24 @@ class SyncScheduler(private val context: Context) {
             }
         }
     }
+
+    companion object {
+        // Called by SyncAlarmReceiver when sync is disabled, to cancel a stale alarm left
+        // from a previous enable session or an older build that registered it before the pref existed.
+        fun cancelAlarm(context: Context) {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(ACTION_SYNC_ALARM).setPackage(context.packageName)
+            val pi = PendingIntent.getBroadcast(
+                context,
+                0,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pi != null) {
+                am.cancel(pi)
+                pi.cancel()
+                Log.i(TAG, "Cancelled stale AlarmManager sync alarm (sync disabled)")
+            }
+        }
+    }
 }

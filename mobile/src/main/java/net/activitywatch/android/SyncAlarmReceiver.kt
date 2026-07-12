@@ -17,7 +17,8 @@ class SyncAlarmReceiver : BroadcastReceiver() {
         when (intent.action) {
             "net.activitywatch.android.SYNC_ALARM" -> {
                 if (!AWPreferences(context).isSyncEnabled()) {
-                    Log.i(TAG, "Sync is disabled; skipping alarm-triggered sync")
+                    Log.i(TAG, "Sync is disabled; cancelling stale alarm")
+                    SyncScheduler.cancelAlarm(context)
                     return
                 }
                 Log.i(TAG, "Performing scheduled sync...")
