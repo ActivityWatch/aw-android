@@ -36,4 +36,14 @@ class AWPreferences(context: Context) {
     fun setHostnameMigrated() {
         sharedPreferences.edit().putBoolean("hasMigratedHostname", true).apply()
     }
+
+    // Sync is off by default; user must explicitly enable it once a sync directory
+    // is configured (e.g. via Storage Access Framework).
+    fun isSyncEnabled(): Boolean {
+        return sharedPreferences.getBoolean("syncEnabled", false)
+    }
+
+    fun setSyncEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("syncEnabled", enabled).apply()
+    }
 }

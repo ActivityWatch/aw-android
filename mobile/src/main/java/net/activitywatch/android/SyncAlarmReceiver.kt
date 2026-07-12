@@ -16,6 +16,10 @@ class SyncAlarmReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             "net.activitywatch.android.SYNC_ALARM" -> {
+                if (!AWPreferences(context).isSyncEnabled()) {
+                    Log.i(TAG, "Sync is disabled; skipping alarm-triggered sync")
+                    return
+                }
                 Log.i(TAG, "Performing scheduled sync...")
                 val pendingResult = goAsync()
                 // Create SyncInterface and perform sync on IO dispatcher to avoid
