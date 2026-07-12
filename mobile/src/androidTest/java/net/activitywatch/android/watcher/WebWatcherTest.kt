@@ -88,6 +88,7 @@ class WebWatcherTest {
         return context.packageManager
             .queryIntentActivities(activityIntent, PackageManager.MATCH_ALL)
             .map { it.activityInfo.packageName.toString() }
+            .filter { it in WebWatcher.KNOWN_BROWSER_PACKAGES }
     }
 
     private fun openUris(uris: List<String>, browser: String) {

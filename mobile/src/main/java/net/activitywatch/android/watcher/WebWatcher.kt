@@ -65,8 +65,13 @@ class WebWatcher : AccessibilityService() {
     }?.let(stripProtocol)
 
     override fun onCreate() {
+        super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
-        ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
+        try {
+            ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
+        } catch (ex: Exception) {
+            Log.e(TAG, "Failed to initialize RustInterface: ${ex.message}")
+        }
     }
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
@@ -102,7 +107,10 @@ class WebWatcher : AccessibilityService() {
                 } else {
                     handleUrl(newUrl, newBrowser = browser)
                 }
-                findWebView(source)?.let { handleWindowTitle(it.text.toString()) }
+                findWebView(source)?.let { webView ->
+                    handleWindowTitle(webView.text.toString())
+                    if (webView !== source) webView.recycle()
+                }
             }
         } catch(ex : Exception) {
             Log.e(TAG, ex.message ?: ex.toString())
@@ -181,7 +189,7 @@ class WebWatcher : AccessibilityService() {
     override fun onInterrupt() {}
 
     companion object {
-        private val KNOWN_BROWSER_PACKAGES = setOf(
+        internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",
             "com.sec.android.app.sbrowser",
