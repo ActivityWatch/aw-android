@@ -173,6 +173,8 @@ class RustInterface(context: Context? = null) {
 
     fun getDeviceName(context: Context): String {
         val raw = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
             ?: android.os.Build.DEVICE
             ?: "unknown"
         return raw.trim()
