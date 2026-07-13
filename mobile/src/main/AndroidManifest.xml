@@ -80,7 +80,11 @@
             android:name=".BackgroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="ActivityWatch runs a local HTTP server on-device to store and serve app usage data. All data stays on-device. The foreground service keeps the server continuously available so the ActivityWatch web UI remains accessible to the user. No predefined foreground service type (camera, microphone, location, health, media, etc.) covers this use case." />
+        </service>
 
         <receiver
             android:name=".SyncAlarmReceiver"
