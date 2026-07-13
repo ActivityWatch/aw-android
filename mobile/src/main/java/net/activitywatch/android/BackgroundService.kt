@@ -41,8 +41,8 @@ class BackgroundService : Service() {
             this,
             NOTIFICATION_ID,
             notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             else
                 0
         )
