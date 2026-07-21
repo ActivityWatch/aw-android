@@ -6,6 +6,7 @@
     <string name="nav_header_subtitle">v0.1.0</string>
     <string name="nav_header_desc">Navigation header</string>
     <string name="action_settings">Settings</string>
+    <string name="open_in_browser">Open in browser</string>
     <string name="title_activity_buckets">BucketsActivity</string>
     <string name="welcome_title_text">Welcome, early user!</string>
     <string name="welcome_text">
@@ -29,4 +30,7 @@
 
     <!-- Widget strings -->
     <string name="widget_category_time_description">Shows today\'s screen time and top categories</string>
+
+    <!-- Auth strings -->
+    <string name="no_browser_found">No browser app available to open this URL</string>
 </resources>

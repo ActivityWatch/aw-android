@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -27,11 +28,24 @@ const val baseURL = "http://127.0.0.1:5600"
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var dashboardApiKey: String
 
     val version: String
         get() {
             return packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
         }
+
+    private fun authenticatedUrl(url: String = baseURL): String {
+        return buildDashboardUrl(url, dashboardApiKey)
+    }
+
+    private fun openDashboardInBrowser(url: String = baseURL) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+        } catch (e: ActivityNotFoundException) {
+            Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
@@ -61,6 +75,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         binding.navView.setNavigationItemSelectedListener(this)
 
+        // Ensure API key exists in config before the server starts so it picks it up at init.
+        dashboardApiKey = ensureDashboardApiKey(this)
         // Start background service to keep server and sync running
         val serviceIntent = Intent(this, BackgroundService::class.java)
         startForegroundService(serviceIntent)
@@ -68,7 +84,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         if (savedInstanceState != null) {
             return
         }
-        val firstFragment = WebUIFragment.newInstance(baseURL)
+        val firstFragment = WebUIFragment.newInstance(authenticatedUrl())
         supportFragmentManager.beginTransaction()
             .add(R.id.fragment_container, firstFragment).commit()
 
@@ -125,19 +141,18 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/activity/unknown/"
+                url = authenticatedUrl("$baseURL/#/activity/unknown/")
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/buckets/"
+                url = authenticatedUrl("$baseURL/#/buckets/")
             }
             R.id.nav_settings -> {
                 fragmentClass = WebUIFragment::class.java
-                url = "$baseURL/#/settings/"
+                url = authenticatedUrl("$baseURL/#/settings/")
             }
             R.id.nav_share -> {
-                Snackbar.make(binding.coordinatorLayout, "The share button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                openDashboardInBrowser()
             }
             R.id.nav_send -> {
                 Snackbar.make(binding.coordinatorLayout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
