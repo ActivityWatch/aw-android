@@ -102,6 +102,7 @@ class AuthSettingsActivity : AppCompatActivity() {
                         // Only show the toast when a write actually happened
                         Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                     }
+                    AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(true)
                     btnCopy.visibility = View.VISIBLE
                     tvStatus.text = "Authentication enabled (restart app to apply)"
                 } else {
@@ -111,6 +112,7 @@ class AuthSettingsActivity : AppCompatActivity() {
                         Toast.makeText(this@AuthSettingsActivity, "Failed to save API key setting", Toast.LENGTH_LONG).show()
                         return@launch
                     }
+                    AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(false)
                     tvApiKey.text = "(none)"
                     btnCopy.visibility = View.GONE
                     tvStatus.text = "Authentication disabled (restart app to apply)"

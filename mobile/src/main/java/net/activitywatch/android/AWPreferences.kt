@@ -46,4 +46,16 @@ class AWPreferences(context: Context) {
     fun setSyncEnabled(enabled: Boolean) {
         sharedPreferences.edit().putBoolean("syncEnabled", enabled).apply()
     }
+
+    // Dashboard authentication. Defaults to true so first-run gets a key generated
+    // automatically. Set to false when the user explicitly disables auth in settings;
+    // ensureDashboardApiKey() checks this before generating a new key so that the
+    // "disabled" setting survives app restarts.
+    fun isDashboardAuthEnabled(): Boolean {
+        return sharedPreferences.getBoolean("dashboardAuthEnabled", true)
+    }
+
+    fun setDashboardAuthEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).apply()
+    }
 }
