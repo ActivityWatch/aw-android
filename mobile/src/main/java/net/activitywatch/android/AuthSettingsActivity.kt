@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,6 +33,9 @@ class AuthSettingsActivity : AppCompatActivity() {
 
     // Guards against the switch listener firing when we set isChecked programmatically
     private var isUpdatingSwitch = false
+
+    // Holds the active toggle coroutine so rapid flips cancel the previous one
+    private var toggleJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,7 +92,8 @@ class AuthSettingsActivity : AppCompatActivity() {
 
         switchAuthEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             if (isUpdatingSwitch) return@setOnCheckedChangeListener
-            lifecycleScope.launch {
+            toggleJob?.cancel()
+            toggleJob = lifecycleScope.launch {
                 if (isChecked) {
                     val current = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
                     if (!current.isEnabled) {
@@ -102,7 +107,7 @@ class AuthSettingsActivity : AppCompatActivity() {
                         // Only show the toast when a write actually happened
                         Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                     }
-                    AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(true)
+                    withContext(Dispatchers.IO) { AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(true) }
                     btnCopy.visibility = View.VISIBLE
                     tvStatus.text = "Authentication enabled (restart app to apply)"
                 } else {
@@ -112,7 +117,7 @@ class AuthSettingsActivity : AppCompatActivity() {
                         Toast.makeText(this@AuthSettingsActivity, "Failed to save API key setting", Toast.LENGTH_LONG).show()
                         return@launch
                     }
-                    AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(false)
+                    withContext(Dispatchers.IO) { AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(false) }
                     tvApiKey.text = "(none)"
                     btnCopy.visibility = View.GONE
                     tvStatus.text = "Authentication disabled (restart app to apply)"

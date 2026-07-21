@@ -56,6 +56,6 @@ class AWPreferences(context: Context) {
     }
 
     fun setDashboardAuthEnabled(enabled: Boolean) {
-        sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).apply()
+        sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).commit()
     }
 }
