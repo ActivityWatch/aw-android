@@ -14,6 +14,11 @@ private val sectionHeaderPattern = Regex("""^\s*\[([^\]]+)]\s*(?:#.*)?$""")
 private val apiKeyPattern = Regex("""^\s*api_key\s*=\s*(['"])(.*?)\1\s*(?:#.*)?$""")
 
 fun ensureDashboardApiKey(context: Context): String {
+    // If the user explicitly disabled auth, respect that across restarts.
+    if (!AWPreferences(context).isDashboardAuthEnabled()) {
+        return ""
+    }
+
     val configFile = File(context.filesDir, CONFIG_FILE_NAME)
     val currentConfig = if (configFile.isFile) configFile.readText() else ""
     val existingApiKey = extractApiKey(currentConfig)
