@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -39,7 +40,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun openDashboardInBrowser(url: String = baseURL) {
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+        } catch (e: ActivityNotFoundException) {
+            Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
+        }
     }
 
     override fun onFragmentInteraction(item: Uri) {

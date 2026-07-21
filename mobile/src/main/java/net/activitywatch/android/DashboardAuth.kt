@@ -42,13 +42,13 @@ internal fun buildDashboardUrl(baseUrl: String, apiKey: String?): String {
     )
 
     val normalizedPath = parsedUrl.path?.takeIf { it.isNotEmpty() } ?: "/"
-    return URI(
-        parsedUrl.scheme,
-        parsedUrl.authority,
-        normalizedPath,
-        queryParts.joinToString("&"),
-        parsedUrl.fragment,
-    ).toASCIIString()
+    val rawQuery = queryParts.joinToString("&")
+    val rawFragment = parsedUrl.rawFragment
+    return buildString {
+        append(parsedUrl.scheme).append("://").append(parsedUrl.authority)
+        append(normalizedPath).append("?").append(rawQuery)
+        if (rawFragment != null) append("#").append(rawFragment)
+    }
 }
 
 internal fun extractApiKey(config: String): String? {
@@ -136,5 +136,5 @@ private fun escapeTomlString(value: String): String {
 
 private fun parseSectionName(line: String): String? {
     val match = sectionHeaderPattern.matchEntire(line) ?: return null
-    return match.groupValues[1].trim().lowercase()
+    return match.groupValues[1].trim().removeSurrounding("\"")
 }

@@ -30,4 +30,7 @@
 
     <!-- Widget strings -->
     <string name="widget_category_time_description">Shows today\'s screen time and top categories</string>
+
+    <!-- Auth strings -->
+    <string name="no_browser_found">No browser app available to open this URL</string>
 </resources>
