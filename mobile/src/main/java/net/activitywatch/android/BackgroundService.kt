@@ -53,6 +53,13 @@ class BackgroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "BackgroundService started")
 
+        // Ensure the API key is written to config.toml before the server reads it.
+        // MainActivity does this when the user launches the app normally, but
+        // BackgroundService is also started on BOOT_COMPLETED (via SyncAlarmReceiver)
+        // without ever going through MainActivity, so we need to guarantee the key
+        // exists here as well.
+        ensureDashboardApiKey(this)
+
         // Start the server
         rustInterface.startServerTask()
 
