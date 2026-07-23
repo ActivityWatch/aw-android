@@ -95,10 +95,9 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs/
 
-  # This needs to be a seperate job since fastlane update_version,
-  # fails if run concurrently (such as in build apk/aab matrix),
-  # thus we need to run it once and and reuse the results.
-  # https://github.com/fastlane/fastlane/issues/13689#issuecomment-439217502
+  # This needs to be a separate job since it's used by both build-apk and release-fastlane.
+  # versionCode is now committed to git by release.yml before the tag is pushed,
+  # so we just read it from build.gradle — no Play Console query needed here.
   get-versionCode:
     name: Get latest versionCode
     runs-on: ubuntu-latest
@@ -110,41 +109,6 @@ jobs:
       with:
         submodules: 'recursive'
 
-
-    # Ruby & Fastlane steps only run on the main repo (not fork PRs, which lack secrets).
-    # Fork PRs fall through to "Output versionCode" which reads directly from build.gradle.
-    - name: Set up Ruby and install fastlane
-      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-      uses: ruby/setup-ruby@v1
-      with:
-        bundler-cache: true
-
-    - uses: adnsio/setup-age-action@v1.2.0
-      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    - name: Load Fastlane secrets
-      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-      env:
-        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
-      run: |
-        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-        cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
-          | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
-                   -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
-        rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-
-    # Retry this, in case there are concurrent jobs, which may lead to the error:
-    #   "Google Api Error: Invalid request - This Edit has been deleted."
-    - name: Update versionCode
-      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-      uses: Wandalen/wretry.action@v3.8.0_js_action
-      with:
-        command: bundle exec fastlane update_version
-        attempt_limit: 3
-        attempt_delay: 20000
-
-    # Always reads versionCode from build.gradle.
-    # On non-fork runs, fastlane has already incremented it above.
-    # On fork PRs, this returns the current committed value as a safe fallback.
     - name: Output versionCode
       id: versionCode
       run: |
@@ -460,28 +424,6 @@ jobs:
           | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
                    -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-
-    - name: Generate changelog
-      run: |
-        VERSION_CODE=${{ needs.get-versionCode.outputs.versionCode }}
-        CHANGELOG="fastlane/metadata/android/en-US/changelogs/${VERSION_CODE}.txt"
-        if [ -f "$CHANGELOG" ]; then
-          echo "Using existing changelog: $CHANGELOG"
-          cat "$CHANGELOG"
-        else
-          # Auto-generate from git log since the previous tag, skipping chore commits
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
-          if [ -n "$PREV_TAG" ]; then
-            git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
-              | grep -v "^- chore:" \
-              > "$CHANGELOG" || true
-          fi
-          if [ ! -s "$CHANGELOG" ]; then
-            echo "- Bug fixes and stability improvements" > "$CHANGELOG"
-          fi
-          echo "Generated $CHANGELOG:"
-          cat "$CHANGELOG"
-        fi
 
     - name: Release with fastlane
       run: |

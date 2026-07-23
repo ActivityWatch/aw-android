@@ -77,13 +77,62 @@ jobs:
             }
           echo "Updated versionName to '${VERSION}'"
 
+      # version set by .ruby-version
+      - name: Set up Ruby and install fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - uses: adnsio/setup-age-action@v1.2.0
+
+      - name: Load Fastlane secrets
+        env:
+          KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+        run: |
+          printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+          cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
+            | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
+                     -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
+          rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+      - name: Update versionCode
+        uses: Wandalen/wretry.action@v3.8.0_js_action
+        with:
+          command: bundle exec fastlane update_version
+          attempt_limit: 3
+          attempt_delay: 20000
+
+      - name: Generate changelog
+        run: |
+          VERSION_CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' mobile/build.gradle | head -1)
+          CHANGELOG="fastlane/metadata/android/en-US/changelogs/${VERSION_CODE}.txt"
+          if [ -f "$CHANGELOG" ]; then
+            echo "Using existing changelog: $CHANGELOG"
+            cat "$CHANGELOG"
+          else
+            # Auto-generate from git log since the previous tag, skipping chore commits
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+            if [ -n "$PREV_TAG" ]; then
+              git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
+                | grep -v "^- chore:" \
+                > "$CHANGELOG" || true
+            fi
+            if [ ! -s "$CHANGELOG" ]; then
+              echo "- Bug fixes and stability improvements" > "$CHANGELOG"
+            fi
+            echo "Generated $CHANGELOG:"
+            cat "$CHANGELOG"
+          fi
+
       - name: Commit and tag
         run: |
           VERSION="${{ inputs.version }}"
+          VERSION_CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' mobile/build.gradle | head -1)
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add mobile/build.gradle
-          git commit -m "chore: bump versionName to ${VERSION}"
+          git add fastlane/metadata/android/en-US/changelogs/
+          git commit -m "chore: bump versionName to ${VERSION}, versionCode to ${VERSION_CODE}"
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git push origin HEAD:master
           git push origin "v${VERSION}"
