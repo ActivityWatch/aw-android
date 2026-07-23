@@ -408,6 +408,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Download APK & AAB
       uses: actions/download-artifact@v4
@@ -468,13 +470,14 @@ jobs:
           cat "$CHANGELOG"
         else
           # Auto-generate from git log since the previous tag, skipping chore commits
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
           if [ -n "$PREV_TAG" ]; then
             git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
               | grep -v "^- chore:" \
-              > "$CHANGELOG"
-          else
-            echo "- Initial release" > "$CHANGELOG"
+              > "$CHANGELOG" || true
+          fi
+          if [ ! -s "$CHANGELOG" ]; then
+            echo "- Bug fixes and stability improvements" > "$CHANGELOG"
           fi
           echo "Generated $CHANGELOG:"
           cat "$CHANGELOG"
