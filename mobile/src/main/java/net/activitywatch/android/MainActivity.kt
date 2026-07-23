@@ -76,11 +76,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             return
         }
 
-        // Request POST_NOTIFICATIONS on Android 13+ so the foreground service notification
-        // is visible. Without this the OS silently suppresses the notification channel.
+        // Request POST_NOTIFICATIONS once on Android 13+ so the foreground service
+        // notification is visible without nagging users who decline the prompt.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
+                != PackageManager.PERMISSION_GRANTED &&
+            !prefs.hasRequestedNotificationPermission()
+        ) {
+            prefs.setNotificationPermissionRequested()
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 

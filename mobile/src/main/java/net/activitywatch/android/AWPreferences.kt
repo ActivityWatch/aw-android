@@ -37,6 +37,14 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putBoolean("hasMigratedHostname", true).apply()
     }
 
+    fun hasRequestedNotificationPermission(): Boolean {
+        return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
+    }
+
+    fun setNotificationPermissionRequested() {
+        sharedPreferences.edit().putBoolean("hasRequestedNotificationPermission", true).apply()
+    }
+
     // Sync is off by default; user must explicitly enable it once a sync directory
     // is configured (e.g. via Storage Access Framework).
     fun isSyncEnabled(): Boolean {
