@@ -1,0 +1,8 @@
+v0.14.0
+
+- Multi-browser web URL tracking (Chrome, Firefox, Samsung Browser, Opera, Edge)
+- Updated to target Android 15 (API 35)
+- Fixed file export (CSV/JSON) via WebAppInterface + FileProvider
+- Fixed auth token persistence across restarts
+- Disabled automatic sync by default
+- Bug fixes and stability improvements

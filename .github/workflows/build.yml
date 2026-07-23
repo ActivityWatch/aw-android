@@ -403,7 +403,7 @@ jobs:
     #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
   release-fastlane:
-    needs: [build-apk, test]
+    needs: [build-apk, test, get-versionCode]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
@@ -458,6 +458,27 @@ jobs:
           | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
                    -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+    - name: Generate changelog
+      run: |
+        VERSION_CODE=${{ needs.get-versionCode.outputs.versionCode }}
+        CHANGELOG="fastlane/metadata/android/en-US/changelogs/${VERSION_CODE}.txt"
+        if [ -f "$CHANGELOG" ]; then
+          echo "Using existing changelog: $CHANGELOG"
+          cat "$CHANGELOG"
+        else
+          # Auto-generate from git log since the previous tag, skipping chore commits
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
+              | grep -v "^- chore:" \
+              > "$CHANGELOG"
+          else
+            echo "- Initial release" > "$CHANGELOG"
+          fi
+          echo "Generated $CHANGELOG:"
+          cat "$CHANGELOG"
+        fi
 
     - name: Release with fastlane
       run: |
