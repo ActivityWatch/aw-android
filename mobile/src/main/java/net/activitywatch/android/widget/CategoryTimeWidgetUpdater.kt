@@ -21,11 +21,12 @@ import com.jakewharton.threetenabp.AndroidThreeTen
 import org.json.JSONArray
 import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
+import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
 
 private const val TAG = "CategoryTimeWidget"
-private const val DEFAULT_START_OF_DAY_HOUR = 4  // matches aw-webui default "04:00"
+private val DEFAULT_START_OF_DAY = LocalTime.of(4, 0)  // matches aw-webui default "04:00"
 
 // Bar chart dimensions
 private const val BAR_WIDTH = 400
@@ -230,39 +231,42 @@ object CategoryTimeWidgetUpdater {
         }
 
         /**
-         * Fetch the startOfDay hour from the AW server settings API.
-         * Returns the hour component (0–23). Falls back to DEFAULT_START_OF_DAY_HOUR
-         * if the server is unavailable or the setting is unset, matching aw-webui's default.
+         * Fetch the startOfDay boundary from the AW server settings API.
+         * Falls back to DEFAULT_START_OF_DAY if the server is unavailable or the setting is unset.
          */
-        private fun fetchStartOfDayHour(): Int {
+        private fun fetchStartOfDay(): LocalTime {
             return try {
                 val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/startOfDay")
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 1000
                 conn.readTimeout = 1000
                 if (conn.responseCode == 200) {
-                    parseStartOfDayHour(conn.inputStream.bufferedReader().readText())
+                    parseStartOfDay(conn.inputStream.bufferedReader().readText())
                 } else {
                     Log.d(TAG, "startOfDay setting unavailable (HTTP ${conn.responseCode}), using default")
-                    DEFAULT_START_OF_DAY_HOUR
+                    DEFAULT_START_OF_DAY
                 }
             } catch (e: Exception) {
                 Log.d(TAG, "Could not fetch startOfDay setting, using default: ${e.message}")
-                DEFAULT_START_OF_DAY_HOUR
+                DEFAULT_START_OF_DAY
             }
         }
 
         /**
-         * Parse the server's startOfDay JSON response into an hour integer.
-         * Server returns null (unset) or a string like "04:00".
+         * Parse the server's startOfDay JSON response into a LocalTime.
+         * Server returns null (unset) or a quoted string like "04:00" or "04:30".
          */
-        private fun parseStartOfDayHour(response: String): Int {
+        internal fun parseStartOfDay(response: String): LocalTime {
             val v = response.trim()
             return when {
-                v == "null" -> DEFAULT_START_OF_DAY_HOUR
-                v.startsWith("\"") -> v.trim('"').split(":").firstOrNull()?.toIntOrNull()
-                    ?: DEFAULT_START_OF_DAY_HOUR
-                else -> v.toIntOrNull() ?: DEFAULT_START_OF_DAY_HOUR
+                v == "null" -> DEFAULT_START_OF_DAY
+                v.startsWith("\"") -> {
+                    val parts = v.trim('"').split(":")
+                    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return DEFAULT_START_OF_DAY
+                    val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    LocalTime.of(hour, minute)
+                }
+                else -> DEFAULT_START_OF_DAY
             }
         }
 
@@ -273,17 +277,19 @@ object CategoryTimeWidgetUpdater {
         private fun getCategoryTimesToday(ri: RustInterface): List<Pair<String, Long>> {
             val zone = ZoneId.systemDefault()
             val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-            val startOfDayHour = fetchStartOfDayHour()
+            val startOfDayTime = fetchStartOfDay()
 
-            // Match aw-webui's day boundary: if current hour < startOfDayHour we're still
-            // in the previous day's period (e.g. 3 AM with startOfDay=4 → "yesterday")
-            val now = LocalDateTime.now(zone)
-            val today = if (now.hour < startOfDayHour) LocalDate.now().minusDays(1) else LocalDate.now()
-            val startOfDay = today.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
+            // Match aw-webui's day boundary: if current time is before startOfDay we're still
+            // in the previous day's period (e.g. 3:45 AM with startOfDay=04:00 → "yesterday")
+            val nowTime = LocalTime.now(zone)
+            val today = if (nowTime < startOfDayTime) LocalDate.now().minusDays(1) else LocalDate.now()
+            val startOfDay = today.atStartOfDay(zone)
+                .plusHours(startOfDayTime.hour.toLong())
+                .plusMinutes(startOfDayTime.minute.toLong())
             val endOfDay = startOfDay.plusDays(1)
 
             val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
-            Log.d(TAG, "Querying for timeperiod: $timeperiod (startOfDay=$startOfDayHour:00)")
+            Log.d(TAG, "Querying for timeperiod: $timeperiod (startOfDay=${startOfDayTime})")
 
             val result = ri.androidQuery(timeperiod)
             Log.d(TAG, "Query result length: ${result.length}")
