@@ -104,7 +104,26 @@ class BackgroundService : Service() {
         // Schedule event parsing
         scheduleEventParsing()
 
+        // Schedule activity-time notifications (aw-notify)
+        scheduleNotifyChecks()
+
         return START_STICKY
+    }
+
+    private fun scheduleNotifyChecks() {
+        val notifyRequest = androidx.work.PeriodicWorkRequest.Builder(
+            net.activitywatch.android.workers.NotifyWorker::class.java,
+            15, java.util.concurrent.TimeUnit.MINUTES
+        )
+            .addTag("NotifyWorker")
+            .build()
+
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "NotifyWorker",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            notifyRequest
+        )
+        Log.i(TAG, "Scheduled activity-time notification worker (every 15 minutes)")
     }
 
     private fun scheduleEventParsing() {
