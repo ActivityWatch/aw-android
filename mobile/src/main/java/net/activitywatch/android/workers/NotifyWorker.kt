@@ -39,6 +39,9 @@ private val DEFAULT_ALERTS = listOf(
     CategoryAlert("YouTube",  "📺 YouTube", listOf(15, 30, 60)),
 )
 
+internal fun logicalDayDate(now: LocalDateTime, startOfDayHour: Int): LocalDate =
+    if (now.hour < startOfDayHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
+
 class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
@@ -56,8 +59,11 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         }
 
         return try {
-            val categorySeconds = getCategorySecondsToday(ri)
-            checkAndNotify(categorySeconds)
+            val zone = ZoneId.systemDefault()
+            val startOfDayHour = fetchStartOfDayHour()
+            val now = LocalDateTime.now(zone)
+            val categorySeconds = getCategorySecondsToday(ri, now, zone, startOfDayHour)
+            checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour))
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error checking notification thresholds", e)
@@ -65,14 +71,15 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         }
     }
 
-    private fun getCategorySecondsToday(ri: RustInterface): Map<String?, Double> {
-        val zone = ZoneId.systemDefault()
+    private fun getCategorySecondsToday(
+        ri: RustInterface,
+        now: LocalDateTime,
+        zone: ZoneId,
+        startOfDayHour: Int,
+    ): Map<String?, Double> {
         val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-        val startOfDayHour = fetchStartOfDayHour()
-
-        val now = LocalDateTime.now(zone)
-        val today = if (now.hour < startOfDayHour) LocalDate.now().minusDays(1) else LocalDate.now()
-        val startOfDay = today.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
+        val logicalDate = logicalDayDate(now, startOfDayHour)
+        val startOfDay = logicalDate.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
         val endOfDay = startOfDay.plusDays(1)
 
         val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
@@ -111,18 +118,18 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         return categories
     }
 
-    private fun checkAndNotify(categorySeconds: Map<String?, Double>) {
+    private fun checkAndNotify(categorySeconds: Map<String?, Double>, logicalDate: LocalDate) {
         ensureNotificationChannel()
 
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val today = LocalDate.now().toString()
+        val dayKey = logicalDate.toString()
 
         for (alert in DEFAULT_ALERTS) {
             val seconds = categorySeconds[alert.category] ?: 0.0
             val minutes = seconds / 60.0
 
-            // Suppress re-firing thresholds already triggered today
-            val prefKey = "triggered_${alert.category}_$today"
+            // Suppress re-firing thresholds already triggered this logical day
+            val prefKey = "triggered_${alert.category}_$dayKey"
             val alreadyTriggeredMinutes = prefs.getInt(prefKey, 0)
 
             // Find the highest newly-crossed threshold
