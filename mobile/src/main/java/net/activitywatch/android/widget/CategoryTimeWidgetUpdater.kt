@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
+import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import com.jakewharton.threetenabp.AndroidThreeTen
@@ -24,6 +25,7 @@ import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
 
 private const val TAG = "CategoryTimeWidget"
+private const val DEFAULT_START_OF_DAY_HOUR = 4  // matches aw-webui default "04:00"
 
 // Bar chart dimensions
 private const val BAR_WIDTH = 400
@@ -133,7 +135,7 @@ object CategoryTimeWidgetUpdater {
                 views.setTextViewText(R.id.widget_minutes, "0")
             }
 
-            // Set up tap-to-refresh on the whole widget
+            // Single tap on widget body → refresh
             val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
                 action = ACTION_REFRESH
             }
@@ -144,6 +146,18 @@ object CategoryTimeWidgetUpdater {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_root, refreshPendingIntent)
+
+            // Open-app button → launch MainActivity
+            val launchIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val launchPendingIntent = PendingIntent.getActivity(
+                context,
+                2,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_open_button, launchPendingIntent)
 
             // Ensure loading indicator is hidden
             views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
@@ -216,21 +230,61 @@ object CategoryTimeWidgetUpdater {
         }
 
         /**
-         * Query today's category times using androidQuery (same as MainActivity.onCreate)
+         * Fetch the startOfDay hour from the AW server settings API.
+         * Returns the hour component (0–23). Falls back to DEFAULT_START_OF_DAY_HOUR
+         * if the server is unavailable or the setting is unset, matching aw-webui's default.
+         */
+        private fun fetchStartOfDayHour(): Int {
+            return try {
+                val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/startOfDay")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 1000
+                conn.readTimeout = 1000
+                if (conn.responseCode == 200) {
+                    parseStartOfDayHour(conn.inputStream.bufferedReader().readText())
+                } else {
+                    Log.d(TAG, "startOfDay setting unavailable (HTTP ${conn.responseCode}), using default")
+                    DEFAULT_START_OF_DAY_HOUR
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Could not fetch startOfDay setting, using default: ${e.message}")
+                DEFAULT_START_OF_DAY_HOUR
+            }
+        }
+
+        /**
+         * Parse the server's startOfDay JSON response into an hour integer.
+         * Server returns null (unset) or a string like "04:00".
+         */
+        private fun parseStartOfDayHour(response: String): Int {
+            val v = response.trim()
+            return when {
+                v == "null" -> DEFAULT_START_OF_DAY_HOUR
+                v.startsWith("\"") -> v.trim('"').split(":").firstOrNull()?.toIntOrNull()
+                    ?: DEFAULT_START_OF_DAY_HOUR
+                else -> v.toIntOrNull() ?: DEFAULT_START_OF_DAY_HOUR
+            }
+        }
+
+        /**
+         * Query today's category times, using the same day boundary as aw-webui.
+         * Reads startOfDay from the AW server settings so the widget matches the Activity view.
          */
         private fun getCategoryTimesToday(ri: RustInterface): List<Pair<String, Long>> {
-            val today = LocalDate.now()
             val zone = ZoneId.systemDefault()
             val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+            val startOfDayHour = fetchStartOfDayHour()
 
-            val startOfDay = today.atStartOfDay(zone)
-            val endOfDay = today.plusDays(1).atStartOfDay(zone)
+            // Match aw-webui's day boundary: if current hour < startOfDayHour we're still
+            // in the previous day's period (e.g. 3 AM with startOfDay=4 → "yesterday")
+            val now = LocalDateTime.now(zone)
+            val today = if (now.hour < startOfDayHour) LocalDate.now().minusDays(1) else LocalDate.now()
+            val startOfDay = today.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
+            val endOfDay = startOfDay.plusDays(1)
 
-            // Build time interval in the same format as RustInterface.test()
             val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
-            Log.d(TAG, "Querying for timeperiod: $timeperiod")
+            Log.d(TAG, "Querying for timeperiod: $timeperiod (startOfDay=$startOfDayHour:00)")
 
-            // Use androidQuery - the same function called in MainActivity.onCreate via RustInterface.test()
             val result = ri.androidQuery(timeperiod)
             Log.d(TAG, "Query result length: ${result.length}")
 
