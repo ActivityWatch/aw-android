@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.util.Log
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.CompoundButton
@@ -13,6 +14,8 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
+
+private const val TAG = "SyncSettingsActivity"
 
 class SyncSettingsActivity : AppCompatActivity() {
 
@@ -29,9 +32,32 @@ class SyncSettingsActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 val uri: Uri = result.data?.data ?: return@registerForActivityResult
-                // Take persistable permission so we can access this URI after reboot
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                contentResolver.takePersistableUriPermission(uri, flags)
+
+                // Release the old grant before persisting the new one to avoid
+                // accumulating stale grants against Android's bounded persisted-grant allowance.
+                val oldUriStr = prefs.getSyncDirUri()
+                if (oldUriStr != null) {
+                    try {
+                        val oldUri = Uri.parse(oldUriStr)
+                        val releaseFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Could not release old URI grant: ${e.message}")
+                    }
+                }
+
+                // Only persist the subset of flags the provider actually granted — passing
+                // modes the provider didn't offer causes SecurityException.
+                val grantedFlags = result.data?.flags ?: 0
+                val persistableFlags = grantedFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                if (persistableFlags != 0) {
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, persistableFlags)
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Could not take persistable permission: ${e.message}")
+                    }
+                }
+
                 prefs.setSyncDirUri(uri.toString())
                 updateSyncDirStatus()
                 Toast.makeText(this, "Sync directory configured", Toast.LENGTH_SHORT).show()
@@ -58,6 +84,11 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             if (isUpdatingSwitch) return@setOnCheckedChangeListener
             prefs.setSyncEnabled(isChecked)
+            // Notify the running BackgroundService so the scheduler starts/stops immediately
+            // rather than waiting for the next service restart.
+            startService(Intent(this, BackgroundService::class.java).apply {
+                action = BackgroundService.ACTION_SYNC_ENABLED_CHANGED
+            })
         }
 
         btnChooseDir.setOnClickListener {

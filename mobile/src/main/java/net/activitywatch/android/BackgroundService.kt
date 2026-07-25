@@ -25,6 +25,12 @@ private const val NOTIFICATION_ID = 1
 
 class BackgroundService : Service() {
 
+    companion object {
+        // Sent by SyncSettingsActivity when the user toggles sync on/off so the
+        // running scheduler reflects the new setting immediately without a restart.
+        const val ACTION_SYNC_ENABLED_CHANGED = "net.activitywatch.android.SYNC_ENABLED_CHANGED"
+    }
+
     private lateinit var syncScheduler: SyncScheduler
     private lateinit var rustInterface: RustInterface
 
@@ -51,6 +57,13 @@ class BackgroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SYNC_ENABLED_CHANGED) {
+            val enabled = AWPreferences(this).isSyncEnabled()
+            Log.i(TAG, "Sync enabled changed to $enabled; ${if (enabled) "starting" else "stopping"} scheduler")
+            if (enabled) syncScheduler.start() else syncScheduler.stop()
+            return START_STICKY
+        }
+
         Log.i(TAG, "BackgroundService started")
 
         // Ensure the API key is written to config.toml before the server reads it.
