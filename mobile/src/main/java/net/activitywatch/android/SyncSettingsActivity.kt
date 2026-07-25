@@ -38,16 +38,22 @@ class SyncSettingsActivity : AppCompatActivity() {
                 val grantedFlags = result.data?.flags ?: 0
                 val persistableFlags = grantedFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
 
+                // If no persistable flags were granted at all, the URI won't survive a reboot.
+                // Abort so the previously-working directory config remains intact.
+                if (persistableFlags == 0) {
+                    Log.w(TAG, "Document provider granted no persistable flags — aborting directory update")
+                    Toast.makeText(this, "Could not secure persistent access to selected directory", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+
                 // Take the NEW grant BEFORE releasing the old one. If takePersistableUriPermission
                 // fails, we abort early so the previously-working grant remains intact.
-                if (persistableFlags != 0) {
-                    try {
-                        contentResolver.takePersistableUriPermission(uri, persistableFlags)
-                    } catch (e: SecurityException) {
-                        Log.w(TAG, "Could not take persistable permission: ${e.message}")
-                        Toast.makeText(this, "Could not secure persistent access to selected directory", Toast.LENGTH_SHORT).show()
-                        return@registerForActivityResult
-                    }
+                try {
+                    contentResolver.takePersistableUriPermission(uri, persistableFlags)
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Could not take persistable permission: ${e.message}")
+                    Toast.makeText(this, "Could not secure persistent access to selected directory", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
                 }
 
                 // New grant secured — now release the old one to stay within Android's bounded
