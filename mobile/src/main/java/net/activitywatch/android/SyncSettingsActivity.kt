@@ -79,7 +79,6 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled.isChecked = prefs.isSyncEnabled()
         isUpdatingSwitch = false
         updateSyncDirStatus()
-        updateStatus()
     }
 
     private fun updateSyncDirStatus() {
