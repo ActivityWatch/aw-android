@@ -33,8 +33,25 @@ class SyncSettingsActivity : AppCompatActivity() {
             if (result.resultCode == Activity.RESULT_OK) {
                 val uri: Uri = result.data?.data ?: return@registerForActivityResult
 
-                // Release the old grant before persisting the new one to avoid
-                // accumulating stale grants against Android's bounded persisted-grant allowance.
+                // Only persist the subset of flags the provider actually granted — passing
+                // modes the provider didn't offer causes SecurityException.
+                val grantedFlags = result.data?.flags ?: 0
+                val persistableFlags = grantedFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+
+                // Take the NEW grant BEFORE releasing the old one. If takePersistableUriPermission
+                // fails, we abort early so the previously-working grant remains intact.
+                if (persistableFlags != 0) {
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, persistableFlags)
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Could not take persistable permission: ${e.message}")
+                        Toast.makeText(this, "Could not secure persistent access to selected directory", Toast.LENGTH_SHORT).show()
+                        return@registerForActivityResult
+                    }
+                }
+
+                // New grant secured — now release the old one to stay within Android's bounded
+                // persisted-grant allowance.
                 val oldUriStr = prefs.getSyncDirUri()
                 if (oldUriStr != null) {
                     try {
@@ -43,18 +60,6 @@ class SyncSettingsActivity : AppCompatActivity() {
                         contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
                     } catch (e: SecurityException) {
                         Log.w(TAG, "Could not release old URI grant: ${e.message}")
-                    }
-                }
-
-                // Only persist the subset of flags the provider actually granted — passing
-                // modes the provider didn't offer causes SecurityException.
-                val grantedFlags = result.data?.flags ?: 0
-                val persistableFlags = grantedFlags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                if (persistableFlags != 0) {
-                    try {
-                        contentResolver.takePersistableUriPermission(uri, persistableFlags)
-                    } catch (e: SecurityException) {
-                        Log.w(TAG, "Could not take persistable permission: ${e.message}")
                     }
                 }
 
