@@ -56,16 +56,19 @@ class SyncSettingsActivity : AppCompatActivity() {
                     return@registerForActivityResult
                 }
 
-                // New grant secured — now release the old one to stay within Android's bounded
-                // persisted-grant allowance.
+                // New grant secured — now release a different old URI to stay within Android's
+                // bounded persisted-grant allowance. Reselecting the current directory must not
+                // release the grant we just took for that same URI.
                 val oldUriStr = prefs.getSyncDirUri()
                 if (oldUriStr != null) {
-                    try {
-                        val oldUri = Uri.parse(oldUriStr)
-                        val releaseFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
-                    } catch (e: SecurityException) {
-                        Log.w(TAG, "Could not release old URI grant: ${e.message}")
+                    val oldUri = Uri.parse(oldUriStr)
+                    if (oldUri != uri) {
+                        try {
+                            val releaseFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
+                        } catch (e: SecurityException) {
+                            Log.w(TAG, "Could not release old URI grant: ${e.message}")
+                        }
                     }
                 }
 
