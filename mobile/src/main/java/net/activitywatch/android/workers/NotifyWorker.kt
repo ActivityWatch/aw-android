@@ -25,7 +25,7 @@ private const val DEFAULT_START_OF_DAY_HOUR = 4
 
 // Mirrors desktop aw-notify CategoryAlert semantics.
 // positive=true → "Goal reached!" title; false → "Time spent"
-private data class CategoryAlert(
+internal data class CategoryAlert(
     val category: String?,   // null = aggregate "All" time
     val label: String,
     val thresholdMinutes: List<Int>,
