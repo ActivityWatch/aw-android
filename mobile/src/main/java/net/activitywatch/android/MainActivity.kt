@@ -149,6 +149,10 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 startActivity(Intent(this, AuthSettingsActivity::class.java))
                 true
             }
+            R.id.action_sync_settings -> {
+                startActivity(Intent(this, SyncSettingsActivity::class.java))
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }

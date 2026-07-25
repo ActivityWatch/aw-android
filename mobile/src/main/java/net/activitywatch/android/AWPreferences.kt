@@ -55,6 +55,16 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putBoolean("syncEnabled", enabled).apply()
     }
 
+    // SAF URI for the user-chosen sync directory (content:// URI string, or null if not configured).
+    // The URI has persisted permission granted via contentResolver.takePersistableUriPermission().
+    fun getSyncDirUri(): String? {
+        return sharedPreferences.getString("syncDirUri", null)
+    }
+
+    fun setSyncDirUri(uri: String?) {
+        sharedPreferences.edit().putString("syncDirUri", uri).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the

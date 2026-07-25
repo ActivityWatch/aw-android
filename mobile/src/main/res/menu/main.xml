@@ -5,4 +5,8 @@
           android:title="@string/action_settings"
           android:orderInCategory="100"
           app:showAsAction="never"/>
+    <item android:id="@+id/action_sync_settings"
+          android:title="Sync Settings"
+          android:orderInCategory="101"
+          app:showAsAction="never"/>
 </menu>
