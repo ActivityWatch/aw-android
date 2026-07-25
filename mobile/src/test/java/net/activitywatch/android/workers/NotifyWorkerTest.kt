@@ -54,4 +54,24 @@ class NotifyWorkerTest {
         ]"""
         assertEquals(2, parseAlerts(json).size)
     }
+
+    @Test
+    fun alertConfigHash_differsWhenThresholdsChange() {
+        val alert60  = CategoryAlert("Work", "Work", listOf(60, 120), false)
+        val alert30  = CategoryAlert("Work", "Work", listOf(30, 60),  false)
+        val alertPos = CategoryAlert("Work", "Work", listOf(60, 120), true)
+
+        // Same config → stable pref key (no spurious re-fires)
+        assertEquals(alertConfigHash(alert60), alertConfigHash(alert60))
+
+        // Different thresholds → different hash → old triggered state ignored
+        assert(alertConfigHash(alert60) != alertConfigHash(alert30)) {
+            "Changing thresholds must change the pref-key hash to reset daily state"
+        }
+
+        // Different positive flag → different hash
+        assert(alertConfigHash(alert60) != alertConfigHash(alertPos)) {
+            "Changing positive flag must change the pref-key hash"
+        }
+    }
 }

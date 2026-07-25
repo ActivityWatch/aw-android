@@ -55,6 +55,13 @@ internal fun parseAlerts(json: String): List<CategoryAlert> {
     }
 }
 
+// Include thresholds in the pref key so state resets when configuration changes.
+// A lowered threshold mid-day would otherwise be silently skipped because the old
+// triggered value is higher than all new thresholds.
+internal fun alertConfigHash(alert: CategoryAlert): Int =
+    (alert.thresholdMinutes.toString() + alert.positive.toString())
+        .hashCode().and(0x3FFFFFFF)
+
 class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
@@ -146,8 +153,11 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
             val seconds = categorySeconds[alert.category] ?: 0.0
             val minutes = seconds / 60.0
 
-            // Suppress re-firing thresholds already triggered this logical day
-            val prefKey = "triggered_${alert.category}_$dayKey"
+            // Suppress re-firing thresholds already triggered this logical day.
+            // Config hash ensures a new lower threshold isn't silently skipped when
+            // the user reconfigures mid-day — the new hash produces a fresh key.
+            val configHash = alertConfigHash(alert)
+            val prefKey = "triggered_${alert.category}_${configHash}_$dayKey"
             val alreadyTriggeredMinutes = prefs.getInt(prefKey, 0)
 
             // Find the highest newly-crossed threshold
