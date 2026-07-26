@@ -25,7 +25,7 @@ private const val DEFAULT_START_OF_DAY_HOUR = 4
 
 // Mirrors desktop aw-notify CategoryAlert semantics.
 // positive=true → "Goal reached!" title; false → "Time spent"
-private data class CategoryAlert(
+internal data class CategoryAlert(
     val category: String?,   // null = aggregate "All" time
     val label: String,
     val thresholdMinutes: List<Int>,
@@ -41,6 +41,26 @@ private val DEFAULT_ALERTS = listOf(
 
 internal fun logicalDayDate(now: LocalDateTime, startOfDayHour: Int): LocalDate =
     if (now.hour < startOfDayHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
+
+internal fun parseAlerts(json: String): List<CategoryAlert> {
+    val arr = JSONArray(json)
+    return (0 until arr.length()).mapNotNull { i ->
+        val obj = arr.getJSONObject(i)
+        val category = if (obj.isNull("category")) null else obj.optString("category").ifEmpty { null }
+        val label = obj.optString("label").ifEmpty { return@mapNotNull null }
+        val thresholdsArr = obj.optJSONArray("thresholdMinutes") ?: return@mapNotNull null
+        val thresholds = (0 until thresholdsArr.length()).map { thresholdsArr.getInt(it) }
+        val positive = obj.optBoolean("positive", false)
+        CategoryAlert(category, label, thresholds, positive)
+    }
+}
+
+// Include thresholds in the pref key so state resets when configuration changes.
+// A lowered threshold mid-day would otherwise be silently skipped because the old
+// triggered value is higher than all new thresholds.
+internal fun alertConfigHash(alert: CategoryAlert): Int =
+    (alert.thresholdMinutes.toString() + alert.positive.toString())
+        .hashCode().and(0x3FFFFFFF)
 
 class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
@@ -63,7 +83,8 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
             val startOfDayHour = fetchStartOfDayHour()
             val now = LocalDateTime.now(zone)
             val categorySeconds = getCategorySecondsToday(ri, now, zone, startOfDayHour)
-            checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour))
+            val alerts = fetchAlerts()
+            checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour), alerts)
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error checking notification thresholds", e)
@@ -118,18 +139,25 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         return categories
     }
 
-    private fun checkAndNotify(categorySeconds: Map<String?, Double>, logicalDate: LocalDate) {
+    private fun checkAndNotify(
+        categorySeconds: Map<String?, Double>,
+        logicalDate: LocalDate,
+        alerts: List<CategoryAlert> = DEFAULT_ALERTS,
+    ) {
         ensureNotificationChannel()
 
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val dayKey = logicalDate.toString()
 
-        for (alert in DEFAULT_ALERTS) {
+        for (alert in alerts) {
             val seconds = categorySeconds[alert.category] ?: 0.0
             val minutes = seconds / 60.0
 
-            // Suppress re-firing thresholds already triggered this logical day
-            val prefKey = "triggered_${alert.category}_$dayKey"
+            // Suppress re-firing thresholds already triggered this logical day.
+            // Config hash ensures a new lower threshold isn't silently skipped when
+            // the user reconfigures mid-day — the new hash produces a fresh key.
+            val configHash = alertConfigHash(alert)
+            val prefKey = "triggered_${alert.category}_${configHash}_$dayKey"
             val alreadyTriggeredMinutes = prefs.getInt(prefKey, 0)
 
             // Find the highest newly-crossed threshold
@@ -191,6 +219,25 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
         } catch (e: Exception) {
             DEFAULT_START_OF_DAY_HOUR
+        }
+    }
+
+    private fun fetchAlerts(): List<CategoryAlert> {
+        return try {
+            val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/aw-notify")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 1_000
+            conn.readTimeout = 1_000
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader().readText().trim()
+                if (text == "null" || text.isBlank()) DEFAULT_ALERTS
+                else parseAlerts(text).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+            } else {
+                DEFAULT_ALERTS
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not fetch alert config from server, using defaults")
+            DEFAULT_ALERTS
         }
     }
 

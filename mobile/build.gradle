@@ -102,6 +102,7 @@ dependencies {
     implementation 'com.jakewharton.threetenabp:threetenabp:1.4.9'
 
     testImplementation "junit:junit:4.13.2"
+    testImplementation 'org.json:json:20231013'
     androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
     androidTestImplementation "androidx.test:runner:$androidXTestVersion"
     androidTestImplementation "androidx.test:rules:$androidXTestVersion"
