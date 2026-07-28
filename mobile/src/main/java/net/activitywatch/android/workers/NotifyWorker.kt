@@ -33,10 +33,10 @@ internal data class CategoryAlert(
 )
 
 private val DEFAULT_ALERTS = listOf(
-    CategoryAlert(null,       "All",        listOf(60, 120, 240, 360, 480)),
-    CategoryAlert("Work",     "💼 Work",    listOf(15, 30, 60, 120, 240), positive = true),
-    CategoryAlert("Twitter",  "🐦 Twitter", listOf(15, 30, 60)),
-    CategoryAlert("YouTube",  "📺 YouTube", listOf(15, 30, 60)),
+    CategoryAlert(null,       "All",        listOf(60, 240, 480)),
+    CategoryAlert("Work",     "💼 Work",    listOf(60, 120, 240), positive = true),
+    CategoryAlert("Twitter",  "🐦 Twitter", listOf(15, 60)),
+    CategoryAlert("YouTube",  "📺 YouTube", listOf(30, 60)),
 )
 
 internal fun logicalDayDate(now: LocalDateTime, startOfDayHour: Int): LocalDate =
