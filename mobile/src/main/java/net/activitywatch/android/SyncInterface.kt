@@ -128,12 +128,20 @@ class SyncInterface(context: Context) {
                     json.getString("error")
                 }
 
-                // Copy sync files to SAF directory on the background thread — IO must not run on main.
-                if (success) copySyncFilesToSafDir()
+                // Deliver callback first — AlarmReceiver.pendingResult.finish() must not
+                // be blocked by subsequent SAF I/O.
+                Log.i(TAG, "$operation completed: success=$success, message=$message")
+                handler.post { callback(success, message) }
 
-                handler.post {
-                    Log.i(TAG, "$operation completed: success=$success, message=$message")
-                    callback(success, message)
+                // Mirror to the SAF directory on the background thread after the callback
+                // has been posted. Any failure here is non-fatal and must not affect the
+                // reported sync outcome.
+                if (success) {
+                    try {
+                        copySyncFilesToSafDir()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "SAF mirror failed (non-fatal): ${e.message}")
+                    }
                 }
             } catch (e: Exception) {
                 val errorMsg = "Exception: ${e.message}"
@@ -181,9 +189,13 @@ class SyncInterface(context: Context) {
                     skipped++
                     continue
                 }
-                appContext.contentResolver.openOutputStream(dest.uri, "wt")?.use { out ->
-                    FileInputStream(file).use { inp -> inp.copyTo(out) }
+                val out = appContext.contentResolver.openOutputStream(dest.uri, "wt")
+                if (out == null) {
+                    Log.w(TAG, "Null output stream for ${file.name} in SAF dir")
+                    skipped++
+                    continue
                 }
+                out.use { FileInputStream(file).use { inp -> inp.copyTo(it) } }
                 copied++
             } catch (e: IOException) {
                 Log.w(TAG, "Failed to copy ${file.name} to SAF dir: ${e.message}")
