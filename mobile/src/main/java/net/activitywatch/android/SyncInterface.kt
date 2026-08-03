@@ -94,16 +94,32 @@ class SyncInterface(context: Context) {
     
     // Async wrapper for syncBoth
     fun syncBothAsync(callback: (Boolean, String) -> Unit) {
+        syncBothAsync(mirrorBeforeCallback = false, callback)
+    }
+
+    // Alarm-triggered syncs must retain goAsync() until the SAF mirror completes.
+    fun syncBothForAlarmAsync(callback: (Boolean, String) -> Unit) {
+        syncBothAsync(mirrorBeforeCallback = true, callback)
+    }
+
+    private fun syncBothAsync(
+        mirrorBeforeCallback: Boolean,
+        callback: (Boolean, String) -> Unit
+    ) {
         if (!syncInFlight.compareAndSet(false, true)) {
             Log.i(TAG, "Sync already in flight; skipping concurrent call")
             callback(false, "skipped: sync already in flight")
             return
         }
         val hostname = getDeviceName()
-        performSyncAsync("Full Sync", { success, message ->
-            syncInFlight.set(false)
-            callback(success, message)
-        }) {
+        performSyncAsync(
+            "Full Sync",
+            { success, message ->
+                syncInFlight.set(false)
+                callback(success, message)
+            },
+            mirrorBeforeCallback
+        ) {
             syncBoth(5600, hostname)
         }
     }
@@ -111,6 +127,7 @@ class SyncInterface(context: Context) {
     private fun performSyncAsync(
         operation: String,
         callback: (Boolean, String) -> Unit,
+        mirrorBeforeCallback: Boolean = false,
         syncFn: () -> String
     ) {
         val executor = Executors.newSingleThreadExecutor()
@@ -128,20 +145,15 @@ class SyncInterface(context: Context) {
                     json.getString("error")
                 }
 
-                // Deliver callback first — AlarmReceiver.pendingResult.finish() must not
-                // be blocked by subsequent SAF I/O.
+                // Alarm-triggered syncs keep the BroadcastReceiver's goAsync() result open
+                // until mirroring finishes. Other callers get the native result immediately.
                 Log.i(TAG, "$operation completed: success=$success, message=$message")
+                if (success && mirrorBeforeCallback) {
+                    mirrorSyncFilesToSafDir()
+                }
                 handler.post { callback(success, message) }
-
-                // Mirror to the SAF directory on the background thread after the callback
-                // has been posted. Any failure here is non-fatal and must not affect the
-                // reported sync outcome.
-                if (success) {
-                    try {
-                        copySyncFilesToSafDir()
-                    } catch (e: Exception) {
-                        Log.w(TAG, "SAF mirror failed (non-fatal): ${e.message}")
-                    }
+                if (success && !mirrorBeforeCallback) {
+                    mirrorSyncFilesToSafDir()
                 }
             } catch (e: Exception) {
                 val errorMsg = "Exception: ${e.message}"
@@ -152,6 +164,14 @@ class SyncInterface(context: Context) {
             } finally {
                 executor.shutdown()
             }
+        }
+    }
+
+    private fun mirrorSyncFilesToSafDir() {
+        try {
+            copySyncFilesToSafDir()
+        } catch (e: Exception) {
+            Log.w(TAG, "SAF mirror failed (non-fatal): ${e.message}")
         }
     }
 

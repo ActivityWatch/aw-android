@@ -28,7 +28,9 @@ class SyncAlarmReceiver : BroadcastReceiver() {
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val syncInterface = SyncInterface(context)
-                        syncInterface.syncBothAsync { success, message ->
+                        // Keep goAsync() active through the SAF mirror so Android cannot
+                        // reclaim an alarm-only process while files are being written.
+                        syncInterface.syncBothForAlarmAsync { success, message ->
                             if (success) {
                                 Log.i(TAG, "Automatic sync completed successfully: $message")
                             } else {
