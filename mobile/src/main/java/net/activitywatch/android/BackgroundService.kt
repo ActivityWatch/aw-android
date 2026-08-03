@@ -25,8 +25,19 @@ private const val NOTIFICATION_ID = 1
 
 class BackgroundService : Service() {
 
+    companion object {
+        // Sent by SyncSettingsActivity when the user toggles sync on/off so the
+        // running scheduler reflects the new setting immediately without a restart.
+        const val ACTION_SYNC_ENABLED_CHANGED = "net.activitywatch.android.SYNC_ENABLED_CHANGED"
+    }
+
     private lateinit var syncScheduler: SyncScheduler
     private lateinit var rustInterface: RustInterface
+
+    // Becomes true after the first full onStartCommand() completes (server started,
+    // workers scheduled, etc.). Guards against ACTION_SYNC_ENABLED_CHANGED skipping
+    // full initialization when Android kills and recreates the service.
+    private var isFullyStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +62,18 @@ class BackgroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Only short-circuit for the scheduler-toggle action when the service is already
+        // fully running. If Android killed the service while SyncSettingsActivity was open,
+        // the toggle re-creates the service with this action as its first command — in that
+        // case isFullyStarted is false and we fall through to run the complete startup path
+        // (server start, event parsing, notify scheduling) before honouring the toggle.
+        if (intent?.action == ACTION_SYNC_ENABLED_CHANGED && isFullyStarted) {
+            val enabled = AWPreferences(this).isSyncEnabled()
+            Log.i(TAG, "Sync enabled changed to $enabled; ${if (enabled) "starting" else "stopping"} scheduler")
+            if (enabled) syncScheduler.start() else syncScheduler.stop()
+            return START_STICKY
+        }
+
         Log.i(TAG, "BackgroundService started")
 
         // Ensure the API key is written to config.toml before the server reads it.
@@ -107,6 +130,7 @@ class BackgroundService : Service() {
         // Schedule activity-time notifications (aw-notify)
         scheduleNotifyChecks()
 
+        isFullyStarted = true
         return START_STICKY
     }
 

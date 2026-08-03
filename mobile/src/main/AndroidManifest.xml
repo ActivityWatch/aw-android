@@ -57,6 +57,12 @@
             android:configChanges="orientation"
             android:exported="false"/>
 
+        <activity
+            android:name=".SyncSettingsActivity"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation"
+            android:exported="false"/>
+
         <receiver
             android:name=".watcher.AlarmReceiver"
             android:enabled="true"
