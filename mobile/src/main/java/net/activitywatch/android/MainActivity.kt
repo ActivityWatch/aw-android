@@ -178,6 +178,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 fragmentClass = WebUIFragment::class.java
                 url = authenticatedUrl("$baseURL/#/settings/")
             }
+            R.id.nav_auth_settings -> {
+                startActivity(Intent(this, AuthSettingsActivity::class.java))
+            }
             R.id.nav_share -> {
                 openDashboardInBrowser()
             }

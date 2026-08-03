@@ -23,9 +23,9 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Require API Authentication"
-                android:textAppearance="?attr/textAppearanceBodyLarge" />
+                android:textAppearance="?android:attr/textAppearanceListItem" />
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
+            <androidx.appcompat.widget.SwitchCompat
                 android:id="@+id/switch_auth_enabled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
@@ -38,8 +38,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
             android:text="Checking…" />
 
         <!-- API key section -->
@@ -48,7 +48,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="8dp"
             android:text="Current API Key"
-            android:textAppearance="?attr/textAppearanceLabelLarge" />
+            android:textAppearance="?android:attr/textAppearanceListItemSmall" />
 
         <TextView
             android:id="@+id/tv_api_key"
@@ -59,7 +59,7 @@
             android:fontFamily="monospace"
             android:paddingHorizontal="12dp"
             android:paddingVertical="10dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textAppearance="?android:attr/textAppearanceMedium"
             android:textIsSelectable="true"
             android:text="(none)" />
 
@@ -76,7 +76,7 @@
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="Copy Key"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                style="@style/Widget.AppCompat.Button.Borderless" />
 
             <Button
                 android:id="@+id/btn_regenerate_key"
@@ -84,7 +84,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Regenerate Key"
-                style="@style/Widget.MaterialComponents.Button" />
+                style="@style/Widget.AppCompat.Button" />
 
         </LinearLayout>
 
@@ -92,8 +92,8 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
             android:text="When enabled, ActivityWatch clients (browser, desktop app) must include this key to access data. Use the key in the URL:\n\nhttp://localhost:5600/?token=YOUR_KEY\n\nChanges take effect after restarting the app." />
 
     </LinearLayout>

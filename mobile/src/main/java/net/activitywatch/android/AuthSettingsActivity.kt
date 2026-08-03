@@ -14,8 +14,8 @@ import android.widget.CompoundButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -29,7 +29,7 @@ class AuthSettingsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var btnCopy: Button
     private lateinit var btnRegenerate: Button
-    private lateinit var switchAuthEnabled: SwitchMaterial
+    private lateinit var switchAuthEnabled: SwitchCompat
 
     // Guards against the switch listener firing when we set isChecked programmatically
     private var isUpdatingSwitch = false
