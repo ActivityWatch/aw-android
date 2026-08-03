@@ -15,14 +15,31 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/widget_header"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Screen time"
-            android:textColor="@color/widget_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/widget_header"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Screen time"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/widget_open_button"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:src="@drawable/ic_open"
+                android:tint="@color/widget_text_muted"
+                android:contentDescription="Open ActivityWatch" />
+
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="wrap_content"
