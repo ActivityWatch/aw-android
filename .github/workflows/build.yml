@@ -198,6 +198,13 @@ jobs:
         sed -i "s/versionCode .*/versionCode ${{needs.get-versionCode.outputs.versionCode}}/" \
                 mobile/build.gradle
 
+    # Signing strategy is shared with gptme/gptme (.github/workflows/tauri.yml
+    # release-android job + docs/contributing.rst "Android release signing"
+    # there); signing itself happens in scripts/sign_apk.sh via the Makefile.
+    # Keep the two implementations consistent when changing either.
+    # gptme delivers the keystore as a base64 secret instead of age-encrypted
+    # in-repo, pins the signer cert SHA-256, and fails closed on missing
+    # secrets — planned to be adopted here too (see issue tracker).
     - uses: adnsio/setup-age-action@v1.2.0
     - name: Load Android secrets
       if: env.KEY_ANDROID_JKS != null
