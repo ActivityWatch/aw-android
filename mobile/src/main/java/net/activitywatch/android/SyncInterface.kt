@@ -1,12 +1,16 @@
 package net.activitywatch.android
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.system.Os
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -105,13 +109,13 @@ class SyncInterface(context: Context) {
     }
     
     private fun performSyncAsync(
-        operation: String, 
+        operation: String,
         callback: (Boolean, String) -> Unit,
         syncFn: () -> String
     ) {
         val executor = Executors.newSingleThreadExecutor()
         val handler = Handler(Looper.getMainLooper())
-        
+
         executor.execute {
             Log.i(TAG, "Starting sync operation: $operation")
             try {
@@ -123,7 +127,10 @@ class SyncInterface(context: Context) {
                 } else {
                     json.getString("error")
                 }
-                
+
+                // Copy sync files to SAF directory on the background thread — IO must not run on main.
+                if (success) copySyncFilesToSafDir()
+
                 handler.post {
                     Log.i(TAG, "$operation completed: success=$success, message=$message")
                     callback(success, message)
@@ -139,6 +146,55 @@ class SyncInterface(context: Context) {
             }
         }
     }
-    
+
+    /**
+     * After each successful sync, mirror the contents of the internal sync directory to the
+     * user-chosen SAF directory (if one has been configured via SyncSettingsActivity).
+     *
+     * aw-sync writes to the app-private [syncDir] which is invisible to Syncthing and other
+     * file-sync tools on Android 11+. This method copies every regular file from [syncDir]
+     * to the SAF-granted tree URI so that external sync tools can reach the data.
+     *
+     * Errors are logged but do not propagate — a copy failure must never fail the sync itself.
+     */
+    private fun copySyncFilesToSafDir() {
+        val uriStr = AWPreferences(appContext).getSyncDirUri() ?: return
+        val safUri = Uri.parse(uriStr)
+        val safDir = DocumentFile.fromTreeUri(appContext, safUri)
+        if (safDir == null || !safDir.isDirectory) {
+            Log.w(TAG, "SAF directory not accessible or not a directory: $uriStr")
+            return
+        }
+
+        val sourceFiles = File(syncDir).listFiles()?.filter { it.isFile } ?: return
+        if (sourceFiles.isEmpty()) return
+
+        var copied = 0
+        var skipped = 0
+        for (file in sourceFiles) {
+            try {
+                // Reuse an existing file if present; otherwise create a new one.
+                val dest = safDir.findFile(file.name)
+                    ?: safDir.createFile("application/octet-stream", file.name)
+                if (dest == null) {
+                    Log.w(TAG, "Could not create SAF file for ${file.name}")
+                    skipped++
+                    continue
+                }
+                appContext.contentResolver.openOutputStream(dest.uri, "wt")?.use { out ->
+                    FileInputStream(file).use { inp -> inp.copyTo(out) }
+                }
+                copied++
+            } catch (e: IOException) {
+                Log.w(TAG, "Failed to copy ${file.name} to SAF dir: ${e.message}")
+                skipped++
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Permission denied copying ${file.name} to SAF dir: ${e.message}")
+                skipped++
+            }
+        }
+        Log.i(TAG, "SAF mirror: copied=$copied skipped=$skipped → $uriStr")
+    }
+
     fun getSyncDirectory(): String = syncDir
 }
