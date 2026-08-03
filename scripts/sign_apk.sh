@@ -1,6 +1,14 @@
 #!/bin/bash
 
 # Signs APKs or AABs using the android.jks keystore
+#
+# This signing strategy (zipalign, then apksigner for APKs and jarsigner for
+# AABs, passwords via env vars) is intentionally shared with gptme's Android
+# release signing (gptme/gptme .github/workflows/tauri.yml release-android job,
+# documented in docs/contributing.rst "Android release signing" there).
+# Keep the two implementations consistent when changing either.
+# gptme additionally pins the signer cert SHA-256 and fails closed when
+# signing secrets are missing — planned to be adopted here too.
 
 set -e
 
