@@ -97,8 +97,8 @@ class SyncInterface(context: Context) {
         syncBothAsync(mirrorBeforeCallback = false, callback)
     }
 
-    // Alarm-triggered syncs must retain goAsync() until the SAF mirror completes.
-    fun syncBothForAlarmAsync(callback: (Boolean, String) -> Unit) {
+    // Background workers must remain active until the SAF mirror completes.
+    fun syncBothAndMirrorAsync(callback: (Boolean, String) -> Unit) {
         syncBothAsync(mirrorBeforeCallback = true, callback)
     }
 
@@ -145,8 +145,8 @@ class SyncInterface(context: Context) {
                     json.getString("error")
                 }
 
-                // Alarm-triggered syncs keep the BroadcastReceiver's goAsync() result open
-                // until mirroring finishes. Other callers get the native result immediately.
+                // Worker-triggered syncs keep their WorkManager job active until mirroring
+                // finishes. Other callers get the native result immediately.
                 Log.i(TAG, "$operation completed: success=$success, message=$message")
                 if (success && mirrorBeforeCallback) {
                     mirrorSyncFilesToSafDir()
