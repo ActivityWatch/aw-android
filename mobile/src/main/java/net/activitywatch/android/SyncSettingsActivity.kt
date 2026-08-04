@@ -13,7 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.switchmaterial.SwitchMaterial
+import androidx.appcompat.widget.SwitchCompat
 
 private const val TAG = "SyncSettingsActivity"
 
@@ -21,7 +21,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     private lateinit var prefs: AWPreferences
 
-    private lateinit var switchSyncEnabled: SwitchMaterial
+    private lateinit var switchSyncEnabled: SwitchCompat
     private lateinit var tvSyncDirStatus: TextView
     private lateinit var btnChooseDir: Button
 

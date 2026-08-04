@@ -23,9 +23,9 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="Enable Sync"
-                android:textAppearance="?attr/textAppearanceBodyLarge" />
+                android:textAppearance="?android:attr/textAppearanceListItem" />
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
+            <androidx.appcompat.widget.SwitchCompat
                 android:id="@+id/switch_sync_enabled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
@@ -38,8 +38,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
             android:text="No sync directory configured." />
 
         <!-- Choose directory button -->
@@ -49,14 +49,14 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
             android:text="Choose Directory"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+            style="@style/Widget.AppCompat.Button.Borderless" />
 
         <!-- Help text -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
             android:text="ActivityWatch can sync data between devices. Choose a directory accessible to your sync tool (e.g. Syncthing, Dropbox) — the Downloads folder is a common choice.\n\nSync is off by default. Enable it only after selecting a directory." />
 
     </LinearLayout>
