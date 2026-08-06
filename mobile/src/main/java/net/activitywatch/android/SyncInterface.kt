@@ -32,6 +32,14 @@ class SyncInterface(context: Context) {
      * Written once per sync operation (guarded by [syncInFlight]) and read by [cancel].
      */
     @Volatile private var activeExecutor: ExecutorService? = null
+
+    /**
+     * Set by [cancel] to stop the SAF copy loop between file iterations without relying solely
+     * on thread interruption.  Checked in [copySyncFilesToSafDir] before each file write so that
+     * files whose truncate-and-write has not yet started are skipped, limiting the corruption
+     * window to at most the file currently being written when cancellation is requested.
+     */
+    @Volatile private var cancelRequested = false
     
     init {
         syncDir = resolveSyncDirectory(context).absolutePath
@@ -134,14 +142,22 @@ class SyncInterface(context: Context) {
     /**
      * Interrupts any in-progress sync and SAF mirror operation.
      *
-     * Called by [SyncWorker] via [kotlin.coroutines.cancellation.CancellationException] when
-     * WorkManager stops or cancels the worker.  [ExecutorService.shutdownNow] sends an interrupt
-     * to the executor thread so that ongoing I/O (the SAF file copy) throws
-     * [java.io.InterruptedIOException] and the thread terminates promptly, releasing WorkManager's
-     * lifecycle protection only after the mirror has actually stopped.
+     * Called by [SyncWorker] via `invokeOnCancellation` when WorkManager stops or cancels
+     * the worker.  Three things happen in order:
+     *
+     * 1. [cancelRequested] is set so that [copySyncFilesToSafDir]'s copy loop stops before
+     *    starting the next file's truncate-and-write, bounding the partial-write window to
+     *    at most the file currently being copied.
+     * 2. [ExecutorService.shutdownNow] sends an interrupt to the executor thread, causing
+     *    any blocking I/O to throw [java.io.InterruptedIOException] promptly.
+     * 3. [syncInFlight] is cleared so that a future sync is not permanently blocked.
+     *    This is necessary because [shutdownNow] can remove a queued-but-not-started
+     *    executor task before its completion callback has a chance to clear the guard.
      */
     fun cancel() {
+        cancelRequested = true
         activeExecutor?.shutdownNow()
+        syncInFlight.set(false)
     }
 
     private fun performSyncAsync(
@@ -221,6 +237,10 @@ class SyncInterface(context: Context) {
         var copied = 0
         var skipped = 0
         for (file in sourceFiles) {
+            if (cancelRequested) {
+                Log.i(TAG, "SAF mirror cancelled; stopping before ${file.name}")
+                break
+            }
             try {
                 // Reuse an existing file if present; otherwise create a new one.
                 val dest = safDir.findFile(file.name)
