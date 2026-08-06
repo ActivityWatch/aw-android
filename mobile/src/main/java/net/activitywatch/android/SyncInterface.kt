@@ -11,6 +11,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -25,6 +26,12 @@ class SyncInterface(context: Context) {
     }
     private val appContext: Context = context.applicationContext
     private val syncDir: String
+
+    /**
+     * Holds the active executor so that [cancel] can interrupt it from any thread.
+     * Written once per sync operation (guarded by [syncInFlight]) and read by [cancel].
+     */
+    @Volatile private var activeExecutor: ExecutorService? = null
     
     init {
         syncDir = resolveSyncDirectory(context).absolutePath
@@ -124,6 +131,19 @@ class SyncInterface(context: Context) {
         }
     }
     
+    /**
+     * Interrupts any in-progress sync and SAF mirror operation.
+     *
+     * Called by [SyncWorker] via [kotlin.coroutines.cancellation.CancellationException] when
+     * WorkManager stops or cancels the worker.  [ExecutorService.shutdownNow] sends an interrupt
+     * to the executor thread so that ongoing I/O (the SAF file copy) throws
+     * [java.io.InterruptedIOException] and the thread terminates promptly, releasing WorkManager's
+     * lifecycle protection only after the mirror has actually stopped.
+     */
+    fun cancel() {
+        activeExecutor?.shutdownNow()
+    }
+
     private fun performSyncAsync(
         operation: String,
         callback: (Boolean, String) -> Unit,
@@ -131,6 +151,7 @@ class SyncInterface(context: Context) {
         syncFn: () -> String
     ) {
         val executor = Executors.newSingleThreadExecutor()
+        activeExecutor = executor
         val handler = Handler(Looper.getMainLooper())
 
         executor.execute {
