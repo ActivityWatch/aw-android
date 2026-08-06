@@ -24,6 +24,14 @@
     <string name="button_log_text">Click me to log data!</string>
     <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
 
+    <!-- Prominent disclosure required by the Google Play Accessibility API policy:
+         must be shown and affirmatively accepted BEFORE directing the user to
+         enable the accessibility service. -->
+    <string name="accessibility_disclosure_title">Web browsing tracking</string>
+    <string name="accessibility_disclosure_message">To track your web browsing activity, ActivityWatch uses Android\'s Accessibility API to read the URL and page title from your browser while you browse.\n\nThis data is processed and stored only on your device. It is never sent to the ActivityWatch developers or any third party.\n\nIf you agree, enable ActivityWatch under Accessibility settings on the next screen. This is optional — the rest of the app works without it.</string>
+    <string name="accessibility_disclosure_agree">Agree</string>
+    <string name="accessibility_disclosure_decline">No thanks</string>
+
     <!-- This is overridden by gradle config
     <string name="versionName">unknown version</string>-->
 
