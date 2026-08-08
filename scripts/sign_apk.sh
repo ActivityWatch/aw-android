@@ -76,6 +76,11 @@ if [[ $input == *.aab ]]; then
         -keystore android.jks \
         -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
         $input activitywatch
+
+    # Verify the bundle before it can be uploaded. `-strict` turns signer and
+    # certificate problems that jarsigner otherwise reports as warnings into a
+    # non-zero exit status.
+    jarsigner -verify -strict "$input"
 fi
 
 # Move to output destination
