@@ -2,13 +2,13 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdk 35
+    compileSdk 36
     ndkVersion "25.2.9519653"
 
     defaultConfig {
         applicationId "net.activitywatch.android"
         minSdkVersion 26
-        targetSdkVersion 35
+        targetSdkVersion 36
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
