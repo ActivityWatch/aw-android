@@ -13,7 +13,8 @@ on:
     # Usage: gh workflow run build.yml --repo ActivityWatch/aw-android --ref refs/tags/v<version>
 
 env:
-  NDK_VERSION: '25.2.9519653'
+  # r28+: links native libs with 16 KB page alignment by default (Play requirement since Nov 2025)
+  NDK_VERSION: '28.2.13676358'
   NODE_VERSION: '16'
   JAVA_VERSION: '17'
 
