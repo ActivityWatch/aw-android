@@ -1,0 +1,1 @@
+- fix(release): cap Play Store changelog at 500 characters (#219)
