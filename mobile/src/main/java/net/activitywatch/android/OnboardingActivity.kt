@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -144,9 +145,18 @@ class PermissionsFragment : Fragment() {
         view.findViewById<Button>(R.id.btnGrantUsagePermission).setOnClickListener {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
-        // Handle grant accessibility permissions
+        // Handle grant accessibility permissions.
+        // Google Play's Accessibility API policy requires a prominent disclosure
+        // that the user affirmatively accepts before being sent to enable the service.
         view.findViewById<Button>(R.id.btnGrantAccessibilityPermission).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.accessibility_disclosure_title)
+                .setMessage(R.string.accessibility_disclosure_message)
+                .setPositiveButton(R.string.accessibility_disclosure_agree) { _, _ ->
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                .setNegativeButton(R.string.accessibility_disclosure_decline, null)
+                .show()
         }
         // Handle grant exact alarm permissions (for widgets)
         view.findViewById<Button>(R.id.btnGrantExactAlarmPermission).setOnClickListener {
