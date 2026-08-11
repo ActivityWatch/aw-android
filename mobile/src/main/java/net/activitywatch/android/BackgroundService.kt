@@ -191,8 +191,8 @@ class BackgroundService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "ActivityWatch Background Service"
-            val descriptionText = "Keeps ActivityWatch server and sync running in the background"
+            val name = "Background tracking"
+            val descriptionText = "Keeps ActivityWatch running in the background"
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
@@ -213,8 +213,8 @@ class BackgroundService : Service() {
             }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ActivityWatch Server")
-            .setContentText("Server and sync running in background")
+            .setContentTitle("ActivityWatch")
+            .setContentText("Running in the background")
             .setSmallIcon(R.mipmap.aw_launcher_round) // Make sure this icon exists or use a fallback
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
