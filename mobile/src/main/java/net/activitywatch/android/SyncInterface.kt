@@ -278,8 +278,19 @@ class SyncInterface(context: Context) {
                     }
                     mirrorDirectory(entry, subDir, counts)
                 } else {
-                    // Reuse an existing file if present; otherwise create a new one.
-                    val dest = destDir.findFile(entry.name)
+                    // Reuse an existing file if present; otherwise create a new one. A
+                    // same-named DIRECTORY must be rejected rather than written into: an
+                    // already-populated tree can contain one, and openOutputStream() on a
+                    // directory URI fails, which would silently leave the database
+                    // uncopied. The directory branch above rejects the mirror case, so
+                    // this keeps the two symmetric.
+                    val existingFile = destDir.findFile(entry.name)
+                    if (existingFile != null && existingFile.isDirectory) {
+                        Log.w(TAG, "SAF entry ${entry.name} is a directory; cannot write a file there")
+                        counts[1]++
+                        continue
+                    }
+                    val dest = existingFile
                         ?: destDir.createFile("application/octet-stream", entry.name)
                     if (dest == null) {
                         Log.w(TAG, "Could not create SAF file for ${entry.name}")
