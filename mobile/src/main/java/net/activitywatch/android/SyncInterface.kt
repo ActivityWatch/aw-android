@@ -217,8 +217,17 @@ class SyncInterface(context: Context) {
      * user-chosen SAF directory (if one has been configured via SyncSettingsActivity).
      *
      * aw-sync writes to the app-private [syncDir] which is invisible to Syncthing and other
-     * file-sync tools on Android 11+. This method copies every regular file from [syncDir]
-     * to the SAF-granted tree URI so that external sync tools can reach the data.
+     * file-sync tools on Android 11+. This method mirrors [syncDir] to the SAF-granted tree
+     * URI so that external sync tools can reach the data.
+     *
+     * The mirror is recursive and structure-preserving, which is required for the copy to
+     * contain anything at all and for the result to be usable. aw-sync never writes a regular
+     * file at the root of the sync directory: `setup_local_remote` in aw-server-rust
+     * (`aw-sync/src/sync.rs`) does `path.join(device_id)` and writes `test.db` inside it, and
+     * on Android the observed tree is one level deeper still,
+     * `<syncDir>/<hostname>/<device_id>/test.db`. The consuming side requires the same nesting:
+     * `find_remotes` (`aw-sync/src/util.rs`) keeps only directories and looks for `*.db` one
+     * level inside them, so a flattened copy would be ignored even if it were made.
      *
      * Errors are logged but do not propagate — a copy failure must never fail the sync itself.
      */
@@ -231,42 +240,69 @@ class SyncInterface(context: Context) {
             return
         }
 
-        val sourceFiles = File(syncDir).listFiles()?.filter { it.isFile } ?: return
-        if (sourceFiles.isEmpty()) return
+        val counts = intArrayOf(0, 0) // [copied, skipped]
+        mirrorDirectory(File(syncDir), safDir, counts)
+        Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
+    }
 
-        var copied = 0
-        var skipped = 0
-        for (file in sourceFiles) {
+    /**
+     * Recursively mirror [sourceDir] into [destDir], creating subdirectories as needed so the
+     * `<device_id>/` layout aw-sync produces is reproduced verbatim in the SAF tree.
+     */
+    private fun mirrorDirectory(sourceDir: File, destDir: DocumentFile, counts: IntArray) {
+        val entries = sourceDir.listFiles() ?: return
+
+        for (entry in entries) {
             if (cancelRequested) {
-                Log.i(TAG, "SAF mirror cancelled; stopping before ${file.name}")
-                break
+                Log.i(TAG, "SAF mirror cancelled; stopping before ${entry.name}")
+                return
             }
             try {
-                // Reuse an existing file if present; otherwise create a new one.
-                val dest = safDir.findFile(file.name)
-                    ?: safDir.createFile("application/octet-stream", file.name)
-                if (dest == null) {
-                    Log.w(TAG, "Could not create SAF file for ${file.name}")
-                    skipped++
-                    continue
+                if (entry.isDirectory) {
+                    // Reuse an existing subdirectory if present; otherwise create it. A
+                    // non-directory of the same name cannot be mirrored into.
+                    val existing = destDir.findFile(entry.name)
+                    val subDir = when {
+                        existing != null && existing.isDirectory -> existing
+                        existing != null -> {
+                            Log.w(TAG, "SAF entry ${entry.name} exists but is not a directory")
+                            counts[1]++
+                            continue
+                        }
+                        else -> destDir.createDirectory(entry.name)
+                    }
+                    if (subDir == null) {
+                        Log.w(TAG, "Could not create SAF directory for ${entry.name}")
+                        counts[1]++
+                        continue
+                    }
+                    mirrorDirectory(entry, subDir, counts)
+                } else {
+                    // Reuse an existing file if present; otherwise create a new one.
+                    val dest = destDir.findFile(entry.name)
+                        ?: destDir.createFile("application/octet-stream", entry.name)
+                    if (dest == null) {
+                        Log.w(TAG, "Could not create SAF file for ${entry.name}")
+                        counts[1]++
+                        continue
+                    }
+                    val out = appContext.contentResolver.openOutputStream(dest.uri, "wt")
+                    if (out == null) {
+                        Log.w(TAG, "Null output stream for ${entry.name} in SAF dir")
+                        counts[1]++
+                        continue
+                    }
+                    out.use { FileInputStream(entry).use { inp -> inp.copyTo(it) } }
+                    counts[0]++
                 }
-                val out = appContext.contentResolver.openOutputStream(dest.uri, "wt")
-                if (out == null) {
-                    Log.w(TAG, "Null output stream for ${file.name} in SAF dir")
-                    skipped++
-                    continue
-                }
-                out.use { FileInputStream(file).use { inp -> inp.copyTo(it) } }
-                copied++
             } catch (e: IOException) {
-                Log.w(TAG, "Failed to copy ${file.name} to SAF dir: ${e.message}")
-                skipped++
+                Log.w(TAG, "Failed to copy ${entry.name} to SAF dir: ${e.message}")
+                counts[1]++
             } catch (e: SecurityException) {
-                Log.w(TAG, "Permission denied copying ${file.name} to SAF dir: ${e.message}")
-                skipped++
+                Log.w(TAG, "Permission denied copying ${entry.name} to SAF dir: ${e.message}")
+                counts[1]++
             }
         }
-        Log.i(TAG, "SAF mirror: copied=$copied skipped=$skipped → $uriStr")
     }
 
     fun getSyncDirectory(): String = syncDir
