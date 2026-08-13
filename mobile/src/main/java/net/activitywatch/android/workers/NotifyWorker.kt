@@ -2,13 +2,16 @@ package net.activitywatch.android.workers
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.jakewharton.threetenabp.AndroidThreeTen
+import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import org.json.JSONArray
@@ -179,12 +182,24 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         val body = "${alert.label}: $thresholdStr" +
             if (thresholdStr != actualStr) "  ($actualStr)" else ""
 
+        // Open the activity/timeline view in MainActivity when the notification is tapped.
+        val openIntent = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle(if (alert.positive) "Goal reached!" else "Time spent")
             .setContentText(body)
             .setSmallIcon(R.mipmap.aw_launcher_round)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
             .build()
 
         // Stable ID per alert so notifications update in-place rather than stacking
