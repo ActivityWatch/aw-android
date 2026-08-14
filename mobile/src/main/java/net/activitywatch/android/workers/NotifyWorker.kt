@@ -182,7 +182,8 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle(if (alert.positive) "Goal reached!" else "Time spent")
             .setContentText(body)
-            .setSmallIcon(R.mipmap.aw_launcher_round)
+            // Adaptive launcher mipmaps are not valid status-bar icons (alpha-only).
+            .setSmallIcon(R.drawable.ic_stat_notification)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
