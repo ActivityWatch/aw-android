@@ -2,8 +2,10 @@ package net.activitywatch.android.fragments
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class WebUIFragmentTest {
     @Test
@@ -102,8 +104,9 @@ class WebUIFragmentTest {
 
     @Test
     fun `export queue keeps the first picker payload when a second export arrives`() {
-        val first = PendingExport("one", "first.json", "application/json")
-        val second = PendingExport("two", "second.json", "application/json")
+        val dir = createTempDir()
+        val first = cachedExport(dir, "first.json", "one")
+        val second = cachedExport(dir, "second.json", "two")
         val queue = ExportSaveQueue()
 
         queue.enqueue(first)
@@ -121,8 +124,9 @@ class WebUIFragmentTest {
 
     @Test
     fun `cancelling the first picker still offers the next queued export`() {
-        val first = PendingExport("one", "first.json", "application/json")
-        val second = PendingExport("two", "second.json", "application/json")
+        val dir = createTempDir()
+        val first = cachedExport(dir, "first.json", "one")
+        val second = cachedExport(dir, "second.json", "two")
         val queue = ExportSaveQueue()
 
         queue.enqueue(first)
@@ -131,5 +135,54 @@ class WebUIFragmentTest {
         queue.completeInFlight()
 
         assertEquals(second, queue.beginNext())
+    }
+
+    @Test
+    fun `queue snapshot restore keeps the in-flight export first`() {
+        val dir = createTempDir()
+        val first = cachedExport(dir, "first.json", "one")
+        val second = cachedExport(dir, "second.json", "two")
+        val original = ExportSaveQueue()
+        original.enqueue(first)
+        original.beginNext()
+        original.enqueue(second)
+
+        val restored = ExportSaveQueue()
+        restored.restore(original.snapshot())
+
+        assertEquals(first, restored.inFlight)
+        assertEquals(first, restored.completeInFlight())
+        assertEquals(second, restored.beginNext())
+        assertEquals("one", first.readContent())
+        assertEquals("two", second.readContent())
+    }
+
+    @Test
+    fun `restore drops a missing in-flight cache instead of delivering the next export`() {
+        val dir = createTempDir()
+        val first = cachedExport(dir, "first.json", "one")
+        val second = cachedExport(dir, "second.json", "two")
+        val original = ExportSaveQueue()
+        original.enqueue(first)
+        original.beginNext()
+        original.enqueue(second)
+        first.cacheFile.delete()
+
+        val restored = ExportSaveQueue()
+        restored.restore(original.snapshot())
+
+        assertNull(restored.inFlight)
+        assertEquals(second, restored.beginNext())
+    }
+
+    @Test
+    fun `persistExportPayload writes content that can be read back`() {
+        val file = persistExportPayload(createTempDir(), "{\"ok\":true}")
+        assertTrue(file.isFile)
+        assertEquals("{\"ok\":true}", file.readText())
+    }
+
+    private fun cachedExport(dir: File, name: String, content: String): PendingExport {
+        return PendingExport(name, "application/json", File(dir, name).also { it.writeText(content) })
     }
 }

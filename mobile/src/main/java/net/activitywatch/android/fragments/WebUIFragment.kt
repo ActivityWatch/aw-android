@@ -102,10 +102,28 @@ internal val ANDROID_EXPORT_HOOK_JS = """
 """.trimIndent()
 
 internal data class PendingExport(
-    val content: String,
     val filename: String,
     val mimeType: String,
+    val cacheFile: File,
+) {
+    fun readContent(): String = cacheFile.readText(StandardCharsets.UTF_8)
+
+    fun deleteCache() {
+        if (cacheFile.exists() && !cacheFile.delete()) {
+            Log.w(TAG, "Failed to delete export cache ${cacheFile.name}")
+        }
+    }
+}
+
+internal data class ExportQueueSnapshot(
+    val items: List<PendingExport>,
+    val hasInFlight: Boolean,
 )
+
+internal const val STATE_EXPORT_PATHS = "aw_export_paths"
+internal const val STATE_EXPORT_NAMES = "aw_export_names"
+internal const val STATE_EXPORT_MIMES = "aw_export_mimes"
+internal const val STATE_EXPORT_IN_FLIGHT = "aw_export_in_flight"
 
 /** Serializes Save-to pickers so a later export cannot overwrite an earlier one. */
 internal class ExportSaveQueue {
@@ -133,7 +151,59 @@ internal class ExportSaveQueue {
         return current
     }
 
+    fun snapshot(): ExportQueueSnapshot = ExportQueueSnapshot(queue.toList(), inFlight != null)
+
+    fun restore(snapshot: ExportQueueSnapshot) {
+        queue.clear()
+        inFlight = null
+        val originalFirst = snapshot.items.firstOrNull()
+        for (item in snapshot.items) {
+            if (item.cacheFile.isFile) {
+                queue.add(item)
+            }
+        }
+        if (snapshot.hasInFlight && originalFirst != null && originalFirst.cacheFile.isFile) {
+            inFlight = queue.firstOrNull()
+        }
+    }
+
     val isEmpty: Boolean get() = queue.isEmpty()
+}
+
+internal fun writeExportSnapshot(outState: Bundle, snapshot: ExportQueueSnapshot) {
+    outState.putStringArrayList(
+        STATE_EXPORT_PATHS,
+        ArrayList(snapshot.items.map { it.cacheFile.absolutePath }),
+    )
+    outState.putStringArrayList(
+        STATE_EXPORT_NAMES,
+        ArrayList(snapshot.items.map { it.filename }),
+    )
+    outState.putStringArrayList(
+        STATE_EXPORT_MIMES,
+        ArrayList(snapshot.items.map { it.mimeType }),
+    )
+    outState.putBoolean(STATE_EXPORT_IN_FLIGHT, snapshot.hasInFlight)
+}
+
+internal fun readExportSnapshot(state: Bundle): ExportQueueSnapshot? {
+    val paths = state.getStringArrayList(STATE_EXPORT_PATHS) ?: return null
+    val names = state.getStringArrayList(STATE_EXPORT_NAMES) ?: return null
+    val mimes = state.getStringArrayList(STATE_EXPORT_MIMES) ?: return null
+    if (paths.size != names.size || paths.size != mimes.size) {
+        return null
+    }
+    val items = paths.indices.map { index ->
+        PendingExport(names[index], mimes[index], File(paths[index]))
+    }
+    return ExportQueueSnapshot(items, state.getBoolean(STATE_EXPORT_IN_FLIGHT))
+}
+
+internal fun persistExportPayload(cacheDir: File, content: String): File {
+    val dir = File(cacheDir, "exports").apply { mkdirs() }
+    return File(dir, "${java.util.UUID.randomUUID()}.export").apply {
+        writeText(content, StandardCharsets.UTF_8)
+    }
 }
 
 // The embedded server lives on loopback, so keep those navigations inside the app WebView.
@@ -196,6 +266,18 @@ class WebUIFragment : Fragment() {
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         onExportDocumentCreated(uri)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        savedInstanceState?.let { state ->
+            readExportSnapshot(state)?.let { exportQueue.restore(it) }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        writeExportSnapshot(outState, exportQueue.snapshot())
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -338,10 +420,23 @@ class WebUIFragment : Fragment() {
         val safeName = sanitizeExportFilename(filename)
         val resolvedMime = inferExportMimeType(safeName, mimeType)
         Log.i(TAG, "Export save requested: $safeName ($resolvedMime, ${content.length} chars)")
+        val cacheDir = context?.applicationContext?.cacheDir ?: return
+        val pending = try {
+            PendingExport(safeName, resolvedMime, persistExportPayload(cacheDir, content))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist export payload", e)
+            val notify = {
+                showExportToast(getString(R.string.export_save_failed), long = true)
+            }
+            view?.post(notify) ?: if (isAdded) requireActivity().runOnUiThread(notify) else Unit
+            return
+        }
         val enqueue = {
             if (isAdded) {
-                exportQueue.enqueue(PendingExport(content, safeName, resolvedMime))
+                exportQueue.enqueue(pending)
                 launchNextExportPicker()
+            } else {
+                pending.deleteCache()
             }
         }
         val view = view
@@ -349,6 +444,8 @@ class WebUIFragment : Fragment() {
             view.post(enqueue)
         } else if (isAdded) {
             requireActivity().runOnUiThread(enqueue)
+        } else {
+            pending.deleteCache()
         }
     }
 
@@ -361,6 +458,7 @@ class WebUIFragment : Fragment() {
             Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
             exportQueue.completeInFlight()
             shareExport(next)
+            next.deleteCache()
             launchNextExportPicker()
         }
     }
@@ -370,11 +468,13 @@ class WebUIFragment : Fragment() {
         if (uri != null && pending != null) {
             val appContext = context?.applicationContext
             if (appContext == null) {
+                pending.deleteCache()
                 launchNextExportPicker()
                 return
             }
             thread(name = "aw-export-write") {
-                val ok = writeExport(appContext, uri, pending.content)
+                val ok = writeExport(appContext, uri, pending.cacheFile)
+                pending.deleteCache()
                 val activity = activity ?: return@thread
                 activity.runOnUiThread {
                     if (ok) {
@@ -387,6 +487,7 @@ class WebUIFragment : Fragment() {
             }
             return
         }
+        pending?.deleteCache()
         launchNextExportPicker()
     }
 
@@ -399,7 +500,7 @@ class WebUIFragment : Fragment() {
         }
         val file = File(externalDir, pending.filename)
         try {
-            file.writeText(pending.content)
+            file.writeText(pending.readContent())
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write export file: ${e.message}")
             showExportToast(getString(R.string.export_save_failed), long = true)
@@ -467,10 +568,10 @@ class WebUIFragment : Fragment() {
     }
 }
 
-internal fun writeExport(context: Context, uri: Uri, content: String): Boolean {
+internal fun writeExport(context: Context, uri: Uri, source: File): Boolean {
     return try {
         context.contentResolver.openOutputStream(uri)?.use { out ->
-            out.write(content.toByteArray(StandardCharsets.UTF_8))
+            source.inputStream().use { input -> input.copyTo(out) }
             out.flush()
         } != null
     } catch (e: Exception) {
