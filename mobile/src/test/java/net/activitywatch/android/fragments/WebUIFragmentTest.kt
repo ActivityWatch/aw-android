@@ -47,6 +47,8 @@ class WebUIFragmentTest {
     @Test
     fun `export hook js intercepts blob downloads and chunks through the bridge`() {
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("URL.createObjectURL"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("URL.revokeObjectURL"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("delete blobs[url]"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.beginExport"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.appendExport"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.finishExport"))
@@ -96,5 +98,38 @@ class WebUIFragmentTest {
             ),
             received,
         )
+    }
+
+    @Test
+    fun `export queue keeps the first picker payload when a second export arrives`() {
+        val first = PendingExport("one", "first.json", "application/json")
+        val second = PendingExport("two", "second.json", "application/json")
+        val queue = ExportSaveQueue()
+
+        queue.enqueue(first)
+        assertEquals(first, queue.beginNext())
+        queue.enqueue(second)
+        assertEquals(null, queue.beginNext())
+        assertEquals(first, queue.inFlight)
+
+        assertEquals(first, queue.completeInFlight())
+        assertEquals(second, queue.beginNext())
+        assertEquals(second, queue.completeInFlight())
+        assertEquals(null, queue.beginNext())
+        assertTrue(queue.isEmpty)
+    }
+
+    @Test
+    fun `cancelling the first picker still offers the next queued export`() {
+        val first = PendingExport("one", "first.json", "application/json")
+        val second = PendingExport("two", "second.json", "application/json")
+        val queue = ExportSaveQueue()
+
+        queue.enqueue(first)
+        queue.beginNext()
+        queue.enqueue(second)
+        queue.completeInFlight()
+
+        assertEquals(second, queue.beginNext())
     }
 }

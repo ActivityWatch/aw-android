@@ -49,12 +49,17 @@ internal val ANDROID_EXPORT_HOOK_JS = """
   window.__awAndroidBlobs = blobs;
 
   var createObjectURL = URL.createObjectURL.bind(URL);
+  var revokeObjectURL = URL.revokeObjectURL.bind(URL);
   URL.createObjectURL = function (obj) {
     var url = createObjectURL(obj);
     if (typeof Blob !== 'undefined' && obj instanceof Blob) {
       blobs[url] = obj;
     }
     return url;
+  };
+  URL.revokeObjectURL = function (url) {
+    delete blobs[url];
+    revokeObjectURL(url);
   };
 
   var CHUNK = $EXPORT_BRIDGE_CHUNK_SIZE;
@@ -72,6 +77,7 @@ internal val ANDROID_EXPORT_HOOK_JS = """
   window.__awAndroidSendBlob = function (url, filename) {
     var blob = blobs[url];
     if (!blob) return false;
+    delete blobs[url];
     filename = filename || 'export';
     var reader = new FileReader();
     reader.onloadend = function () {
@@ -100,6 +106,35 @@ internal data class PendingExport(
     val filename: String,
     val mimeType: String,
 )
+
+/** Serializes Save-to pickers so a later export cannot overwrite an earlier one. */
+internal class ExportSaveQueue {
+    private val queue = ArrayDeque<PendingExport>()
+    var inFlight: PendingExport? = null
+        private set
+
+    fun enqueue(export: PendingExport) {
+        queue.add(export)
+    }
+
+    fun beginNext(): PendingExport? {
+        if (inFlight != null) return null
+        val next = queue.firstOrNull() ?: return null
+        inFlight = next
+        return next
+    }
+
+    fun completeInFlight(): PendingExport? {
+        val current = inFlight ?: return null
+        inFlight = null
+        if (queue.isNotEmpty() && queue.first() == current) {
+            queue.removeFirst()
+        }
+        return current
+    }
+
+    val isEmpty: Boolean get() = queue.isEmpty()
+}
 
 // The embedded server lives on loopback, so keep those navigations inside the app WebView.
 internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
@@ -155,8 +190,7 @@ class WebUIFragment : Fragment() {
     // TODO: Rename and change types of parameters
     private var listener: OnFragmentInteractionListener? = null
     private var webView: WebView? = null
-    private var pendingExport: PendingExport? = null
-    private var pickerOpen = false
+    private val exportQueue = ExportSaveQueue()
 
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
@@ -304,48 +338,56 @@ class WebUIFragment : Fragment() {
         val safeName = sanitizeExportFilename(filename)
         val resolvedMime = inferExportMimeType(safeName, mimeType)
         Log.i(TAG, "Export save requested: $safeName ($resolvedMime, ${content.length} chars)")
-        val launchPicker = {
+        val enqueue = {
             if (isAdded) {
-                pendingExport = PendingExport(content, safeName, resolvedMime)
-                if (!pickerOpen) {
-                    pickerOpen = true
-                    try {
-                        createDocumentLauncher.launch(safeName)
-                    } catch (e: Exception) {
-                        pickerOpen = false
-                        Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
-                        shareExport(pendingExport!!)
-                    }
-                }
+                exportQueue.enqueue(PendingExport(content, safeName, resolvedMime))
+                launchNextExportPicker()
             }
         }
         val view = view
         if (view != null) {
-            view.post(launchPicker)
+            view.post(enqueue)
         } else if (isAdded) {
-            requireActivity().runOnUiThread(launchPicker)
+            requireActivity().runOnUiThread(enqueue)
+        }
+    }
+
+    private fun launchNextExportPicker() {
+        if (!isAdded) return
+        val next = exportQueue.beginNext() ?: return
+        try {
+            createDocumentLauncher.launch(next.filename)
+        } catch (e: Exception) {
+            Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
+            exportQueue.completeInFlight()
+            shareExport(next)
+            launchNextExportPicker()
         }
     }
 
     private fun onExportDocumentCreated(uri: Uri?) {
-        val pending = pendingExport
-        pendingExport = null
-        pickerOpen = false
-        if (uri == null || pending == null) {
-            return
-        }
-        val appContext = context?.applicationContext ?: return
-        thread(name = "aw-export-write") {
-            val ok = writeExport(appContext, uri, pending.content)
-            val activity = activity ?: return@thread
-            activity.runOnUiThread {
-                if (ok) {
-                    showExportToast(getString(R.string.export_saved, pending.filename))
-                } else {
-                    showExportToast(getString(R.string.export_save_failed), long = true)
+        val pending = exportQueue.completeInFlight()
+        if (uri != null && pending != null) {
+            val appContext = context?.applicationContext
+            if (appContext == null) {
+                launchNextExportPicker()
+                return
+            }
+            thread(name = "aw-export-write") {
+                val ok = writeExport(appContext, uri, pending.content)
+                val activity = activity ?: return@thread
+                activity.runOnUiThread {
+                    if (ok) {
+                        showExportToast(getString(R.string.export_saved, pending.filename))
+                    } else {
+                        showExportToast(getString(R.string.export_save_failed), long = true)
+                    }
+                    launchNextExportPicker()
                 }
             }
+            return
         }
+        launchNextExportPicker()
     }
 
     private fun shareExport(pending: PendingExport) {
