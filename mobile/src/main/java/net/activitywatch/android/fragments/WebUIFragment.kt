@@ -280,6 +280,15 @@ class WebUIFragment : Fragment() {
         writeExportSnapshot(outState, exportQueue.snapshot())
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Recreating during an async write restores waiting items with no in-flight
+        // picker. Resume them here; if a picker is still open, inFlight is set.
+        if (exportQueue.inFlight == null) {
+            launchNextExportPicker()
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,

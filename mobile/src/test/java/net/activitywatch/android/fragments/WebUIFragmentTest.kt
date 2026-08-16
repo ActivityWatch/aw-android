@@ -158,6 +158,24 @@ class WebUIFragmentTest {
     }
 
     @Test
+    fun `restoring after the in-flight write started can begin the next waiting export`() {
+        val dir = createTempDir()
+        val first = cachedExport(dir, "first.json", "one")
+        val second = cachedExport(dir, "second.json", "two")
+        val original = ExportSaveQueue()
+        original.enqueue(first)
+        original.beginNext()
+        original.enqueue(second)
+        original.completeInFlight()
+
+        val restored = ExportSaveQueue()
+        restored.restore(original.snapshot())
+
+        assertNull(restored.inFlight)
+        assertEquals(second, restored.beginNext())
+    }
+
+    @Test
     fun `restore drops a missing in-flight cache instead of delivering the next export`() {
         val dir = createTempDir()
         val first = cachedExport(dir, "first.json", "one")
