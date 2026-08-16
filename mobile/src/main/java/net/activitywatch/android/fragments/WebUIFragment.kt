@@ -7,27 +7,99 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
-import android.webkit.JavascriptInterface
-import androidx.core.content.FileProvider
-import androidx.fragment.app.Fragment
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
-
-import android.content.Intent.ACTION_VIEW
-import android.util.Log
+import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.WebResourceRequest
+import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import androidx.fragment.app.Fragment
 import net.activitywatch.android.R
+import net.activitywatch.android.ensureDashboardApiKey
+import org.json.JSONObject
 import java.io.File
 import java.lang.Thread.sleep
+import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
+import java.nio.charset.StandardCharsets
+import kotlin.concurrent.thread
 
 private const val TAG = "WebUI"
 
 private const val ARG_URL = "url"
+
+// Stay under Binder's ~1 MiB transaction limit when shuttling export bodies from JS.
+internal const val EXPORT_BRIDGE_CHUNK_SIZE = 256 * 1024
+
+// The bundled web UI saves files with <a download> + blob: URLs. Android WebView
+// does not persist those, and DownloadListener often never fires for them.
+internal val ANDROID_EXPORT_HOOK_JS = """
+(function () {
+  if (window.__awAndroidExportHook) return;
+  window.__awAndroidExportHook = true;
+
+  var blobs = Object.create(null);
+  window.__awAndroidBlobs = blobs;
+
+  var createObjectURL = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = function (obj) {
+    var url = createObjectURL(obj);
+    if (typeof Blob !== 'undefined' && obj instanceof Blob) {
+      blobs[url] = obj;
+    }
+    return url;
+  };
+
+  var CHUNK = $EXPORT_BRIDGE_CHUNK_SIZE;
+
+  function sendText(text, filename, mimeType) {
+    if (typeof Android === 'undefined') return;
+    Android.beginExport(filename, mimeType || '');
+    text = String(text || '');
+    for (var i = 0; i < text.length; i += CHUNK) {
+      Android.appendExport(text.substring(i, i + CHUNK));
+    }
+    Android.finishExport();
+  }
+
+  window.__awAndroidSendBlob = function (url, filename) {
+    var blob = blobs[url];
+    if (!blob) return false;
+    filename = filename || 'export';
+    var reader = new FileReader();
+    reader.onloadend = function () {
+      var mime = blob.type || (/\.csv${'$'}/i.test(filename) ? 'text/csv' : 'application/json');
+      sendText(reader.result, filename, mime);
+    };
+    reader.readAsText(blob);
+    return true;
+  };
+
+  document.addEventListener('click', function (event) {
+    var el = event.target;
+    while (el && el.tagName !== 'A') el = el.parentElement;
+    if (!el || !el.hasAttribute('download')) return;
+    var href = el.href;
+    if (!href || !blobs[href]) return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.__awAndroidSendBlob(href, el.getAttribute('download') || 'export');
+  }, true);
+})();
+""".trimIndent()
+
+internal data class PendingExport(
+    val content: String,
+    val filename: String,
+    val mimeType: String,
+)
 
 // The embedded server lives on loopback, so keep those navigations inside the app WebView.
 internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
@@ -48,6 +120,28 @@ internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
     }
 }
 
+internal fun sanitizeExportFilename(filename: String): String {
+    val name = filename.substringAfterLast('/').substringAfterLast('\\').trim()
+    return name.takeIf { it.isNotEmpty() } ?: "export"
+}
+
+internal fun inferExportMimeType(filename: String, explicit: String? = null): String {
+    val given = explicit?.trim().orEmpty()
+    if (given.isNotEmpty() && given != "application/octet-stream") {
+        return given
+    }
+    return when {
+        filename.endsWith(".csv", ignoreCase = true) -> "text/csv"
+        filename.endsWith(".json", ignoreCase = true) -> "application/json"
+        else -> given.ifEmpty { "application/octet-stream" }
+    }
+}
+
+internal fun blobExportRecoveryJs(blobUrl: String, filename: String): String {
+    return "window.__awAndroidSendBlob && window.__awAndroidSendBlob(" +
+        "${JSONObject.quote(blobUrl)}, ${JSONObject.quote(filename)});"
+}
+
 /**
  * A simple [Fragment] subclass.
  * Activities that contain this fragment must implement the
@@ -60,6 +154,15 @@ internal fun isEmbeddedActivityWatchUrl(url: String): Boolean {
 class WebUIFragment : Fragment() {
     // TODO: Rename and change types of parameters
     private var listener: OnFragmentInteractionListener? = null
+    private var webView: WebView? = null
+    private var pendingExport: PendingExport? = null
+    private var pickerOpen = false
+
+    private val createDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        onExportDocumentCreated(uri)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreateView(
@@ -76,6 +179,7 @@ class WebUIFragment : Fragment() {
         }
 
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
+        webView = myWebView
 
         class MyWebViewClient : WebViewClient() {
             override fun onReceivedError(
@@ -91,6 +195,10 @@ class WebUIFragment : Fragment() {
                 arguments?.let {
                     it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
                 }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
             }
 
             // Open external links in external browser
@@ -113,20 +221,166 @@ class WebUIFragment : Fragment() {
         }
         myWebView.webViewClient = MyWebViewClient()
 
-        myWebView.setDownloadListener { url, _, _, _, _ ->
-            val i = Intent(ACTION_VIEW)
-            i.data = Uri.parse(url)
-            startActivity(i)
+        myWebView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            handleWebViewDownload(url, contentDisposition, mimeType)
         }
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
-        myWebView.addJavascriptInterface(WebAppInterface(requireContext()), "Android")
+        myWebView.addJavascriptInterface(WebAppInterface(::queueExport), "Android")
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
 
         return view
+    }
+
+    override fun onDestroyView() {
+        webView = null
+        super.onDestroyView()
+    }
+
+    private fun handleWebViewDownload(url: String?, contentDisposition: String?, mimeType: String?) {
+        if (url.isNullOrBlank()) {
+            return
+        }
+        Log.i(TAG, "DownloadListener: $url")
+        val suggestedName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+        when {
+            url.startsWith("blob:") -> {
+                webView?.evaluateJavascript(blobExportRecoveryJs(url, suggestedName), null)
+            }
+            isEmbeddedActivityWatchUrl(url) -> {
+                downloadEmbeddedExport(url, suggestedName, mimeType)
+            }
+            else -> {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (e: ActivityNotFoundException) {
+                    Log.e(TAG, "No app to open $url", e)
+                    showExportToast(getString(R.string.export_save_failed), long = true)
+                }
+            }
+        }
+    }
+
+    private fun downloadEmbeddedExport(url: String, filename: String, mimeType: String?) {
+        val token = context?.let { ensureDashboardApiKey(it) }.orEmpty()
+        thread(name = "aw-export-fetch") {
+            val result = runCatching {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 60_000
+                    instanceFollowRedirects = true
+                    if (token.isNotEmpty()) {
+                        setRequestProperty("Authorization", "Bearer $token")
+                    }
+                }
+                try {
+                    val code = connection.responseCode
+                    if (code !in 200..299) {
+                        error("export HTTP $code")
+                    }
+                    connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            view?.post {
+                result.fold(
+                    onSuccess = { body ->
+                        queueExport(body, filename, inferExportMimeType(filename, mimeType))
+                    },
+                    onFailure = { error ->
+                        Log.e(TAG, "Failed to fetch export from $url", error)
+                        showExportToast(getString(R.string.export_save_failed), long = true)
+                    },
+                )
+            }
+        }
+    }
+
+    private fun queueExport(content: String, filename: String, mimeType: String) {
+        val safeName = sanitizeExportFilename(filename)
+        val resolvedMime = inferExportMimeType(safeName, mimeType)
+        Log.i(TAG, "Export save requested: $safeName ($resolvedMime, ${content.length} chars)")
+        val launchPicker = {
+            if (isAdded) {
+                pendingExport = PendingExport(content, safeName, resolvedMime)
+                if (!pickerOpen) {
+                    pickerOpen = true
+                    try {
+                        createDocumentLauncher.launch(safeName)
+                    } catch (e: Exception) {
+                        pickerOpen = false
+                        Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
+                        shareExport(pendingExport!!)
+                    }
+                }
+            }
+        }
+        val view = view
+        if (view != null) {
+            view.post(launchPicker)
+        } else if (isAdded) {
+            requireActivity().runOnUiThread(launchPicker)
+        }
+    }
+
+    private fun onExportDocumentCreated(uri: Uri?) {
+        val pending = pendingExport
+        pendingExport = null
+        pickerOpen = false
+        if (uri == null || pending == null) {
+            return
+        }
+        val appContext = context?.applicationContext ?: return
+        thread(name = "aw-export-write") {
+            val ok = writeExport(appContext, uri, pending.content)
+            val activity = activity ?: return@thread
+            activity.runOnUiThread {
+                if (ok) {
+                    showExportToast(getString(R.string.export_saved, pending.filename))
+                } else {
+                    showExportToast(getString(R.string.export_save_failed), long = true)
+                }
+            }
+        }
+    }
+
+    private fun shareExport(pending: PendingExport) {
+        val ctx = context ?: return
+        val externalDir = ctx.getExternalFilesDir(null) ?: run {
+            Log.e(TAG, "External files directory unavailable")
+            showExportToast(getString(R.string.export_save_failed), long = true)
+            return
+        }
+        val file = File(externalDir, pending.filename)
+        try {
+            file.writeText(pending.content)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write export file: ${e.message}")
+            showExportToast(getString(R.string.export_save_failed), long = true)
+            return
+        }
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = pending.mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, pending.filename)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(Intent.createChooser(intent, pending.filename))
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "No app to share ${pending.mimeType}", e)
+            showExportToast(getString(R.string.export_save_failed), long = true)
+        }
+    }
+
+    private fun showExportToast(message: String, long: Boolean = false) {
+        val ctx = context ?: return
+        Toast.makeText(ctx, message, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
     }
 
     override fun onAttach(context: Context) {
@@ -171,44 +425,63 @@ class WebUIFragment : Fragment() {
     }
 }
 
-class WebAppInterface(private val mContext: Context) {
+internal fun writeExport(context: Context, uri: Uri, content: String): Boolean {
+    return try {
+        context.contentResolver.openOutputStream(uri)?.use { out ->
+            out.write(content.toByteArray(StandardCharsets.UTF_8))
+            out.flush()
+        } != null
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to write export", e)
+        false
+    }
+}
+
+class WebAppInterface(
+    private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
+) {
+    private val lock = Any()
+    private val buffer = StringBuilder()
+    private var filename: String = "export"
+    private var mimeType: String = "application/json"
+
     @JavascriptInterface
     fun downloadCSV(csv: String, filename: String) {
-        downloadFile(csv, filename, "text/csv")
+        onExport(csv, filename, "text/csv")
     }
 
     @JavascriptInterface
     fun downloadJSON(json: String, filename: String) {
-        downloadFile(json, filename, "application/json")
+        onExport(json, filename, "application/json")
     }
 
-    private fun downloadFile(content: String, filename: String, mimetype: String) {
-        // Strip path components from the JS-supplied name to prevent export-root escape
-        val safeName = File(filename).name.takeIf { it.isNotEmpty() } ?: "export"
-        val externalDir = mContext.getExternalFilesDir(null) ?: run {
-            Log.e(TAG, "External files directory unavailable")
-            return
+    @JavascriptInterface
+    fun beginExport(filename: String, mimeType: String) {
+        synchronized(lock) {
+            buffer.setLength(0)
+            this.filename = sanitizeExportFilename(filename)
+            this.mimeType = inferExportMimeType(this.filename, mimeType)
         }
-        val file = File(externalDir, safeName)
-        try {
-            file.writeText(content)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write export file: ${e.message}")
-            return
+    }
+
+    @JavascriptInterface
+    fun appendExport(chunk: String) {
+        synchronized(lock) {
+            buffer.append(chunk)
         }
-        // FileProvider required on API 24+: Uri.fromFile() throws FileUriExposedException
-        val uri = FileProvider.getUriForFile(
-            mContext,
-            "${mContext.packageName}.provider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_VIEW)
-        intent.setDataAndType(uri, mimetype)
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NO_HISTORY)
-        try {
-            mContext.startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            Log.e(TAG, "No viewer app found for $mimetype", e)
+    }
+
+    @JavascriptInterface
+    fun finishExport() {
+        val content: String
+        val name: String
+        val mime: String
+        synchronized(lock) {
+            content = buffer.toString()
+            name = filename
+            mime = mimeType
+            buffer.setLength(0)
         }
+        onExport(content, name, mime)
     }
 }

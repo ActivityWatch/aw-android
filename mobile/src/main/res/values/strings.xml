@@ -43,4 +43,6 @@
 
     <!-- Auth strings -->
     <string name="no_browser_found">No browser app available to open this URL</string>
+    <string name="export_saved">Saved %1$s</string>
+    <string name="export_save_failed">Could not save export</string>
 </resources>

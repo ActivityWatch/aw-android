@@ -1,5 +1,6 @@
 package net.activitywatch.android.fragments
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,5 +25,76 @@ class WebUIFragmentTest {
         assertFalse(isEmbeddedActivityWatchUrl("https://activitywatch.net"))
         assertFalse(isEmbeddedActivityWatchUrl("http://192.168.1.10:5600"))
         assertFalse(isEmbeddedActivityWatchUrl("not a url"))
+    }
+
+    @Test
+    fun `sanitizeExportFilename strips path components`() {
+        assertEquals("aw-bucket-export.json", sanitizeExportFilename("../../aw-bucket-export.json"))
+        assertEquals("events.csv", sanitizeExportFilename("C:\\temp\\events.csv"))
+        assertEquals("export", sanitizeExportFilename("   "))
+        assertEquals("export", sanitizeExportFilename(""))
+        assertEquals("aw-bucket-export-foo.json", sanitizeExportFilename("aw-bucket-export-foo.json"))
+    }
+
+    @Test
+    fun `inferExportMimeType prefers explicit type then filename`() {
+        assertEquals("application/json", inferExportMimeType("export.bin", "application/json"))
+        assertEquals("text/csv", inferExportMimeType("events.CSV", "application/octet-stream"))
+        assertEquals("application/json", inferExportMimeType("bucket.json", null))
+        assertEquals("application/octet-stream", inferExportMimeType("export", null))
+    }
+
+    @Test
+    fun `export hook js intercepts blob downloads and chunks through the bridge`() {
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("URL.createObjectURL"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.beginExport"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.appendExport"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.finishExport"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("var CHUNK = $EXPORT_BRIDGE_CHUNK_SIZE;"))
+        assertTrue(EXPORT_BRIDGE_CHUNK_SIZE < 1024 * 1024)
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("/\\.csv$/i"))
+    }
+
+    @Test
+    fun `blob recovery js quotes hostile filenames`() {
+        val js = blobExportRecoveryJs("blob:http://127.0.0.1/abc", "aw-export\".js")
+        assertTrue(js.startsWith("window.__awAndroidSendBlob && window.__awAndroidSendBlob("))
+        assertTrue(js.contains("blob:http://127.0.0.1/abc"))
+        assertTrue(js.contains("\\u0022") || js.contains("\\\""))
+        assertFalse(js.contains("aw-export\".js"))
+    }
+
+    @Test
+    fun `WebAppInterface reassembles chunked exports`() {
+        var received: Triple<String, String, String>? = null
+        val bridge = WebAppInterface { content, filename, mimeType ->
+            received = Triple(content, filename, mimeType)
+        }
+
+        bridge.beginExport("../aw-bucket-export.json", "application/json")
+        bridge.appendExport("{\"buckets\":")
+        bridge.appendExport("[1,2,3]}")
+        bridge.finishExport()
+
+        assertEquals(Triple("{\"buckets\":[1,2,3]}", "aw-bucket-export.json", "application/json"), received)
+    }
+
+    @Test
+    fun `WebAppInterface download helpers keep explicit mime types`() {
+        val received = mutableListOf<Triple<String, String, String>>()
+        val bridge = WebAppInterface { content, filename, mimeType ->
+            received.add(Triple(content, filename, mimeType))
+        }
+
+        bridge.downloadJSON("{}", "data.json")
+        bridge.downloadCSV("a,b", "data.csv")
+
+        assertEquals(
+            listOf(
+                Triple("{}", "data.json", "application/json"),
+                Triple("a,b", "data.csv", "text/csv"),
+            ),
+            received,
+        )
     }
 }
