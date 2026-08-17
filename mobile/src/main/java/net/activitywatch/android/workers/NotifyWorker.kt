@@ -26,6 +26,12 @@ private const val CHANNEL_ID = "aw_notify_channel"
 private const val PREFS_NAME = "aw_notify_prefs"
 private const val DEFAULT_START_OF_DAY_HOUR = 4
 
+// PendingIntent identity ignores extras and Intent launch flags, so a request code
+// shared with another MainActivity PendingIntent resolves to that existing instance
+// and silently drops our FLAG_ACTIVITY_CLEAR_TOP. Request codes already taken:
+// 0 = BackgroundService foreground notification, 2 = CategoryTimeWidget open button.
+private const val PENDING_INTENT_REQUEST_CODE = 1
+
 // Mirrors desktop aw-notify CategoryAlert semantics.
 // positive=true → "Goal reached!" title; false → "Time spent"
 internal data class CategoryAlert(
@@ -188,7 +194,7 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         }
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
-            0,
+            PENDING_INTENT_REQUEST_CODE,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
