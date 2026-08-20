@@ -1,0 +1,7 @@
+- fix: save bucket exports from the WebView instead of dropping them (#229)
+- feat: add Material You monochrome launcher icon (#230)
+- fix(sync): make Sync Settings reachable from the navigation drawer (#221)
+- fix(notify): open MainActivity when notification is tapped (#225)
+- fix(sync): make the SAF mirror recursive and structure-preserving (#222)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.0b2
