@@ -213,9 +213,10 @@ class BackgroundService : Service() {
             }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ActivityWatch")
-            .setContentText("Running in the background")
-            .setSmallIcon(R.mipmap.aw_launcher_round) // Make sure this icon exists or use a fallback
+            .setContentTitle("ActivityWatch Server")
+            .setContentText("Server and sync running in background")
+            // Adaptive launcher mipmaps are not valid status-bar icons (alpha-only).
+            .setSmallIcon(R.drawable.ic_stat_notification)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
