@@ -7,8 +7,10 @@
 # release signing (gptme/gptme .github/workflows/tauri.yml release-android job,
 # documented in docs/contributing.rst "Android release signing" there).
 # Keep the two implementations consistent when changing either.
-# gptme additionally pins the signer cert SHA-256 and fails closed when
-# signing secrets are missing — planned to be adopted here too.
+#
+# Optional: set ANDROID_CERT_SHA256 to the expected signer cert SHA-256 digest
+# (from `apksigner verify --print-certs`). When set, the script verifies the
+# APK's actual signer cert matches — fails loudly on mismatch.
 
 set -e
 
@@ -43,19 +45,42 @@ fi
 # Using apksigner for APKs instead of jarsigner since API 30+: https://stackoverflow.com/a/69473649
 # Using jarsigner for AABs since apksigner doesn't support them
 if [[ $input == *.apk ]]; then
-    apksigner=$(find $ANDROID_HOME/build-tools -name "apksigner" -print | head -n 1)
+    apksigner=$(find $ANDROID_HOME/build-tools -name "apksigner" -print | sort -V | tail -n 1)
     $apksigner sign --ks android.jks --ks-key-alias activitywatch \
         --ks-pass env:JKS_STOREPASS --key-pass env:JKS_KEYPASS \
         $input
 
-    # Verify
+    # Verify signature integrity
     $apksigner verify $input
+
+    # Verify signer cert SHA-256 if pinned (set ANDROID_CERT_SHA256 to pin)
+    if [ -n "${ANDROID_CERT_SHA256:-}" ]; then
+        actual=$($apksigner verify --print-certs "$input" \
+            | grep "Signer #1 certificate SHA-256 digest:" \
+            | awk '{print $NF}')
+        if [ -z "$actual" ]; then
+            echo "ERROR: Could not extract signer certificate SHA-256 from $input"
+            exit 1
+        fi
+        if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
+            echo "ERROR: Signer certificate SHA-256 mismatch — possible key rotation or wrong keystore."
+            echo "  expected: $ANDROID_CERT_SHA256"
+            echo "  actual:   $actual"
+            exit 1
+        fi
+        echo "Signer certificate verified: $actual"
+    fi
 fi
 if [[ $input == *.aab ]]; then
     jarsigner -verbose \
         -keystore android.jks \
         -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
         $input activitywatch
+
+    # Verify the bundle before it can be uploaded. `-strict` turns signer and
+    # certificate problems that jarsigner otherwise reports as warnings into a
+    # non-zero exit status.
+    jarsigner -verify -strict "$input"
 fi
 
 # Move to output destination
