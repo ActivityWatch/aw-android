@@ -213,8 +213,8 @@ class BackgroundService : Service() {
             }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ActivityWatch Server")
-            .setContentText("Server and sync running in background")
+            .setContentTitle("ActivityWatch")
+            .setContentText("Running in the background")
             // Adaptive launcher mipmaps are not valid status-bar icons (alpha-only).
             .setSmallIcon(R.drawable.ic_stat_notification)
             .setContentIntent(pendingIntent)
