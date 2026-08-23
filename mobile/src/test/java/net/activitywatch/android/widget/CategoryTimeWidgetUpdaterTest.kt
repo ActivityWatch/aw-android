@@ -14,13 +14,12 @@ class CategoryTimeWidgetUpdaterTest {
         """[{"cat_events":[${events.joinToString(",")}]}]"""
 
     /**
-     * Regression for ActivityWatch/aw-android#142: the widget rolled every event up to its
-     * top-level category, so subcategories collapsed together and per-category times
-     * disagreed with the Activity view (which groups by the full `$category` path) even
-     * though the totals matched.
+     * The widget groups by top-level category ($category[0]), so subcategories collapse
+     * into a single row. This is the widget's compact display; see
+     * ActivityWatch/aw-android#142 for the discussion.
      */
     @Test
-    fun parseCategories_keepsSubcategoriesSeparate() {
+    fun parseCategories_collapsesSubcategoriesIntoTopLevel() {
         val result = CategoryTimeWidgetUpdater.parseCategories(
             response(
                 catEvent(60.0, "Work", "Programming"),
@@ -28,10 +27,7 @@ class CategoryTimeWidgetUpdaterTest {
             )
         )
 
-        assertEquals(
-            listOf("Work > Programming" to 60_000L, "Work > Planning" to 30_000L),
-            result
-        )
+        assertEquals(listOf("Work" to 90_000L), result)
     }
 
     @Test
@@ -48,15 +44,15 @@ class CategoryTimeWidgetUpdaterTest {
     }
 
     @Test
-    fun parseCategories_mergesRepeatsOfTheSamePath() {
+    fun parseCategories_mergesRepeatsOfTheSameTopLevel() {
         val result = CategoryTimeWidgetUpdater.parseCategories(
             response(
                 catEvent(60.0, "Work", "Programming"),
-                catEvent(15.0, "Work", "Programming")
+                catEvent(15.0, "Work", "Planning")
             )
         )
 
-        assertEquals(listOf("Work > Programming" to 75_000L), result)
+        assertEquals(listOf("Work" to 75_000L), result)
     }
 
     @Test
@@ -70,9 +66,27 @@ class CategoryTimeWidgetUpdaterTest {
         )
 
         assertEquals(
-            listOf("Work > Programming", "Comms", "Media > Video"),
+            listOf("Work", "Comms", "Media"),
             result.map { it.first }
         )
+    }
+
+    /**
+     * Regression for ActivityWatch/aw-android#142: with full-path grouping,
+     * ["Uncategorized", "Browser"] and ["Uncategorized", "Games"] became separate rows.
+     * Top-level grouping collapses all "Uncategorized > *" subcategories back into a
+     * single "Uncategorized" row.
+     */
+    @Test
+    fun parseCategories_collapsesUncategorizedSubcategories() {
+        val result = CategoryTimeWidgetUpdater.parseCategories(
+            response(
+                catEvent(20.0, "Uncategorized", "Browser"),
+                catEvent(10.0, "Uncategorized", "Games")
+            )
+        )
+
+        assertEquals(listOf("Uncategorized" to 30_000L), result)
     }
 
     @Test
