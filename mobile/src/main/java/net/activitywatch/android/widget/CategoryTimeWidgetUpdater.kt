@@ -300,11 +300,11 @@ object CategoryTimeWidgetUpdater {
         /**
          * Parse category events from the androidQuery response.
          *
-         * Groups by the full category path, matching the Activity view: aw-webui builds
-         * cat_events with `merge_events_by_keys(events, ["$category"])` and labels them
-         * with `$category.join(" > ")`. Rolling up to the top-level category here would
-         * make per-category times disagree with the Activity view even though the totals
-         * match (ActivityWatch/aw-android#142).
+         * Groups by the top-level category only (`$category[0]`), so subcategories roll
+         * up into a single row (e.g. "Work > Programming" and "Work > Planning" both
+         * contribute to "Work") and every "Uncategorized > *" subcategory collapses into
+         * a single "Uncategorized" row. This matches the widget's compact display; the
+         * Activity view's finer full-path grouping lives elsewhere.
          */
         internal fun parseCategories(jsonResult: String): List<Pair<String, Long>> {
             val categories = mutableMapOf<String, Double>()
@@ -325,11 +325,11 @@ object CategoryTimeWidgetUpdater {
                     val categoryArray = data.optJSONArray("\$category")
                     if (categoryArray == null || categoryArray.length() == 0) continue
 
-                    // Full category path, e.g. ["Work", "Programming"] -> "Work > Programming"
-                    val categoryPath = (0 until categoryArray.length())
-                        .joinToString(" > ") { categoryArray.optString(it, "Uncategorized") }
+                    // Get top-level category (first element only)
+                    val topLevelCategory = categoryArray.optString(0, "Uncategorized")
 
-                    categories[categoryPath] = categories.getOrDefault(categoryPath, 0.0) + duration
+                    // Aggregate time by top-level category
+                    categories[topLevelCategory] = categories.getOrDefault(topLevelCategory, 0.0) + duration
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing categories", e)
