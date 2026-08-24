@@ -458,10 +458,13 @@ jobs:
     # build_changelog.py is maintained in ActivityWatch/activitywatch and is
     # explicitly designed to be reused by other repos (see its module docstring).
     # Check it out rather than vendoring a copy that would drift.
+    # Pinned to a known-good commit (2026-08-24) to avoid executing unpinned
+    # upstream scripts inside a release-capable job.
     - name: Checkout changelog tooling
       uses: actions/checkout@v4
       with:
         repository: ActivityWatch/activitywatch
+        ref: a17fa8aff7465268973a10d7d43aeb6741492e03
         path: .changelog-tools
         sparse-checkout: scripts
         fetch-depth: 1
@@ -497,7 +500,17 @@ jobs:
         # get_latest_release.sh excludes the tag being released, so this
         # resolves to the previous release. STABLE_ONLY makes a stable release
         # diff against the last stable one rather than the last beta.
-        LAST_RELEASE=$(STABLE_ONLY=${{ steps.version.outputs.is_stable }} \
+        # NOTE: check-version-format-action classifies 0.x.x as not stable per
+        # semver, but aw-android uses 0.x.x for production releases. Use the
+        # same regex the release-play job uses to detect stability correctly.
+        TAG="${{ github.ref_name }}"
+        VERSION="${TAG#v}"
+        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          IS_STABLE="true"
+        else
+          IS_STABLE="false"
+        fi
+        LAST_RELEASE=$(STABLE_ONLY=${IS_STABLE} \
           .changelog-tools/scripts/get_latest_release.sh)
         if [ -z "$LAST_RELEASE" ]; then
           echo "No previous release tag found; falling back to nearest ancestor tag."
