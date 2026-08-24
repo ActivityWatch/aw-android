@@ -71,6 +71,54 @@ internal fun alertConfigHash(alert: CategoryAlert): Int =
     (alert.thresholdMinutes.toString() + alert.positive.toString())
         .hashCode().and(0x3FFFFFFF)
 
+/**
+ * Parse category durations from the androidQuery response.
+ *
+ * Groups by `$category[0]` (top-level only). This is intentional, not a leftover
+ * of the widget grouping that #231 briefly changed to full-path.
+ *
+ * Alert keys ([CategoryAlert.category]) are top-level names like `"Work"` /
+ * `"YouTube"` — the same shape as [DEFAULT_ALERTS] and as desktop aw-notify's
+ * AllLevels *parent* key. A "Work" alert means "notify me after 2h of Work",
+ * which must include Work > Coding, Work > Planning, etc. Matching on the
+ * full path would silently stop those default alerts from firing.
+ *
+ * Nested-path alerts (`"Work > Programming"`) are not supported on Android;
+ * desktop aw-notify AllLevels aggregation would be needed for that. Don't
+ * "fix" this to match the widget's full-path experiment in #231.
+ *
+ * See ActivityWatch/aw-android#231 (widget grouping) and #142.
+ */
+internal fun parseCategorySeconds(jsonResult: String): Map<String?, Double> {
+    val categories = mutableMapOf<String?, Double>()
+    var totalDuration = 0.0
+
+    try {
+        val resultArray = JSONArray(jsonResult)
+        if (resultArray.length() == 0) return emptyMap()
+
+        val periodResult = resultArray.getJSONObject(0)
+        val catEvents = periodResult.optJSONArray("cat_events") ?: return emptyMap()
+
+        for (i in 0 until catEvents.length()) {
+            val event = catEvents.getJSONObject(i)
+            val duration = event.optDouble("duration", 0.0)
+            val data = event.optJSONObject("data") ?: continue
+            val categoryArray = data.optJSONArray("\$category")
+            if (categoryArray == null || categoryArray.length() == 0) continue
+
+            val topLevel = categoryArray.optString(0, "Uncategorized")
+            categories[topLevel] = (categories[topLevel] ?: 0.0) + duration
+            totalDuration += duration
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Error parsing category JSON", e)
+    }
+
+    categories[null] = totalDuration  // aggregate "All" key
+    return categories
+}
+
 class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
@@ -116,36 +164,6 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         Log.d(TAG, "Querying timeperiod: $timeperiod")
 
         return parseCategorySeconds(ri.androidQuery(timeperiod))
-    }
-
-    private fun parseCategorySeconds(jsonResult: String): Map<String?, Double> {
-        val categories = mutableMapOf<String?, Double>()
-        var totalDuration = 0.0
-
-        try {
-            val resultArray = JSONArray(jsonResult)
-            if (resultArray.length() == 0) return emptyMap()
-
-            val periodResult = resultArray.getJSONObject(0)
-            val catEvents = periodResult.optJSONArray("cat_events") ?: return emptyMap()
-
-            for (i in 0 until catEvents.length()) {
-                val event = catEvents.getJSONObject(i)
-                val duration = event.optDouble("duration", 0.0)
-                val data = event.optJSONObject("data") ?: continue
-                val categoryArray = data.optJSONArray("\$category")
-                if (categoryArray == null || categoryArray.length() == 0) continue
-
-                val topLevel = categoryArray.optString(0, "Uncategorized")
-                categories[topLevel] = (categories[topLevel] ?: 0.0) + duration
-                totalDuration += duration
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error parsing category JSON", e)
-        }
-
-        categories[null] = totalDuration  // aggregate "All" key
-        return categories
     }
 
     private fun checkAndNotify(
