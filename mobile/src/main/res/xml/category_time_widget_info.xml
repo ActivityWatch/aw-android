@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- previewLayout (API 31+) renders the sample layout in the widget picker.
+     previewImage is the fallback for minSdk 26–30. Both are required: see
+     https://developer.android.com/develop/ui/views/appwidgets/previews -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
     android:minHeight="40dp"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_category_time"
+    android:previewLayout="@layout/widget_category_time_preview"
+    android:previewImage="@drawable/widget_category_time_preview"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_category_time_description" />
