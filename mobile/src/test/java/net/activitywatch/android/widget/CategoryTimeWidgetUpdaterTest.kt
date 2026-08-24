@@ -2,8 +2,23 @@ package net.activitywatch.android.widget
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.threeten.bp.LocalTime
 
 class CategoryTimeWidgetUpdaterTest {
+
+    @Test
+    fun parseStartOfDay_readsMinutesFromNativeSetting() {
+        assertEquals(
+            LocalTime.of(4, 30),
+            CategoryTimeWidgetUpdater.parseStartOfDay("\"04:30\"")
+        )
+    }
+
+    @Test
+    fun parseStartOfDay_fallsBackForMissingOrInvalidSetting() {
+        assertEquals(LocalTime.of(4, 0), CategoryTimeWidgetUpdater.parseStartOfDay("null"))
+        assertEquals(LocalTime.of(4, 0), CategoryTimeWidgetUpdater.parseStartOfDay("\"99:00\""))
+    }
 
     private fun catEvent(duration: Double, vararg category: String): String {
         val cats = category.joinToString(",") { "\"$it\"" }

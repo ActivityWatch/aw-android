@@ -64,6 +64,27 @@ internal fun parseAlerts(json: String): List<CategoryAlert> {
     }
 }
 
+internal fun alertsFromSetting(json: String): List<CategoryAlert> {
+    val value = json.trim()
+    if (value.isEmpty() || value == "null") return DEFAULT_ALERTS
+
+    return try {
+        parseAlerts(value).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+    } catch (e: Exception) {
+        DEFAULT_ALERTS
+    }
+}
+
+internal fun parseStartOfDayHour(response: String): Int {
+    val value = response.trim()
+    val hour = when {
+        value == "null" -> null
+        value.startsWith("\"") -> value.trim('"').split(":").firstOrNull()?.toIntOrNull()
+        else -> value.toIntOrNull()
+    }
+    return hour?.takeIf { it in 0..23 } ?: DEFAULT_START_OF_DAY_HOUR
+}
+
 // Include thresholds in the pref key so state resets when configuration changes.
 // A lowered threshold mid-day would otherwise be silently skipped because the old
 // triggered value is higher than all new thresholds.
@@ -89,10 +110,10 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         return try {
             val zone = ZoneId.systemDefault()
-            val startOfDayHour = fetchStartOfDayHour()
+            val startOfDayHour = parseStartOfDayHour(ri.getSetting("startOfDay"))
             val now = LocalDateTime.now(zone)
             val categorySeconds = getCategorySecondsToday(ri, now, zone, startOfDayHour)
-            val alerts = fetchAlerts()
+            val alerts = alertsFromSetting(ri.getSetting("aw-notify"))
             checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour), alerts)
             Result.success()
         } catch (e: Exception) {
@@ -225,51 +246,6 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(channel)
-        }
-    }
-
-    private fun fetchStartOfDayHour(): Int {
-        return try {
-            val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/startOfDay")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 1_000
-            conn.readTimeout = 1_000
-            if (conn.responseCode == 200) {
-                parseStartOfDayHour(conn.inputStream.bufferedReader().readText())
-            } else {
-                DEFAULT_START_OF_DAY_HOUR
-            }
-        } catch (e: Exception) {
-            DEFAULT_START_OF_DAY_HOUR
-        }
-    }
-
-    private fun fetchAlerts(): List<CategoryAlert> {
-        return try {
-            val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/aw-notify")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 1_000
-            conn.readTimeout = 1_000
-            if (conn.responseCode == 200) {
-                val text = conn.inputStream.bufferedReader().readText().trim()
-                if (text == "null" || text.isBlank()) DEFAULT_ALERTS
-                else parseAlerts(text).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
-            } else {
-                DEFAULT_ALERTS
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "Could not fetch alert config from server, using defaults")
-            DEFAULT_ALERTS
-        }
-    }
-
-    private fun parseStartOfDayHour(response: String): Int {
-        val v = response.trim()
-        return when {
-            v == "null" -> DEFAULT_START_OF_DAY_HOUR
-            v.startsWith("\"") -> v.trim('"').split(":").firstOrNull()?.toIntOrNull()
-                ?: DEFAULT_START_OF_DAY_HOUR
-            else -> v.toIntOrNull() ?: DEFAULT_START_OF_DAY_HOUR
         }
     }
 

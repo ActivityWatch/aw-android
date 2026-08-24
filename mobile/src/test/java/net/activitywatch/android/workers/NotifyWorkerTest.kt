@@ -8,6 +8,30 @@ import org.threeten.bp.LocalDateTime
 
 class NotifyWorkerTest {
     @Test
+    fun parseStartOfDayHour_readsNativeSettingAndFallsBack() {
+        assertEquals(6, parseStartOfDayHour("\"06:00\""))
+        assertEquals(4, parseStartOfDayHour("null"))
+        assertEquals(4, parseStartOfDayHour("\"99:00\""))
+    }
+
+    @Test
+    fun alertsFromSetting_readsNativeSetting() {
+        val alerts = alertsFromSetting(
+            """[{"category":"Work","label":"Focus","thresholdMinutes":[30]}]"""
+        )
+
+        assertEquals(1, alerts.size)
+        assertEquals("Focus", alerts[0].label)
+        assertEquals(listOf(30), alerts[0].thresholdMinutes)
+    }
+
+    @Test
+    fun alertsFromSetting_fallsBackForMissingOrInvalidSetting() {
+        assertEquals("All", alertsFromSetting("null")[0].label)
+        assertEquals("All", alertsFromSetting("not-json")[0].label)
+    }
+
+    @Test
     fun logicalDayDate_usesPreviousDateBeforeConfiguredBoundary() {
         val now = LocalDateTime.of(2026, 7, 24, 3, 59)
 

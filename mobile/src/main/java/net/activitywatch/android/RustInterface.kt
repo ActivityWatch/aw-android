@@ -50,6 +50,7 @@ class RustInterface(context: Context? = null) {
     external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
     external fun query(query: String, timeperiods: String): String
     external fun androidQuery(timeperiods: String): String
+    external fun getSetting(key: String): String
     external fun migrateHostname(hostname: String): String
 
     fun sayHello(to: String): String {
