@@ -33,6 +33,7 @@ class RustInterface(context: Context? = null) {
         initialize()
         if (context != null) {
             setDataDir(context.filesDir.absolutePath)
+            setVersionOverride(BuildConfig.VERSION_NAME)
         }
     }
 
@@ -44,6 +45,7 @@ class RustInterface(context: Context? = null) {
     private external fun greeting(pattern: String): String
     private external fun startServer()
     private external fun setDataDir(path: String)
+    private external fun setVersionOverride(version: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
