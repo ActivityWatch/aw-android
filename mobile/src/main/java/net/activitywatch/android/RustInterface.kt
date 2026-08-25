@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -33,6 +34,32 @@ class RustInterface(context: Context? = null) {
         initialize()
         if (context != null) {
             setDataDir(context.filesDir.absolutePath)
+            appVersionString(context)?.let { setVersionOverride(it) }
+        }
+    }
+
+    /**
+     * The version to report from `GET /api/0/info`, which the webui footer shows.
+     *
+     * Without an override the server reports the aw-server-rust package version,
+     * which is the version of a component rather than of the app the user
+     * installed: the footer read `v0.14.0 (rust)` on a `v0.14.0b2` install.
+     *
+     * The `(rust)` suffix is kept deliberately — aw-webui checks the version
+     * string for it to decide whether to offer the API browser link, which
+     * aw-server-rust does not serve.
+     *
+     * Returns null if the version can't be read, leaving the server's default.
+     */
+    private fun appVersionString(context: Context): String? {
+        return try {
+            val versionName =
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    ?: return null
+            "v$versionName (rust)"
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.w(TAG, "Could not read the app's own version, reporting the server's", e)
+            null
         }
     }
 
@@ -44,6 +71,7 @@ class RustInterface(context: Context? = null) {
     private external fun greeting(pattern: String): String
     private external fun startServer()
     private external fun setDataDir(path: String)
+    private external fun setVersionOverride(version: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
