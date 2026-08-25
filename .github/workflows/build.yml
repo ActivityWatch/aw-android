@@ -524,6 +524,13 @@ jobs:
           --range "$LAST_RELEASE...$GITHUB_REF_NAME" \
           --output release_notes.md
         cat release_notes.md
+        # v0.14.0b2 shipped with an empty changelog because nothing generated
+        # release_notes.md. Fail loudly here rather than publishing a release
+        # whose body is silently blank.
+        if [ ! -s release_notes.md ]; then
+          echo "::error::release_notes.md is empty — refusing to publish a release with no changelog"
+          exit 1
+        fi
 
     # create a release
     - name: Release
