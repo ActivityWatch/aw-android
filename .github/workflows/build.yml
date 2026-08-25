@@ -447,6 +447,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+    # Needed for changelog generation: full history + tags, and the submodule
+    # pointers build_changelog.py summarizes (aw-server-rust).
+    # Must run before download-artifact, since checkout cleans the workspace.
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
+    # build_changelog.py is maintained in ActivityWatch/activitywatch and is
+    # explicitly designed to be reused by other repos (see its module docstring).
+    # Check it out rather than vendoring a copy that would drift.
+    # Pinned to a known-good commit (2026-08-24) to avoid executing unpinned
+    # upstream scripts inside a release-capable job.
+    - name: Checkout changelog tooling
+      uses: actions/checkout@v4
+      with:
+        repository: ActivityWatch/activitywatch
+        ref: a17fa8aff7465268973a10d7d43aeb6741492e03
+        path: .changelog-tools
+        sparse-checkout: scripts
+        fetch-depth: 1
+
     # Will download all artifacts to path
     - name: Download release APK & AAB
       uses: actions/download-artifact@v4
@@ -465,6 +487,44 @@ jobs:
       with:
         prefix: 'v'
 
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: Install changelog deps
+      run: pip install requests
+
+    - name: Generate release notes
+      run: |
+        # get_latest_release.sh excludes the tag being released, so this
+        # resolves to the previous release. STABLE_ONLY makes a stable release
+        # diff against the last stable one rather than the last beta.
+        # NOTE: check-version-format-action classifies 0.x.x as not stable per
+        # semver, but aw-android uses 0.x.x for production releases. Use the
+        # same regex the release-play job uses to detect stability correctly.
+        TAG="${{ github.ref_name }}"
+        VERSION="${TAG#v}"
+        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          IS_STABLE="true"
+        else
+          IS_STABLE="false"
+        fi
+        LAST_RELEASE=$(STABLE_ONLY=${IS_STABLE} \
+          .changelog-tools/scripts/get_latest_release.sh)
+        if [ -z "$LAST_RELEASE" ]; then
+          echo "No previous release tag found; falling back to nearest ancestor tag."
+          LAST_RELEASE=$(git describe --tags --abbrev=0 \
+            --exclude "$GITHUB_REF_NAME" "$GITHUB_REF_NAME")
+        fi
+        echo "Generating changelog for $LAST_RELEASE...$GITHUB_REF_NAME"
+        python3 .changelog-tools/scripts/build_changelog.py \
+          --org ActivityWatch --repo aw-android \
+          --project-title "ActivityWatch for Android" \
+          --range "$LAST_RELEASE...$GITHUB_REF_NAME" \
+          --output release_notes.md
+        cat release_notes.md
+
     # create a release
     - name: Release
       uses: softprops/action-gh-release@v2
@@ -474,4 +534,4 @@ jobs:
         files: |
           dist/*.apk
           dist/*.aab
-        # body_path: dist/release_notes/release_notes.md
+        body_path: release_notes.md
