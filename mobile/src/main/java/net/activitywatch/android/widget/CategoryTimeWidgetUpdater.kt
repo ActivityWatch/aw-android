@@ -26,7 +26,6 @@ import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
 
 private const val TAG = "CategoryTimeWidget"
-private val DEFAULT_START_OF_DAY = LocalTime.of(4, 0)  // matches aw-webui default "04:00"
 
 // Bar chart dimensions
 private const val BAR_WIDTH = 400
@@ -44,6 +43,8 @@ private val CATEGORY_ACCENT_COLORS = intArrayOf(
  * Utility object that updates the widget data.
  */
 object CategoryTimeWidgetUpdater {
+
+    private val DEFAULT_START_OF_DAY = LocalTime.of(4, 0)  // matches aw-webui default "04:00"
 
     // App row IDs
     private val appRowIds = intArrayOf(
@@ -231,30 +232,8 @@ object CategoryTimeWidgetUpdater {
         }
 
         /**
-         * Fetch the startOfDay boundary from the AW server settings API.
-         * Falls back to DEFAULT_START_OF_DAY if the server is unavailable or the setting is unset.
-         */
-        private fun fetchStartOfDay(): LocalTime {
-            return try {
-                val url = java.net.URL("http://127.0.0.1:5600/api/0/settings/startOfDay")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 1000
-                conn.readTimeout = 1000
-                if (conn.responseCode == 200) {
-                    parseStartOfDay(conn.inputStream.bufferedReader().readText())
-                } else {
-                    Log.d(TAG, "startOfDay setting unavailable (HTTP ${conn.responseCode}), using default")
-                    DEFAULT_START_OF_DAY
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "Could not fetch startOfDay setting, using default: ${e.message}")
-                DEFAULT_START_OF_DAY
-            }
-        }
-
-        /**
-         * Parse the server's startOfDay JSON response into a LocalTime.
-         * Server returns null (unset) or a quoted string like "04:00" or "04:30".
+         * Parse the datastore's startOfDay JSON value into a LocalTime.
+         * Native settings return null (unset) or a quoted string like "04:00" or "04:30".
          */
         internal fun parseStartOfDay(response: String): LocalTime {
             val v = response.trim()
@@ -264,7 +243,11 @@ object CategoryTimeWidgetUpdater {
                     val parts = v.trim('"').split(":")
                     val hour = parts.getOrNull(0)?.toIntOrNull() ?: return DEFAULT_START_OF_DAY
                     val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                    LocalTime.of(hour, minute)
+                    try {
+                        LocalTime.of(hour, minute)
+                    } catch (e: Exception) {
+                        DEFAULT_START_OF_DAY
+                    }
                 }
                 else -> DEFAULT_START_OF_DAY
             }
@@ -272,12 +255,13 @@ object CategoryTimeWidgetUpdater {
 
         /**
          * Query today's category times, using the same day boundary as aw-webui.
-         * Reads startOfDay from the AW server settings so the widget matches the Activity view.
+         * Reads startOfDay directly from the datastore so the widget matches the Activity view
+         * even when the authenticated HTTP server is unavailable.
          */
         private fun getCategoryTimesToday(ri: RustInterface): List<Pair<String, Long>> {
             val zone = ZoneId.systemDefault()
             val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-            val startOfDayTime = fetchStartOfDay()
+            val startOfDayTime = parseStartOfDay(ri.getSetting("startOfDay"))
 
             // Match aw-webui's day boundary: if current time is before startOfDay we're still
             // in the previous day's period (e.g. 3:45 AM with startOfDay=04:00 → "yesterday")
