@@ -16,13 +16,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
 import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
@@ -38,6 +39,9 @@ internal fun activityViewUrl(baseUrl: String = baseURL): String = "$baseUrl$ACTI
 
 internal fun initialWebUiUrl(openActivityView: Boolean, baseUrl: String = baseURL): String =
     if (openActivityView) activityViewUrl(baseUrl) else baseUrl
+
+internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
+    openActivityView && isResumed
 
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
@@ -140,9 +144,17 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // Do not commit fragments here. onNewIntent runs while the activity is
-        // still stopped (after onSaveInstanceState); commit() would throw.
-        // onResume performs the replace once the FragmentManager is ready.
+
+        val isResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        if (shouldOpenActivityViewImmediately(
+                intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false),
+                isResumed,
+            )
+        ) {
+            openPendingActivityView()
+        }
+        // A stopped activity cannot safely commit here because its fragment
+        // state may already be saved. onResume consumes the intent instead.
     }
 
     private fun takeOpenActivityView(intent: Intent): Boolean {
@@ -164,15 +176,19 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         transaction.commit()
     }
 
-    override fun onResume() {
-        super.onResume()
-
-        // Notification tap on a reused/restored instance: replace after the
-        // FragmentManager is ready. Cold start already consumed the extra in
-        // onCreate, so this is a no-op there.
+    private fun openPendingActivityView() {
         if (takeOpenActivityView(intent)) {
             showWebUi(activityViewUrl(), replace = true)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // Notification tap on a stopped/restored instance: replace after the
+        // FragmentManager is ready. Cold start and resumed delivery already
+        // consumed the extra, so this is a no-op in those cases.
+        openPendingActivityView()
 
         // Ensures data is always fresh when app is opened,
         // even if it was up to an hour since the last logging-alarm was triggered.
