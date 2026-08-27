@@ -80,6 +80,7 @@ class RustInterface(context: Context? = null) {
     external fun androidQuery(timeperiods: String): String
     external fun getSetting(key: String): String
     external fun migrateHostname(hostname: String): String
+    external fun migrateWatcherAndroidBucketNames(): String
 
     fun sayHello(to: String): String {
         return greeting(to)
