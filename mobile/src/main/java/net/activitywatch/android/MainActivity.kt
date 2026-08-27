@@ -124,25 +124,25 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
         })
 
-        // Honor a notification tap even when the system restores a previous
-        // fragment (process death). Consume the extra so a later rotation
-        // does not replace the restored WebView with a fresh one.
-        val openActivityView = takeOpenActivityView(intent)
         if (savedInstanceState != null) {
-            if (openActivityView) {
-                showWebUi(activityViewUrl(), replace = true)
-            }
             return
         }
+        // Cold start: pick the right first fragment so we don't flash dashboard
+        // home before onResume. Consume the extra here; onResume is the path
+        // for reused instances (onNewIntent) and process-death restore.
+        val openActivityView = intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)
         showWebUi(initialWebUiUrl(openActivityView), replace = false)
+        if (openActivityView) {
+            intent.removeExtra(EXTRA_OPEN_ACTIVITY_VIEW)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (takeOpenActivityView(intent)) {
-            showWebUi(activityViewUrl(), replace = true)
-        }
+        // Do not commit fragments here. onNewIntent runs while the activity is
+        // still stopped (after onSaveInstanceState); commit() would throw.
+        // onResume performs the replace once the FragmentManager is ready.
     }
 
     private fun takeOpenActivityView(intent: Intent): Boolean {
@@ -166,6 +166,13 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onResume() {
         super.onResume()
+
+        // Notification tap on a reused/restored instance: replace after the
+        // FragmentManager is ready. Cold start already consumed the extra in
+        // onCreate, so this is a no-op there.
+        if (takeOpenActivityView(intent)) {
+            showWebUi(activityViewUrl(), replace = true)
+        }
 
         // Ensures data is always fresh when app is opened,
         // even if it was up to an hour since the last logging-alarm was triggered.
