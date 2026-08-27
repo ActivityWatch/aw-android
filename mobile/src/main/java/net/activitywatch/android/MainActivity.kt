@@ -124,21 +124,33 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
         })
 
+        // Honor a notification tap even when the system restores a previous
+        // fragment (process death). Consume the extra so a later rotation
+        // does not replace the restored WebView with a fresh one.
+        val openActivityView = takeOpenActivityView(intent)
         if (savedInstanceState != null) {
+            if (openActivityView) {
+                showWebUi(activityViewUrl(), replace = true)
+            }
             return
         }
-        showWebUi(
-            initialWebUiUrl(intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)),
-            replace = false,
-        )
+        showWebUi(initialWebUiUrl(openActivityView), replace = false)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)) {
+        if (takeOpenActivityView(intent)) {
             showWebUi(activityViewUrl(), replace = true)
         }
+    }
+
+    private fun takeOpenActivityView(intent: Intent): Boolean {
+        val open = intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)
+        if (open) {
+            intent.removeExtra(EXTRA_OPEN_ACTIVITY_VIEW)
+        }
+        return open
     }
 
     private fun showWebUi(url: String, replace: Boolean) {
