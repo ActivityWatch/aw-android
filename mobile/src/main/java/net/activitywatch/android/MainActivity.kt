@@ -29,6 +29,16 @@ private const val TAG = "MainActivity"
 
 const val baseURL = "http://127.0.0.1:5600"
 
+// Same destination as the drawer "Activity" item. Notification taps set
+// EXTRA_OPEN_ACTIVITY_VIEW so we land here instead of dashboard home.
+const val ACTIVITY_VIEW_ROUTE = "/#/activity/unknown/"
+const val EXTRA_OPEN_ACTIVITY_VIEW = "net.activitywatch.android.extra.OPEN_ACTIVITY_VIEW"
+
+internal fun activityViewUrl(baseUrl: String = baseURL): String = "$baseUrl$ACTIVITY_VIEW_ROUTE"
+
+internal fun initialWebUiUrl(openActivityView: Boolean, baseUrl: String = baseURL): String =
+    if (openActivityView) activityViewUrl(baseUrl) else baseUrl
+
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
@@ -104,13 +114,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val serviceIntent = Intent(this, BackgroundService::class.java)
         startForegroundService(serviceIntent)
 
-        if (savedInstanceState != null) {
-            return
-        }
-        val firstFragment = WebUIFragment.newInstance(authenticatedUrl())
-        supportFragmentManager.beginTransaction()
-            .add(R.id.fragment_container, firstFragment).commit()
-
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
@@ -121,6 +124,32 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
         })
 
+        if (savedInstanceState != null) {
+            return
+        }
+        showWebUi(
+            initialWebUiUrl(intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)),
+            replace = false,
+        )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)) {
+            showWebUi(activityViewUrl(), replace = true)
+        }
+    }
+
+    private fun showWebUi(url: String, replace: Boolean) {
+        val fragment = WebUIFragment.newInstance(authenticatedUrl(url))
+        val transaction = supportFragmentManager.beginTransaction()
+        if (replace) {
+            transaction.replace(R.id.fragment_container, fragment)
+        } else {
+            transaction.add(R.id.fragment_container, fragment)
+        }
+        transaction.commit()
     }
 
     override fun onResume() {
@@ -168,7 +197,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = authenticatedUrl("$baseURL/#/activity/unknown/")
+                url = authenticatedUrl(activityViewUrl())
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java
