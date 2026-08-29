@@ -445,10 +445,12 @@ jobs:
         # Newer fastlane versions fail hard if rubygems.org isn't in the system gem sources list.
         # This is idempotent (exits 0 if already present).
         gem sources --add https://rubygems.org
-        # Re-check at the publish boundary: the env that actually reaches supply.
+        # Re-check at the publish boundary, then pass the asserted track on
+        # argv. supply's default track is production; SUPPLY_TRACK via env is
+        # the historical path, but an explicit --track is the fail-closed one.
         bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
         # bundle exec fastlane supply run --apk dist/*.apk
-        bundle exec fastlane supply run --aab dist/*.aab
+        bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK"
 
   release-gh:
     needs: [build-apk, test]
