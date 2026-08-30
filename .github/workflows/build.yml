@@ -233,13 +233,17 @@ jobs:
     name: Test
     runs-on: ubuntu-24.04
     needs: [build-rust]
-    env:
-      SUPPLY_TRACK: production   # used by fastlane to determine track to publish to
 
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: 'recursive'
+
+    # Cheap, no SDK: keeps the Play-track contract from regressing on every PR.
+    # The leftover job-level `SUPPLY_TRACK: production` here never reached
+    # fastlane (release-fastlane sets its own) and was a copy-paste footgun.
+    - name: Assert Play-track resolver
+      run: bash scripts/assert-play-track.sh --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4
@@ -412,15 +416,18 @@ jobs:
         # Set SUPPLY_TRACK based on whether this is a stable (x.y.z) or pre-release tag.
         # NOTE: nowsprinting/check-version-format-action classifies 0.x.x as not stable
         # (semver convention), but aw-android uses 0.x.x for production releases.
-        # Check for pre-release suffixes directly instead.
+        # Check for pre-release suffixes directly instead (scripts/assert-play-track.sh).
         TAG="${{ github.ref_name }}"
-        VERSION="${TAG#v}"
-        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          SUPPLY_TRACK="production"
-        else
-          SUPPLY_TRACK="internal"
-        fi
-        echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> $GITHUB_ENV
+        SUPPLY_TRACK="$(bash scripts/assert-play-track.sh resolve "$TAG")"
+        echo "SUPPLY_TRACK=${SUPPLY_TRACK}" >> "$GITHUB_ENV"
+        {
+          echo "## Play Store publish"
+          echo "- tag: \`${TAG}\`"
+          echo "- SUPPLY_TRACK: \`${SUPPLY_TRACK}\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Assert Play track matches tag
+      run: bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
 
     - uses: adnsio/setup-age-action@v1.2.0
     - name: Load Android secrets
@@ -438,8 +445,12 @@ jobs:
         # Newer fastlane versions fail hard if rubygems.org isn't in the system gem sources list.
         # This is idempotent (exits 0 if already present).
         gem sources --add https://rubygems.org
+        # Re-check at the publish boundary, then pass the asserted track on
+        # argv. supply's default track is production; SUPPLY_TRACK via env is
+        # the historical path, but an explicit --track is the fail-closed one.
+        bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
         # bundle exec fastlane supply run --apk dist/*.apk
-        bundle exec fastlane supply run --aab dist/*.aab
+        bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK"
 
   release-gh:
     needs: [build-apk, test]
