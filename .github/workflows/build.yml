@@ -203,18 +203,32 @@ jobs:
     # release-android job + docs/contributing.rst "Android release signing"
     # there); signing itself happens in scripts/sign_apk.sh via the Makefile.
     # Keep the two implementations consistent when changing either.
-    # gptme delivers the keystore as a base64 secret instead of age-encrypted
-    # in-repo, pins the signer cert SHA-256, and fails closed on missing
-    # secrets — planned to be adopted here too (see issue tracker).
-    - uses: adnsio/setup-age-action@v1.2.0
-    - name: Load Android secrets
-      if: env.KEY_ANDROID_JKS != null
+    # Keystore is delivered as a base64 secret (KEY_ANDROID_JKS_B64) and decoded
+    # here; the signer cert SHA-256 is pinned in ANDROID_CERT_SHA256 (repo variable)
+    # and verified after each APK is signed.
+    - name: Require signing configuration on release tags
+      if: startsWith(github.ref, 'refs/tags/v')
       env:
-        KEY_ANDROID_JKS: ${{ secrets.KEY_ANDROID_JKS }}
+        HAS_SIGNING: >-
+          ${{ secrets.KEY_ANDROID_JKS_B64 != '' &&
+              secrets.KEY_ANDROID_JKS_STOREPASS != '' &&
+              secrets.KEY_ANDROID_JKS_KEYPASS != '' &&
+              vars.ANDROID_CERT_SHA256 != '' }}
       run: |
-        printf "$KEY_ANDROID_JKS" > android.jks.key
-        cat android.jks.age | age -d -i android.jks.key -o android.jks
-        rm android.jks.key
+        if [ "$HAS_SIGNING" != "true" ]; then
+          echo "::error::Android release signing is not fully configured."
+          echo "::error::Provision KEY_ANDROID_JKS_B64, KEY_ANDROID_JKS_STOREPASS, KEY_ANDROID_JKS_KEYPASS"
+          echo "::error::secrets and ANDROID_CERT_SHA256 repo variable before cutting a release tag."
+          exit 1
+        fi
+
+    - name: Load Android keystore
+      if: ${{ secrets.KEY_ANDROID_JKS_B64 != '' }}
+      env:
+        KEY_ANDROID_JKS_B64: ${{ secrets.KEY_ANDROID_JKS_B64 }}
+      run: |
+        printf '%s' "$KEY_ANDROID_JKS_B64" | base64 --decode > android.jks
+        chmod 600 android.jks
 
     - name: Assemble
       env:
@@ -222,6 +236,28 @@ jobs:
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
         make dist/aw-android.${{ matrix.type }}
+
+    - name: Verify APK signer certificate
+      if: matrix.type == 'apk' && vars.ANDROID_CERT_SHA256 != ''
+      env:
+        ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+      run: |
+        apksigner=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -print | sort -V | tail -1)
+        apk=dist/aw-android.apk
+        actual=$("$apksigner" verify --print-certs "$apk" \
+          | grep "Signer #1 certificate SHA-256 digest:" \
+          | awk '{print $NF}')
+        if [ -z "$actual" ]; then
+          echo "::error::Could not extract signer certificate from $apk"
+          exit 1
+        fi
+        if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
+          echo "::error::Signer certificate SHA-256 mismatch — possible key rotation or wrong keystore."
+          echo "::error::  expected: $ANDROID_CERT_SHA256"
+          echo "::error::  actual:   $actual"
+          exit 1
+        fi
+        echo "Signer certificate verified: $actual"
 
     - name: Upload
       uses: actions/upload-artifact@v4
@@ -429,16 +465,13 @@ jobs:
     - name: Assert Play track matches tag
       run: bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
 
-    - uses: adnsio/setup-age-action@v1.2.0
-    - name: Load Android secrets
+    - name: Load Fastlane API credentials
       env:
-        KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+        KEY_FASTLANE_API_B64: ${{ secrets.KEY_FASTLANE_API_B64 }}
       run: |
-        printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-        cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
-          | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
-                   -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
-        rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+        printf '%s' "$KEY_FASTLANE_API_B64" | base64 --decode \
+          > fastlane/api-8546008605074111507-287154-450dc77b365f.json
+        chmod 600 fastlane/api-8546008605074111507-287154-450dc77b365f.json
 
     - name: Release with fastlane
       run: |
