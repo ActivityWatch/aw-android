@@ -15,14 +15,78 @@ class NotifyWorkerTest {
     }
 
     @Test
-    fun alertsFromSetting_readsNativeSetting() {
+    fun alertsFromSetting_readsCanonicalSetting() {
         val alerts = alertsFromSetting(
-            """[{"category":"Work","label":"Focus","thresholdMinutes":[30]}]"""
+            """{"alerts":[{"category":"Work","label":"Focus","thresholds_minutes":[30],"positive":true}]}"""
+        )
+
+        assertEquals(1, alerts.size)
+        assertEquals("Work", alerts[0].category)
+        assertEquals("Focus", alerts[0].label)
+        assertEquals(listOf(30), alerts[0].thresholdMinutes)
+        assertEquals(true, alerts[0].positive)
+    }
+
+    @Test
+    fun alertsFromSetting_mapsCanonicalAllCategoryToAggregate() {
+        val alerts = alertsFromSetting(
+            """{"alerts":[{"category":"All","label":null,"thresholds_minutes":[60],"positive":false}]}"""
+        )
+
+        assertEquals(1, alerts.size)
+        assertNull(alerts[0].category)
+        assertEquals("All", alerts[0].label)
+    }
+
+    @Test
+    fun alertsFromSetting_preservesEmptyCanonicalAlerts() {
+        assertEquals(emptyList<CategoryAlert>(), alertsFromSetting("""{"alerts":[]}"""))
+    }
+
+    @Test
+    fun alertsFromSetting_skipsMalformedCanonicalAlertWithoutDroppingValidAlerts() {
+        val alerts = alertsFromSetting(
+            """{"alerts":[
+                {"category":"Work","label":"Focus","thresholds_minutes":[30],"positive":true},
+                {"category":"Media","label":"Media","positive":false}
+            ]}"""
+        )
+
+        assertEquals(1, alerts.size)
+        assertEquals("Focus", alerts[0].label)
+    }
+
+    @Test
+    fun alertsFromSetting_fallsBackWhenAllCanonicalAlertsAreMalformed() {
+        val alerts = alertsFromSetting(
+            """{"alerts":[{"category":"Work","label":"Focus","positive":true}]}"""
+        )
+
+        assertEquals("All", alerts[0].label)
+    }
+
+    @Test
+    fun alertsFromSetting_rejectsNonPositiveOrFractionalThresholds() {
+        val alerts = alertsFromSetting(
+            """{"alerts":[
+                {"category":"Work","label":"Zero","thresholds_minutes":[0],"positive":true},
+                {"category":"Media","label":"Fractional","thresholds_minutes":[1.5],"positive":false}
+            ]}"""
+        )
+
+        assertEquals("All", alerts[0].label)
+    }
+
+    @Test
+    fun alertsFromSetting_preservesLegacySettingCompatibility() {
+        val alerts = alertsFromSetting(
+            """[{"category":"Work","label":"Focus","thresholdMinutes":[30],"positive":true}]"""
         )
 
         assertEquals(1, alerts.size)
         assertEquals("Focus", alerts[0].label)
         assertEquals(listOf(30), alerts[0].thresholdMinutes)
+        assertEquals(true, alerts[0].positive)
     }
 
     @Test

@@ -17,6 +17,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import org.json.JSONArray
 import org.json.JSONException
+import org.json.JSONObject
 import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
 import org.threeten.bp.ZoneId
@@ -52,25 +53,44 @@ private val DEFAULT_ALERTS = listOf(
 internal fun logicalDayDate(now: LocalDateTime, startOfDayHour: Int): LocalDate =
     if (now.hour < startOfDayHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
 
-internal fun parseAlerts(json: String): List<CategoryAlert> {
-    val arr = JSONArray(json)
-    return (0 until arr.length()).mapNotNull { i ->
-        val obj = arr.getJSONObject(i)
-        val category = if (obj.isNull("category")) null else obj.optString("category").ifEmpty { null }
-        val label = obj.optString("label").ifEmpty { return@mapNotNull null }
-        val thresholdsArr = obj.optJSONArray("thresholdMinutes") ?: return@mapNotNull null
-        val thresholds = (0 until thresholdsArr.length()).map { thresholdsArr.getInt(it) }
-        val positive = obj.optBoolean("positive", false)
+internal fun parseAlerts(json: String): List<CategoryAlert> = parseAlertArray(JSONArray(json), legacy = true)
+
+private fun parseAlertArray(alerts: JSONArray, legacy: Boolean): List<CategoryAlert> =
+    (0 until alerts.length()).mapNotNull { i ->
+        val alert = alerts.getJSONObject(i)
+        val rawCategory = if (alert.isNull("category")) null else alert.optString("category")
+        val category = rawCategory?.takeUnless { it.isEmpty() || it == "All" }
+        val label = if (alert.isNull("label")) {
+            rawCategory ?: "All"
+        } else {
+            alert.optString("label").ifEmpty { rawCategory ?: "All" }
+        }
+        val thresholdsKey = if (legacy) "thresholdMinutes" else "thresholds_minutes"
+        val thresholdsArray = alert.optJSONArray(thresholdsKey) ?: return@mapNotNull null
+        val thresholds = (0 until thresholdsArray.length()).mapNotNull { j ->
+            val minutes = thresholdsArray.opt(j)
+            (minutes as? Number)?.takeIf {
+                it.toDouble() > 0 && it.toDouble() % 1.0 == 0.0 && it.toLong() <= Int.MAX_VALUE
+            }?.toInt()
+        }
+        if (thresholds.size != thresholdsArray.length() || thresholds.isEmpty()) return@mapNotNull null
+        val positive = alert.optBoolean("positive", false)
         CategoryAlert(category, label, thresholds, positive)
     }
-}
 
 internal fun alertsFromSetting(json: String): List<CategoryAlert> {
     val value = json.trim()
     if (value.isEmpty() || value == "null") return DEFAULT_ALERTS
 
     return try {
-        parseAlerts(value).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+        if (value.startsWith("[")) {
+            parseAlerts(value).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+        } else {
+            val config = JSONObject(value)
+            val alertsArray = config.getJSONArray("alerts")
+            val alerts = parseAlertArray(alertsArray, legacy = false)
+            if (alertsArray.length() == 0) alerts else alerts.takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+        }
     } catch (e: Exception) {
         DEFAULT_ALERTS
     }
