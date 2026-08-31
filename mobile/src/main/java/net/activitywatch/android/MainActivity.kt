@@ -32,13 +32,18 @@ const val baseURL = "http://127.0.0.1:5600"
 
 // Same destination as the drawer "Activity" item. Notification taps set
 // EXTRA_OPEN_ACTIVITY_VIEW so we land here instead of dashboard home.
-const val ACTIVITY_VIEW_ROUTE = "/#/activity/unknown/"
+// Hostname must match the sanitized device name used for Android buckets —
+// `/#/activity/unknown/` is a sentinel, not a host (see DeviceHostname.kt).
 const val EXTRA_OPEN_ACTIVITY_VIEW = "net.activitywatch.android.extra.OPEN_ACTIVITY_VIEW"
 
-internal fun activityViewUrl(baseUrl: String = baseURL): String = "$baseUrl$ACTIVITY_VIEW_ROUTE"
+internal fun activityViewUrl(hostname: String, baseUrl: String = baseURL): String =
+    "$baseUrl/#/activity/${sanitizeDeviceHostname(hostname)}/"
 
-internal fun initialWebUiUrl(openActivityView: Boolean, baseUrl: String = baseURL): String =
-    if (openActivityView) activityViewUrl(baseUrl) else baseUrl
+internal fun initialWebUiUrl(
+    openActivityView: Boolean,
+    hostname: String,
+    baseUrl: String = baseURL,
+): String = if (openActivityView) activityViewUrl(hostname, baseUrl) else baseUrl
 
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
@@ -135,7 +140,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // home before onResume. Consume the extra here; onResume is the path
         // for reused instances (onNewIntent) and process-death restore.
         val openActivityView = intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)
-        showWebUi(initialWebUiUrl(openActivityView), replace = false)
+        showWebUi(initialWebUiUrl(openActivityView, deviceHostname(this)), replace = false)
         if (openActivityView) {
             intent.removeExtra(EXTRA_OPEN_ACTIVITY_VIEW)
         }
@@ -176,9 +181,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         transaction.commit()
     }
 
+    private fun activityViewUrlForDevice(): String = activityViewUrl(deviceHostname(this))
+
     private fun openPendingActivityView() {
         if (takeOpenActivityView(intent)) {
-            showWebUi(activityViewUrl(), replace = true)
+            showWebUi(activityViewUrlForDevice(), replace = true)
         }
     }
 
@@ -232,7 +239,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = authenticatedUrl(activityViewUrl())
+                url = authenticatedUrl(activityViewUrlForDevice())
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java

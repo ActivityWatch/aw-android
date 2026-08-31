@@ -8,14 +8,37 @@ import org.junit.Test
 class MainActivityNavigationTest {
     @Test
     fun initialWebUiUrl_defaultsToDashboardHome() {
-        assertEquals(baseURL, initialWebUiUrl(openActivityView = false))
+        assertEquals(
+            baseURL,
+            initialWebUiUrl(openActivityView = false, hostname = "pixel_8"),
+        )
     }
 
     @Test
-    fun initialWebUiUrl_opensActivityNavDestination() {
+    fun initialWebUiUrl_opensActivityNavDestinationForDeviceHost() {
+        assertEquals(
+            "$baseURL/#/activity/pixel_8/",
+            initialWebUiUrl(openActivityView = true, hostname = "pixel_8"),
+        )
+    }
+
+    @Test
+    fun activityViewUrl_sanitizesRawDeviceName() {
+        assertEquals(
+            "$baseURL/#/activity/pixel_8/",
+            activityViewUrl("Pixel 8"),
+        )
+    }
+
+    @Test
+    fun activityViewUrl_unknownIsFallbackNotDefault() {
         assertEquals(
             "$baseURL/#/activity/unknown/",
-            initialWebUiUrl(openActivityView = true),
+            activityViewUrl("unknown"),
+        )
+        assertEquals(
+            "$baseURL/#/activity/unknown/",
+            activityViewUrl(""),
         )
     }
 
