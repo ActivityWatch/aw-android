@@ -78,18 +78,7 @@ class SyncInterface(context: Context) {
     private external fun syncBoth(port: Int, hostname: String): String
     external fun getSyncDir(): String
     
-    private fun getDeviceName(): String {
-        val raw = android.provider.Settings.Global.getString(
-            appContext.contentResolver,
-            android.provider.Settings.Global.DEVICE_NAME
-        )?.trim()?.takeIf { it.isNotEmpty() }
-            ?: android.os.Build.DEVICE ?: "unknown"
-        return raw.trim()
-            .lowercase(java.util.Locale.ROOT)
-            .replace(Regex("[^a-z0-9_-]+"), "_")
-            .trim('_')
-            .ifEmpty { "unknown" }
-    }
+    private fun getDeviceName(): String = deviceHostname(appContext)
     
     // Async wrapper for syncPullAll
     fun syncPullAllAsync(callback: (Boolean, String) -> Unit) {
