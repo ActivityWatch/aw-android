@@ -16,18 +16,32 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
 import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
 
 const val baseURL = "http://127.0.0.1:5600"
+
+// Same destination as the drawer "Activity" item. Notification taps set
+// EXTRA_OPEN_ACTIVITY_VIEW so we land here instead of dashboard home.
+const val ACTIVITY_VIEW_ROUTE = "/#/activity/unknown/"
+const val EXTRA_OPEN_ACTIVITY_VIEW = "net.activitywatch.android.extra.OPEN_ACTIVITY_VIEW"
+
+internal fun activityViewUrl(baseUrl: String = baseURL): String = "$baseUrl$ACTIVITY_VIEW_ROUTE"
+
+internal fun initialWebUiUrl(openActivityView: Boolean, baseUrl: String = baseURL): String =
+    if (openActivityView) activityViewUrl(baseUrl) else baseUrl
+
+internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
+    openActivityView && isResumed
 
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
@@ -104,13 +118,6 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val serviceIntent = Intent(this, BackgroundService::class.java)
         startForegroundService(serviceIntent)
 
-        if (savedInstanceState != null) {
-            return
-        }
-        val firstFragment = WebUIFragment.newInstance(authenticatedUrl())
-        supportFragmentManager.beginTransaction()
-            .add(R.id.fragment_container, firstFragment).commit()
-
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
@@ -121,10 +128,67 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
         })
 
+        if (savedInstanceState != null) {
+            return
+        }
+        // Cold start: pick the right first fragment so we don't flash dashboard
+        // home before onResume. Consume the extra here; onResume is the path
+        // for reused instances (onNewIntent) and process-death restore.
+        val openActivityView = intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)
+        showWebUi(initialWebUiUrl(openActivityView), replace = false)
+        if (openActivityView) {
+            intent.removeExtra(EXTRA_OPEN_ACTIVITY_VIEW)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        val isResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        if (shouldOpenActivityViewImmediately(
+                intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false),
+                isResumed,
+            )
+        ) {
+            openPendingActivityView()
+        }
+        // A stopped activity cannot safely commit here because its fragment
+        // state may already be saved. onResume consumes the intent instead.
+    }
+
+    private fun takeOpenActivityView(intent: Intent): Boolean {
+        val open = intent.getBooleanExtra(EXTRA_OPEN_ACTIVITY_VIEW, false)
+        if (open) {
+            intent.removeExtra(EXTRA_OPEN_ACTIVITY_VIEW)
+        }
+        return open
+    }
+
+    private fun showWebUi(url: String, replace: Boolean) {
+        val fragment = WebUIFragment.newInstance(authenticatedUrl(url))
+        val transaction = supportFragmentManager.beginTransaction()
+        if (replace) {
+            transaction.replace(R.id.fragment_container, fragment)
+        } else {
+            transaction.add(R.id.fragment_container, fragment)
+        }
+        transaction.commit()
+    }
+
+    private fun openPendingActivityView() {
+        if (takeOpenActivityView(intent)) {
+            showWebUi(activityViewUrl(), replace = true)
+        }
     }
 
     override fun onResume() {
         super.onResume()
+
+        // Notification tap on a stopped/restored instance: replace after the
+        // FragmentManager is ready. Cold start and resumed delivery already
+        // consumed the extra, so this is a no-op in those cases.
+        openPendingActivityView()
 
         // Ensures data is always fresh when app is opened,
         // even if it was up to an hour since the last logging-alarm was triggered.
@@ -168,7 +232,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_activity -> {
                 fragmentClass = WebUIFragment::class.java
-                url = authenticatedUrl("$baseURL/#/activity/unknown/")
+                url = authenticatedUrl(activityViewUrl())
             }
             R.id.nav_buckets -> {
                 fragmentClass = WebUIFragment::class.java

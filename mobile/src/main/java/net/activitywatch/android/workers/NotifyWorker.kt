@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.jakewharton.threetenabp.AndroidThreeTen
+import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
@@ -227,9 +228,14 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         val body = "${alert.label}: $thresholdStr" +
             if (thresholdStr != actualStr) "  ($actualStr)" else ""
 
-        // Open the activity/timeline view in MainActivity when the notification is tapped.
+        // Open the activity/timeline view (same destination as the drawer
+        // "Activity" item) when the notification is tapped. SINGLE_TOP lets an
+        // already-running MainActivity receive onNewIntent instead of stacking.
         val openIntent = Intent(applicationContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_OPEN_ACTIVITY_VIEW, true)
         }
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
