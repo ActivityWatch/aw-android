@@ -98,4 +98,66 @@ class NotifyWorkerTest {
             "Changing positive flag must change the pref-key hash"
         }
     }
+
+    private fun catEvent(duration: Double, vararg category: String): String {
+        val cats = category.joinToString(",") { "\"$it\"" }
+        return """{"duration":$duration,"data":{"${'$'}category":[$cats]}}"""
+    }
+
+    private fun response(vararg events: String) =
+        """[{"cat_events":[${events.joinToString(",")}]}]"""
+
+    /**
+     * NotifyWorker groups by `$category[0]` so a "Work" alert includes every
+     * Work subcategory. This is the intended match against [CategoryAlert.category]
+     * (top-level names in DEFAULT_ALERTS). See ActivityWatch/aw-android#231.
+     */
+    @Test
+    fun parseCategorySeconds_rollsSubcategoriesIntoTopLevel() {
+        val result = parseCategorySeconds(
+            response(
+                catEvent(60.0, "Work", "Programming"),
+                catEvent(30.0, "Work", "Planning")
+            )
+        )
+
+        assertEquals(90.0, result["Work"]!!, 0.0)
+        assertEquals(90.0, result[null]!!, 0.0)
+        assertNull(result["Work > Programming"])
+        assertNull(result["Programming"])
+    }
+
+    @Test
+    fun parseCategorySeconds_keysMatchDefaultAlertCategories() {
+        val result = parseCategorySeconds(
+            response(
+                catEvent(120.0, "Work", "Coding"),
+                catEvent(30.0, "YouTube"),
+                catEvent(15.0, "Twitter", "Web")
+            )
+        )
+
+        assertEquals(120.0, result["Work"]!!, 0.0)
+        assertEquals(30.0, result["YouTube"]!!, 0.0)
+        assertEquals(15.0, result["Twitter"]!!, 0.0)
+        assertEquals(165.0, result[null]!!, 0.0)
+    }
+
+    @Test
+    fun parseCategorySeconds_collapsesUncategorizedSubcategories() {
+        val result = parseCategorySeconds(
+            response(
+                catEvent(20.0, "Uncategorized", "Browser"),
+                catEvent(10.0, "Uncategorized", "Games")
+            )
+        )
+
+        assertEquals(30.0, result["Uncategorized"]!!, 0.0)
+        assertEquals(1, result.keys.filterNotNull().size)
+    }
+
+    @Test
+    fun parseCategorySeconds_returnsEmptyForEmptyResult() {
+        assertEquals(emptyMap<String?, Double>(), parseCategorySeconds("[]"))
+    }
 }
