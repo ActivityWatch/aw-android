@@ -1,6 +1,7 @@
 package net.activitywatch.android.fragments
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -230,6 +233,39 @@ internal fun sanitizeExportFilename(filename: String): String {
     return name.takeIf { it.isNotEmpty() } ?: "export"
 }
 
+/**
+ * WebView's default (no WebChromeClient) file picker is camera/gallery.
+ * Category import uses `<input type="file">` with no `accept`, so an untyped
+ * input must open a generic document picker (aw-android#247).
+ */
+internal fun resolvedFileChooserMimeTypes(acceptTypes: Array<String>?): List<String> {
+    val types = acceptTypes.orEmpty().filter { it.isNotBlank() && it != "*/*" }
+    return types.ifEmpty { listOf("*/*") }
+}
+
+internal fun fileChooserIntentForAcceptTypes(acceptTypes: Array<String>?): Intent {
+    val types = resolvedFileChooserMimeTypes(acceptTypes)
+    return Intent(Intent.ACTION_GET_CONTENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        type = types.first()
+        if (types.size > 1) {
+            putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray())
+        }
+    }
+}
+
+internal fun parseFileChooserResult(resultCode: Int, data: Intent?): Array<Uri>? {
+    if (resultCode != Activity.RESULT_OK || data == null) {
+        return null
+    }
+    val clip = data.clipData
+    if (clip != null && clip.itemCount > 0) {
+        return Array(clip.itemCount) { index -> clip.getItemAt(index).uri }
+    }
+    return data.data?.let { arrayOf(it) }
+}
+
 internal fun inferExportMimeType(filename: String, explicit: String? = null): String {
     val given = explicit?.trim().orEmpty()
     if (given.isNotEmpty() && given != "application/octet-stream") {
@@ -261,11 +297,20 @@ class WebUIFragment : Fragment() {
     private var listener: OnFragmentInteractionListener? = null
     private var webView: WebView? = null
     private val exportQueue = ExportSaveQueue()
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         onExportDocumentCreated(uri)
+    }
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val callback = filePathCallback
+        filePathCallback = null
+        callback?.onReceiveValue(parseFileChooserResult(result.resultCode, result.data))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -345,6 +390,26 @@ class WebUIFragment : Fragment() {
             }
         }
         myWebView.webViewClient = MyWebViewClient()
+        myWebView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                this@WebUIFragment.filePathCallback?.onReceiveValue(null)
+                this@WebUIFragment.filePathCallback = filePathCallback
+                val intent = fileChooserIntentForAcceptTypes(fileChooserParams?.acceptTypes)
+                return try {
+                    fileChooserLauncher.launch(intent)
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    Log.e(TAG, "No activity to handle file chooser", e)
+                    this@WebUIFragment.filePathCallback?.onReceiveValue(null)
+                    this@WebUIFragment.filePathCallback = null
+                    false
+                }
+            }
+        }
 
         myWebView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
             handleWebViewDownload(url, contentDisposition, mimeType)
@@ -361,6 +426,8 @@ class WebUIFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = null
         webView = null
         super.onDestroyView()
     }
