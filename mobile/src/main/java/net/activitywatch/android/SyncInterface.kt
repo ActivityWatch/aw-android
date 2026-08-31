@@ -53,8 +53,12 @@ class SyncInterface(context: Context) {
         Os.setenv("XDG_CACHE_HOME", cacheDir, true)
         Os.setenv("XDG_CONFIG_HOME", "$filesDir/config", true)
         Os.setenv("XDG_DATA_HOME", "$filesDir/data", true)
-        
+
         System.loadLibrary("aw_sync")
+        // libaw_sync.so has its own ANDROID_DATA_DIR static; RustInterface.setDataDir
+        // only updates libaw_server.so. Point this copy at filesDir so sync reads
+        // the same config.toml as the embedded server (ActivityWatch/aw-server-rust#666).
+        setDataDir(filesDir)
         Log.i(TAG, "aw-sync initialized with sync dir: $syncDir")
     }
 
@@ -72,6 +76,7 @@ class SyncInterface(context: Context) {
     }
     
     // Native JNI functions
+    private external fun setDataDir(path: String)
     private external fun syncPullAll(port: Int, hostname: String): String
     private external fun syncPull(port: Int, hostname: String): String
     private external fun syncPush(port: Int, hostname: String): String
