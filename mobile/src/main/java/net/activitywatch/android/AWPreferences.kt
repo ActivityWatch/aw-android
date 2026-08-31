@@ -37,6 +37,17 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putBoolean("hasMigratedHostname", true).apply()
     }
 
+    fun hasMigratedWatcherAndroidBucketNames(): Boolean {
+        return sharedPreferences.getBoolean("hasMigratedWatcherAndroidBucketNames", false)
+    }
+
+    fun setWatcherAndroidBucketNamesMigrated() {
+        sharedPreferences
+            .edit()
+            .putBoolean("hasMigratedWatcherAndroidBucketNames", true)
+            .apply()
+    }
+
     fun hasRequestedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
     }

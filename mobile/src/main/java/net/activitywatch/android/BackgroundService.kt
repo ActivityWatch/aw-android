@@ -86,31 +86,24 @@ class BackgroundService : Service() {
         // Start the server
         rustInterface.startServerTask()
 
-        // Run hostname migration off the main thread — migrateHostname() is a blocking JNI call.
+        // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
+        // Watcher-bucket migration must follow hostname migration so IDs are stable first.
         val prefs = AWPreferences(this)
-        if (!prefs.hasMigratedHostname()) {
+        val needsHostnameMigration = !prefs.hasMigratedHostname()
+        val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
+        if (needsHostnameMigration || needsWatcherBucketMigration) {
             CoroutineScope(Dispatchers.IO).launch {
-                val hostname = rustInterface.getDeviceName(this@BackgroundService)
-                val result = rustInterface.migrateHostname(hostname)
-                Log.i(TAG, "Hostname migration result: $result")
-                // The native migrateHostname() returns a plain-text success string
-                // ("Migrated hostname for N bucket(s)") or a JSON error object
-                // ({"error": "..."}).  Treat the plain-text prefix as success; only
-                // retry when the native lib explicitly reports an error.
-                val migrationSucceeded = if (result.startsWith("Migrated hostname for")) {
-                    true
-                } else {
-                    val errorMsg = try {
-                        JSONObject(result).optString("error", result)
-                    } catch (e: JSONException) {
-                        result.ifEmpty { "empty response" }
+                if (needsHostnameMigration) {
+                    val hostname = rustInterface.getDeviceName(this@BackgroundService)
+                    val result = rustInterface.migrateHostname(hostname)
+                    Log.i(TAG, "Hostname migration result: $result")
+                    if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
+                        prefs.setHostnameMigrated()
                     }
-                    Log.w(TAG, "Hostname migration failed ($errorMsg); will retry on next start")
-                    false
                 }
-                if (migrationSucceeded) {
-                    prefs.setHostnameMigrated()
+                if (needsWatcherBucketMigration) {
+                    migrateWatcherAndroidTestBuckets(prefs)
                 }
             }
         }
@@ -132,6 +125,44 @@ class BackgroundService : Service() {
 
         isFullyStarted = true
         return START_STICKY
+    }
+
+    private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences) {
+        // Older production releases wrote activity into aw-watcher-android-test.
+        // The JNI is the only caller of migrate_test_bucket_names(); shipping the
+        // Rust function alone does nothing until this path runs.
+        //
+        // Rename-only is in the current submodule pin. Collision merge (both
+        // buckets exist) needs ActivityWatch/aw-server-rust#661; until that SHA
+        // is bumped, leftover test buckets stay and we retry on the next start.
+        val result = rustInterface.migrateWatcherAndroidBucketNames()
+        Log.i(TAG, "Watcher bucket migration result: $result")
+        if (!WatcherAndroidBucketMigration.migrationSucceeded(result)) {
+            migrationSucceeded(result, WatcherAndroidBucketMigration.SUCCESS_PREFIX, "Watcher bucket")
+            return
+        }
+        val leftover = WatcherAndroidBucketMigration.legacyBucketIds(rustInterface.getBucketsJSON())
+        if (WatcherAndroidBucketMigration.shouldMarkComplete(leftover)) {
+            prefs.setWatcherAndroidBucketNamesMigrated()
+        } else {
+            Log.w(
+                TAG,
+                "Watcher bucket migration left legacy bucket(s) $leftover; will retry on next start"
+            )
+        }
+    }
+
+    private fun migrationSucceeded(result: String, successPrefix: String, name: String): Boolean {
+        if (result.startsWith(successPrefix)) {
+            return true
+        }
+        val errorMsg = try {
+            JSONObject(result).optString("error", result)
+        } catch (e: JSONException) {
+            result.ifEmpty { "empty response" }
+        }
+        Log.w(TAG, "$name migration failed ($errorMsg); will retry on next start")
+        return false
     }
 
     private fun scheduleNotifyChecks() {
