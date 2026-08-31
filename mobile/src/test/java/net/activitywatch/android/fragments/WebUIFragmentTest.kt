@@ -9,6 +9,25 @@ import java.io.File
 
 class WebUIFragmentTest {
     @Test
+    fun `untyped file input uses a generic mime type`() {
+        assertEquals(listOf("*/*"), resolvedFileChooserMimeTypes(null))
+        assertEquals(listOf("*/*"), resolvedFileChooserMimeTypes(arrayOf()))
+        assertEquals(listOf("*/*"), resolvedFileChooserMimeTypes(arrayOf("", "*/*")))
+    }
+
+    @Test
+    fun `explicit file input accept types are preserved`() {
+        assertEquals(
+            listOf("application/json"),
+            resolvedFileChooserMimeTypes(arrayOf("application/json")),
+        )
+        assertEquals(
+            listOf("text/csv", "application/json"),
+            resolvedFileChooserMimeTypes(arrayOf("text/csv", "application/json")),
+        )
+    }
+
+    @Test
     fun `treats local embedded server hosts as internal`() {
         // http variants
         assertTrue(isEmbeddedActivityWatchUrl("http://127.0.0.1:5600/#/settings/"))
