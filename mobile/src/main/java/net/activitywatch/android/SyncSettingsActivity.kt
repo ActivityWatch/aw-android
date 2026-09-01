@@ -14,8 +14,17 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import java.text.DateFormat
+import java.util.Date
 
 private const val TAG = "SyncSettingsActivity"
+
+internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
+    if (status == null) return "Last sync: never"
+
+    val outcome = if (status.success) "succeeded" else "failed"
+    return "Last sync $outcome at ${dateFormat.format(Date(status.completedAt))}"
+}
 
 class SyncSettingsActivity : AppCompatActivity() {
 
@@ -23,6 +32,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     private lateinit var switchSyncEnabled: SwitchCompat
     private lateinit var tvSyncDirStatus: TextView
+    private lateinit var tvLastSyncStatus: TextView
     private lateinit var btnChooseDir: Button
 
     // Guards against the switch listener firing when we set isChecked programmatically
@@ -91,6 +101,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
         switchSyncEnabled = findViewById(R.id.switch_sync_enabled)
         tvSyncDirStatus = findViewById(R.id.tv_sync_dir_status)
+        tvLastSyncStatus = findViewById(R.id.tv_last_sync_status)
         btnChooseDir = findViewById(R.id.btn_choose_sync_dir)
 
         refreshUI()
@@ -124,6 +135,27 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled.isChecked = prefs.isSyncEnabled()
         isUpdatingSwitch = false
         updateSyncDirStatus()
+        tvLastSyncStatus.text = formatSyncStatus(
+            prefs.getLastSyncStatus(),
+            combinedDateTimeFormat(),
+        )
+    }
+
+    private fun combinedDateTimeFormat(): DateFormat {
+        val dateFormat = android.text.format.DateFormat.getMediumDateFormat(this)
+        val timeFormat = android.text.format.DateFormat.getTimeFormat(this)
+        return object : DateFormat() {
+            override fun format(
+                date: Date,
+                toAppendTo: StringBuffer,
+                fieldPosition: java.text.FieldPosition,
+            ): StringBuffer = toAppendTo
+                .append(dateFormat.format(date))
+                .append(" ")
+                .append(timeFormat.format(date))
+
+            override fun parse(source: String, pos: java.text.ParsePosition): Date? = null
+        }
     }
 
     private fun updateSyncDirStatus() {

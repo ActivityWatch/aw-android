@@ -76,6 +76,23 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putString("syncDirUri", uri).apply()
     }
 
+    fun getLastSyncStatus(): SyncStatus? {
+        val completedAt = sharedPreferences.getLong("lastSyncCompletedAt", 0L)
+        if (completedAt == 0L) return null
+
+        return SyncStatus(
+            completedAt = completedAt,
+            success = sharedPreferences.getBoolean("lastSyncSucceeded", false),
+        )
+    }
+
+    fun setLastSyncStatus(status: SyncStatus) {
+        sharedPreferences.edit()
+            .putLong("lastSyncCompletedAt", status.completedAt)
+            .putBoolean("lastSyncSucceeded", status.success)
+            .apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the

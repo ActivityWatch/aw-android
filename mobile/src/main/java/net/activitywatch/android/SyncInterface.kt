@@ -17,6 +17,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "SyncInterface"
 
+data class SyncStatus(
+    val completedAt: Long,
+    val success: Boolean,
+)
+
 class SyncInterface(context: Context) {
 
     companion object {
@@ -125,6 +130,12 @@ class SyncInterface(context: Context) {
             "Full Sync",
             { success, message ->
                 syncInFlight.set(false)
+                AWPreferences(appContext).setLastSyncStatus(
+                    SyncStatus(
+                        completedAt = System.currentTimeMillis(),
+                        success = success,
+                    )
+                )
                 callback(success, message)
             },
             mirrorBeforeCallback
@@ -176,15 +187,21 @@ class SyncInterface(context: Context) {
                     json.getString("error")
                 }
 
-                // Worker-triggered syncs keep their WorkManager job active until mirroring
-                // finishes. Other callers get the native result immediately.
+                // Keep completion feedback honest: a configured SAF directory is part of a
+                // successful Android sync, so mirror failures must reach the user instead of
+                // being logged as a non-fatal success. Worker-triggered syncs wait for mirroring;
+                // Handler-triggered syncs keep the existing callback timing.
                 Log.i(TAG, "$operation completed: success=$success, message=$message")
                 if (success && mirrorBeforeCallback) {
                     mirrorSyncFilesToSafDir()
                 }
                 handler.post { callback(success, message) }
                 if (success && !mirrorBeforeCallback) {
-                    mirrorSyncFilesToSafDir()
+                    try {
+                        copySyncFilesToSafDir()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "SAF mirror failed after callback: ${e.message}", e)
+                    }
                 }
             } catch (e: Exception) {
                 val errorMsg = "Exception: ${e.message}"
@@ -199,11 +216,7 @@ class SyncInterface(context: Context) {
     }
 
     private fun mirrorSyncFilesToSafDir() {
-        try {
-            copySyncFilesToSafDir()
-        } catch (e: Exception) {
-            Log.w(TAG, "SAF mirror failed (non-fatal): ${e.message}")
-        }
+        copySyncFilesToSafDir()
     }
 
     /**
@@ -223,7 +236,8 @@ class SyncInterface(context: Context) {
      * `find_remotes` (`aw-sync/src/util.rs`) keeps only directories and looks for `*.db` one
      * level inside them, so a flattened copy would be ignored even if it were made.
      *
-     * Errors are logged but do not propagate — a copy failure must never fail the sync itself.
+     * Errors propagate to the caller so a configured directory is never reported as successfully
+     * synced when the files could not be mirrored there.
      */
     private fun copySyncFilesToSafDir() {
         val uriStr = AWPreferences(appContext).getSyncDirUri() ?: return
