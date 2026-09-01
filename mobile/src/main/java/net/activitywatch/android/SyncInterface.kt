@@ -236,13 +236,15 @@ class SyncInterface(context: Context) {
         val safUri = Uri.parse(uriStr)
         val safDir = DocumentFile.fromTreeUri(appContext, safUri)
         if (safDir == null || !safDir.isDirectory) {
-            Log.w(TAG, "SAF directory not accessible or not a directory: $uriStr")
-            return
+            throw IOException("Configured SAF directory is not accessible")
         }
 
         val counts = intArrayOf(0, 0) // [copied, skipped]
         mirrorDirectory(File(syncDir), safDir, counts)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
+        if (cancelRequested) {
+            throw IOException("SAF mirror cancelled")
+        }
         if (counts[1] > 0) {
             throw IOException("SAF mirror skipped ${counts[1]} item(s)")
         }
