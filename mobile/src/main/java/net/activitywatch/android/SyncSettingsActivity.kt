@@ -1,7 +1,10 @@
 package net.activitywatch.android
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -13,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.appcompat.widget.SwitchCompat
 import java.text.DateFormat
 import java.util.Date
@@ -37,6 +41,14 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     // Guards against the switch listener firing when we set isChecked programmatically
     private var isUpdatingSwitch = false
+
+    private val syncStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION) {
+                updateLastSyncStatus()
+            }
+        }
+    }
 
     private val openDocumentTree =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -125,9 +137,24 @@ class SyncSettingsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        ContextCompat.registerReceiver(
+            this,
+            syncStatusReceiver,
+            IntentFilter(AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
     override fun onResume() {
         super.onResume()
         if (::prefs.isInitialized) refreshUI()
+    }
+
+    override fun onStop() {
+        unregisterReceiver(syncStatusReceiver)
+        super.onStop()
     }
 
     private fun refreshUI() {
@@ -135,6 +162,10 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled.isChecked = prefs.isSyncEnabled()
         isUpdatingSwitch = false
         updateSyncDirStatus()
+        updateLastSyncStatus()
+    }
+
+    private fun updateLastSyncStatus() {
         tvLastSyncStatus.text = formatSyncStatus(
             prefs.getLastSyncStatus(),
             combinedDateTimeFormat(),

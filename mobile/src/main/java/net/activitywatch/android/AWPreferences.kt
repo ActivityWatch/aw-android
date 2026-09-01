@@ -5,7 +5,15 @@ import android.content.SharedPreferences
 
 class AWPreferences(context: Context) {
     private val sharedPreferences: SharedPreferences =
-        context.getSharedPreferences("AWPreferences", Context.MODE_PRIVATE)
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    companion object {
+        const val PREFERENCES_NAME = "AWPreferences"
+        const val LAST_SYNC_STATUS_CHANGED_ACTION =
+            "net.activitywatch.android.LAST_SYNC_STATUS_CHANGED"
+    }
+
+    private val appContext = context.applicationContext
 
     // To check if it is the first time the app is being run
     // Set to false when user finishes onboarding
@@ -91,6 +99,9 @@ class AWPreferences(context: Context) {
             .putLong("lastSyncCompletedAt", status.completedAt)
             .putBoolean("lastSyncSucceeded", status.success)
             .apply()
+        appContext.sendBroadcast(
+            android.content.Intent(LAST_SYNC_STATUS_CHANGED_ACTION).setPackage(appContext.packageName)
+        )
     }
 
     // Dashboard authentication. Defaults to true so first-run gets a key generated

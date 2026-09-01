@@ -108,7 +108,7 @@ class SyncInterface(context: Context) {
     
     // Async wrapper for syncBoth
     fun syncBothAsync(callback: (Boolean, String) -> Unit) {
-        syncBothAsync(mirrorBeforeCallback = false, callback)
+        syncBothAsync(mirrorBeforeCallback = true, callback)
     }
 
     // Background workers must remain active until the SAF mirror completes.
@@ -189,20 +189,12 @@ class SyncInterface(context: Context) {
 
                 // Keep completion feedback honest: a configured SAF directory is part of a
                 // successful Android sync, so mirror failures must reach the user instead of
-                // being logged as a non-fatal success. Worker-triggered syncs wait for mirroring;
-                // Handler-triggered syncs keep the existing callback timing.
+                // being logged as a non-fatal success. Full-sync callers wait for mirroring.
                 Log.i(TAG, "$operation completed: success=$success, message=$message")
                 if (success && mirrorBeforeCallback) {
                     mirrorSyncFilesToSafDir()
                 }
                 handler.post { callback(success, message) }
-                if (success && !mirrorBeforeCallback) {
-                    try {
-                        copySyncFilesToSafDir()
-                    } catch (e: Exception) {
-                        Log.w(TAG, "SAF mirror failed after callback: ${e.message}", e)
-                    }
-                }
             } catch (e: Exception) {
                 val errorMsg = "Exception: ${e.message}"
                 handler.post {
@@ -251,6 +243,9 @@ class SyncInterface(context: Context) {
         val counts = intArrayOf(0, 0) // [copied, skipped]
         mirrorDirectory(File(syncDir), safDir, counts)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
+        if (counts[1] > 0) {
+            throw IOException("SAF mirror skipped ${counts[1]} item(s)")
+        }
     }
 
     /**
