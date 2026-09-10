@@ -1,7 +1,10 @@
 package net.activitywatch.android
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -13,9 +16,19 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.appcompat.widget.SwitchCompat
+import java.text.DateFormat
+import java.util.Date
 
 private const val TAG = "SyncSettingsActivity"
+
+internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
+    if (status == null) return "Last sync: never"
+
+    val outcome = if (status.success) "succeeded" else "failed"
+    return "Last sync $outcome at ${dateFormat.format(Date(status.completedAt))}"
+}
 
 class SyncSettingsActivity : AppCompatActivity() {
 
@@ -23,10 +36,19 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     private lateinit var switchSyncEnabled: SwitchCompat
     private lateinit var tvSyncDirStatus: TextView
+    private lateinit var tvLastSyncStatus: TextView
     private lateinit var btnChooseDir: Button
 
     // Guards against the switch listener firing when we set isChecked programmatically
     private var isUpdatingSwitch = false
+
+    private val syncStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION) {
+                updateLastSyncStatus()
+            }
+        }
+    }
 
     private val openDocumentTree =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -91,6 +113,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
         switchSyncEnabled = findViewById(R.id.switch_sync_enabled)
         tvSyncDirStatus = findViewById(R.id.tv_sync_dir_status)
+        tvLastSyncStatus = findViewById(R.id.tv_last_sync_status)
         btnChooseDir = findViewById(R.id.btn_choose_sync_dir)
 
         refreshUI()
@@ -114,9 +137,24 @@ class SyncSettingsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        ContextCompat.registerReceiver(
+            this,
+            syncStatusReceiver,
+            IntentFilter(AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
     override fun onResume() {
         super.onResume()
         if (::prefs.isInitialized) refreshUI()
+    }
+
+    override fun onStop() {
+        unregisterReceiver(syncStatusReceiver)
+        super.onStop()
     }
 
     private fun refreshUI() {
@@ -124,6 +162,31 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled.isChecked = prefs.isSyncEnabled()
         isUpdatingSwitch = false
         updateSyncDirStatus()
+        updateLastSyncStatus()
+    }
+
+    private fun updateLastSyncStatus() {
+        tvLastSyncStatus.text = formatSyncStatus(
+            prefs.getLastSyncStatus(),
+            combinedDateTimeFormat(),
+        )
+    }
+
+    private fun combinedDateTimeFormat(): DateFormat {
+        val dateFormat = android.text.format.DateFormat.getMediumDateFormat(this)
+        val timeFormat = android.text.format.DateFormat.getTimeFormat(this)
+        return object : DateFormat() {
+            override fun format(
+                date: Date,
+                toAppendTo: StringBuffer,
+                fieldPosition: java.text.FieldPosition,
+            ): StringBuffer = toAppendTo
+                .append(dateFormat.format(date))
+                .append(" ")
+                .append(timeFormat.format(date))
+
+            override fun parse(source: String, pos: java.text.ParsePosition): Date? = null
+        }
     }
 
     private fun updateSyncDirStatus() {
