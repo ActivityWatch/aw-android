@@ -1,0 +1,8 @@
+- build(deps): updated aw-server-rust
+- fix(notify): accept canonical shared config schema (#246)
+- feat(sync): show last completion status (#251)
+- fix(sync): pick up aw-server-rust API-key JNI client and set data dir (#249)
+- fix(android): open Activity view with device hostname, not unknown (#250)
+- fix(notify): open the activity view when an alert is tapped (#242)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.0

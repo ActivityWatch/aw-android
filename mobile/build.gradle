@@ -12,10 +12,10 @@ android {
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
-        versionName '0.14.0b2'
+        versionName '0.14.0'
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 40
+        versionCode 41
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // NOTE: This only works for API level 28 and above
