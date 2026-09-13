@@ -499,15 +499,17 @@ jobs:
     - name: Classify tag
       id: tag
       run: |
-        TAG="${{ github.ref_name }}"
-        TRACK="$(bash scripts/assert-play-track.sh resolve "$TAG")"
+        # Use GITHUB_REF_NAME (already an env var) instead of interpolating
+        # github.ref_name into the script. Tag names can contain shell
+        # metacharacters; expression expansion happens before Bash parses.
+        TRACK="$(bash scripts/assert-play-track.sh resolve "$GITHUB_REF_NAME")"
         if [[ "$TRACK" == production ]]; then
           IS_STABLE=true
         else
           IS_STABLE=false
         fi
         echo "is_stable=${IS_STABLE}" >> "$GITHUB_OUTPUT"
-        echo "Classified ${TAG}: track=${TRACK} is_stable=${IS_STABLE}"
+        echo "Classified ${GITHUB_REF_NAME}: track=${TRACK} is_stable=${IS_STABLE}"
 
     - name: Set up Python
       uses: actions/setup-python@v6
