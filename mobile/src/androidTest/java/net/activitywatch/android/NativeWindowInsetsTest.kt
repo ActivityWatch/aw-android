@@ -3,6 +3,7 @@ package net.activitywatch.android
 import android.Manifest
 import android.app.Activity
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.GravityCompat
@@ -18,6 +19,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,20 +29,39 @@ import org.junit.runner.RunWith
 class NativeWindowInsetsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
+    private val packageName = instrumentation.targetContext.packageName
+    private lateinit var originalUsageAccessMode: String
+    private var notificationPermissionWasGranted = false
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand(command)
+        ).bufferedReader().use { it.readText() }
 
     @Before
     fun grantRequiredAccess() {
-        val packageName = instrumentation.targetContext.packageName
         // PACKAGE_USAGE_STATS is controlled by AppOps, not a runtime permission.
         // GrantPermissionRule cannot enable it on a fresh CI emulator.
-        instrumentation.uiAutomation.executeShellCommand(
-            "appops set $packageName GET_USAGE_STATS allow"
-        ).close()
+        originalUsageAccessMode = Regex("GET_USAGE_STATS: (\\w+)")
+            .find(shell("appops get $packageName GET_USAGE_STATS"))
+            ?.groupValues?.get(1) ?: "default"
+        shell("appops set $packageName GET_USAGE_STATS allow")
         if (Build.VERSION.SDK_INT >= 33) {
-            instrumentation.uiAutomation.executeShellCommand(
-                "pm grant $packageName ${Manifest.permission.POST_NOTIFICATIONS}"
-            ).close()
+            notificationPermissionWasGranted = instrumentation.targetContext
+                .checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!notificationPermissionWasGranted) {
+                instrumentation.uiAutomation.grantRuntimePermission(
+                    packageName,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            }
         }
+    }
+
+    @After
+    fun restoreUsageAccess() {
+        shell("appops set $packageName GET_USAGE_STATS $originalUsageAccessMode")
     }
 
     private fun assertSafeContent(activity: Activity) {
