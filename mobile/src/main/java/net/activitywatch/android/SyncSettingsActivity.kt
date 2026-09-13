@@ -103,6 +103,7 @@ class SyncSettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sync_settings)
+        applySafeWindowInsets()
 
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)

@@ -33,6 +33,7 @@ class OnboardingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
+        applySafeWindowInsets()
 
         val viewPager = findViewById<ViewPager2>(R.id.viewPager)
         val tabLayout = findViewById<TabLayout>(R.id.tabLayout)

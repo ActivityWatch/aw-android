@@ -110,6 +110,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         binding = ActivityMainBinding.inflate(layoutInflater)
         val view = binding.root
         setContentView(view)
+        applySafeWindowInsets()
 
         // Set up alarm to send heartbeats
         val usw = UsageStatsWatcher(this)
