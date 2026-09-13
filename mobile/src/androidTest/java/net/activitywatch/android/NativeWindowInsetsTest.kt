@@ -30,7 +30,7 @@ class NativeWindowInsetsTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
     private val packageName = instrumentation.targetContext.packageName
-    private lateinit var originalUsageAccessMode: String
+    private var originalUsageAccessMode: String? = null
     private var notificationPermissionWasGranted = false
 
     private fun shell(command: String): String =
@@ -61,7 +61,9 @@ class NativeWindowInsetsTest {
 
     @After
     fun restoreUsageAccess() {
-        shell("appops set $packageName GET_USAGE_STATS $originalUsageAccessMode")
+        originalUsageAccessMode?.let {
+            shell("appops set $packageName GET_USAGE_STATS $it")
+        }
     }
 
     private fun assertSafeContent(activity: Activity) {
@@ -109,14 +111,20 @@ class NativeWindowInsetsTest {
                 assertNotNull("Sync switch must be visible", toggle)
                 scenario.onActivity { assertSafeContent(it) }
                 toggle.click()
-                instrumentation.waitForIdleSync()
+                device.wait(
+                    Until.findObject(By.res(context.packageName, "switch_sync_enabled").checked(!original)),
+                    5000
+                )
                 assertEquals("A screen tap must change the persisted setting", !original, prefs.isSyncEnabled())
                 scenario.recreate()
                 device.waitForIdle()
                 scenario.onActivity { assertSafeContent(it) }
                 assertEquals(!original, prefs.isSyncEnabled())
                 device.findObject(By.res(context.packageName, "switch_sync_enabled")).click()
-                instrumentation.waitForIdleSync()
+                device.wait(
+                    Until.findObject(By.res(context.packageName, "switch_sync_enabled").checked(original)),
+                    5000
+                )
                 assertEquals(original, prefs.isSyncEnabled())
             }
         } finally {
