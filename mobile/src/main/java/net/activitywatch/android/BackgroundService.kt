@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -23,12 +24,22 @@ private const val TAG = "BackgroundService"
 private const val CHANNEL_ID = "aw_background_channel"
 private const val NOTIFICATION_ID = 1
 
+internal const val BACKGROUND_SERVICE_RESTART_MODE = Service.START_NOT_STICKY
+
+internal fun backgroundServiceStartOrigin(explicitOrigin: String?): String =
+    explicitOrigin ?: BackgroundService.START_ORIGIN_SYSTEM_RESTART
+
 class BackgroundService : Service() {
 
     companion object {
         // Sent by SyncSettingsActivity when the user toggles sync on/off so the
         // running scheduler reflects the new setting immediately without a restart.
         const val ACTION_SYNC_ENABLED_CHANGED = "net.activitywatch.android.SYNC_ENABLED_CHANGED"
+        const val EXTRA_START_ORIGIN = "net.activitywatch.android.extra.START_ORIGIN"
+        const val START_ORIGIN_ACTIVITY = "activity"
+        const val START_ORIGIN_BOOT = "boot"
+        const val START_ORIGIN_SETTINGS = "settings"
+        const val START_ORIGIN_SYSTEM_RESTART = "system-restart"
     }
 
     private lateinit var syncScheduler: SyncScheduler
@@ -48,20 +59,35 @@ class BackgroundService : Service() {
         // slow/no-KVM emulators (CI).
         createNotificationChannel()
         val notification = createNotification()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            else
-                0
-        )
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                else
+                    0
+            )
+        } catch (e: ForegroundServiceStartNotAllowedException) {
+            Log.e(TAG, "Foreground promotion rejected; stopping before initialization", e)
+            stopSelf()
+            return
+        }
         rustInterface = RustInterface(this)
         syncScheduler = SyncScheduler(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!::rustInterface.isInitialized || !::syncScheduler.isInitialized) {
+            Log.w(TAG, "Ignoring start command because foreground promotion failed")
+            stopSelf(startId)
+            return BACKGROUND_SERVICE_RESTART_MODE
+        }
+
+        val startOrigin = backgroundServiceStartOrigin(intent?.getStringExtra(EXTRA_START_ORIGIN))
+        Log.i(TAG, "BackgroundService start origin: $startOrigin")
+
         // Only short-circuit for the scheduler-toggle action when the service is already
         // fully running. If Android killed the service while SyncSettingsActivity was open,
         // the toggle re-creates the service with this action as its first command — in that
@@ -71,7 +97,7 @@ class BackgroundService : Service() {
             val enabled = AWPreferences(this).isSyncEnabled()
             Log.i(TAG, "Sync enabled changed to $enabled; ${if (enabled) "starting" else "stopping"} scheduler")
             if (enabled) syncScheduler.start() else syncScheduler.stop()
-            return START_STICKY
+            return BACKGROUND_SERVICE_RESTART_MODE
         }
 
         Log.i(TAG, "BackgroundService started")
@@ -124,7 +150,9 @@ class BackgroundService : Service() {
         scheduleNotifyChecks()
 
         isFullyStarted = true
-        return START_STICKY
+        // A sticky recreation can occur while the app is backgrounded, where Android 12+
+        // may reject foreground promotion. Only explicit, eligible callers restart us.
+        return BACKGROUND_SERVICE_RESTART_MODE
     }
 
     private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences) {

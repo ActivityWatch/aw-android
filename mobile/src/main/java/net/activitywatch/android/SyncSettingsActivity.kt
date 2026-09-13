@@ -125,6 +125,7 @@ class SyncSettingsActivity : AppCompatActivity() {
             // rather than waiting for the next service restart.
             startService(Intent(this, BackgroundService::class.java).apply {
                 action = BackgroundService.ACTION_SYNC_ENABLED_CHANGED
+                putExtra(BackgroundService.EXTRA_START_ORIGIN, BackgroundService.START_ORIGIN_SETTINGS)
             })
         }
 

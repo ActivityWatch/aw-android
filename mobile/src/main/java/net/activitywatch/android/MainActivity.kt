@@ -120,7 +120,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         // Ensure API key exists in config before the server starts so it picks it up at init.
         dashboardApiKey = ensureDashboardApiKey(this)
         // Start background service to keep server and sync running
-        val serviceIntent = Intent(this, BackgroundService::class.java)
+        val serviceIntent = Intent(this, BackgroundService::class.java).apply {
+            putExtra(BackgroundService.EXTRA_START_ORIGIN, BackgroundService.START_ORIGIN_ACTIVITY)
+        }
         startForegroundService(serviceIntent)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
