@@ -14,29 +14,34 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.rule.GrantPermissionRule
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Assert.*
-import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Run on API 36 with a display cutout, and an older API, in both navigation modes. */
 @RunWith(AndroidJUnit4::class)
 class NativeWindowInsetsTest {
-    // Fresh CI devices must reach MainActivity without onboarding or a permission dialog.
-    @get:Rule
-    val permissions: GrantPermissionRule = GrantPermissionRule.grant(
-        *if (Build.VERSION.SDK_INT >= 33) arrayOf(
-            Manifest.permission.PACKAGE_USAGE_STATS,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) else arrayOf(Manifest.permission.PACKAGE_USAGE_STATS)
-    )
-
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
+
+    @Before
+    fun grantRequiredAccess() {
+        val packageName = instrumentation.targetContext.packageName
+        // PACKAGE_USAGE_STATS is controlled by AppOps, not a runtime permission.
+        // GrantPermissionRule cannot enable it on a fresh CI emulator.
+        instrumentation.uiAutomation.executeShellCommand(
+            "appops set $packageName GET_USAGE_STATS allow"
+        ).close()
+        if (Build.VERSION.SDK_INT >= 33) {
+            instrumentation.uiAutomation.executeShellCommand(
+                "pm grant $packageName ${Manifest.permission.POST_NOTIFICATIONS}"
+            ).close()
+        }
+    }
 
     private fun assertSafeContent(activity: Activity) {
         val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
