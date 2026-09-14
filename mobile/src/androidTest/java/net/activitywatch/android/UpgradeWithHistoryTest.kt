@@ -3,14 +3,16 @@ package net.activitywatch.android
 import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeFalse
-import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -44,9 +46,32 @@ private const val MIGRATION_TIMEOUT_MS = 60_000L
  */
 @RunWith(AndroidJUnit4::class)
 class UpgradeWithHistoryTest {
-    @get:Rule
-    var permissionRule: GrantPermissionRule =
-        GrantPermissionRule.grant(android.Manifest.permission.PACKAGE_USAGE_STATS)
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val packageName = instrumentation.targetContext.packageName
+    private var originalUsageAccessMode: String? = null
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand(command)
+        ).bufferedReader().use { it.readText() }
+
+    @Before
+    fun grantUsageAccess() {
+        // PACKAGE_USAGE_STATS is AppOps-controlled; GrantPermissionRule cannot
+        // enable it on a fresh CI emulator. Without this, MainActivity redirects
+        // to onboarding and the server never starts.
+        originalUsageAccessMode = Regex("GET_USAGE_STATS: (\\w+)")
+            .find(shell("appops get $packageName GET_USAGE_STATS"))
+            ?.groupValues?.get(1) ?: "default"
+        shell("appops set $packageName GET_USAGE_STATS allow")
+    }
+
+    @After
+    fun restoreUsageAccess() {
+        originalUsageAccessMode?.let {
+            shell("appops set $packageName GET_USAGE_STATS $it")
+        }
+    }
 
     @Test
     fun serverAnswersWhileLegacyHistoryMigrates() {
