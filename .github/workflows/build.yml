@@ -461,10 +461,17 @@ jobs:
         # the historical path, but an explicit --track is the fail-closed one.
         bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
         # bundle exec fastlane supply run --apk dist/*.apk
+        # Store-listing images are not re-uploaded on release: supply would
+        # resend fastlane/metadata/**/images/icon.png every time, and Play
+        # records that as an app-icon change that needs listing review on every
+        # release. Change listing images deliberately, via the Play Console or
+        # a one-off `fastlane supply run --skip_upload_aab`.
         if [ -n "$SUPPLY_ROLLOUT" ]; then
-          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK" --rollout "$SUPPLY_ROLLOUT"
+          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK" --rollout "$SUPPLY_ROLLOUT" \
+            --skip_upload_images --skip_upload_screenshots
         else
-          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK"
+          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK" \
+            --skip_upload_images --skip_upload_screenshots
         fi
 
   release-gh:
