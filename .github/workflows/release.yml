@@ -13,6 +13,19 @@ name: Release
 #     Using a PAT instead of GITHUB_TOKEN ensures the tag push triggers Build.
 #
 # Usage: Actions → Release → Run workflow → enter version (e.g. 0.14.0 or 0.14.0b1)
+#
+# Release discipline (added after aw-android#261, where a build with 12 PRs and a
+# 25-commit aw-server-rust bump went straight to 100% of production and wedged the
+# app for upgrading users):
+#   - A stable release must confirm `installed_on_device`: this commit, or a
+#     beta/internal build containing every commit since the last release, was
+#     installed on a real device with existing history and the Activity view
+#     opened. The job fails otherwise.
+#   - The job summary lists every commit and the aw-server-rust submodule range
+#     since the previous tag, so "small bump" is judged by the diff.
+#   - Stable releases start as a staged rollout (default 10%). The fraction is
+#     recorded in the tag annotation and read by the Build workflow's publish
+#     step. Widen it with Actions → Rollout after the first day looks clean.
 
 on:
   workflow_dispatch:
@@ -21,6 +34,17 @@ on:
         description: 'Version to release, without v prefix (e.g. 0.14.0 for stable, 0.14.0b1 for beta, 0.14.0dev20260712 for dev)'
         required: true
         type: string
+      installed_on_device:
+        description: 'Stable only: this build (or a beta containing every commit since the last release) was installed on a real device with existing history and the Activity view opened'
+        required: false
+        default: false
+        type: boolean
+      rollout:
+        description: 'Stable only: initial Play production rollout fraction (widen later with the Rollout workflow)'
+        required: false
+        default: '0.1'
+        type: choice
+        options: ['0.1', '0.25', '0.5', '1.0']
 
 jobs:
   release:
@@ -60,6 +84,40 @@ jobs:
           if git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
             echo "::error::Tag v${VERSION} already exists."
             exit 1
+          fi
+
+      - name: Release discipline gate
+        env:
+          VERSION: ${{ inputs.version }}
+          INSTALLED_ON_DEVICE: ${{ inputs.installed_on_device }}
+          ROLLOUT: ${{ inputs.rollout }}
+        run: |
+          # Stable: previous production tag, not the nearest beta. `git describe`
+          # would hide the prerelease range and understate the release (the
+          # v0.14.0-shaped failure this gate exists to catch).
+          PREV_TAG="$(bash scripts/previous-release-tag.sh "$VERSION")"
+          {
+            echo "## Release v${VERSION}"
+            if [ -n "$PREV_TAG" ]; then
+              echo "### Commits since ${PREV_TAG} ($(git rev-list --count "${PREV_TAG}..HEAD"))"
+              git log "${PREV_TAG}..HEAD" --pretty=format:'- %h %s' | sed 's/^$/- (none)/'
+              echo
+              echo "### aw-server-rust submodule"
+              git diff --submodule=log "${PREV_TAG}..HEAD" -- aw-server-rust \
+                | sed 's/^/    /' || true
+            else
+              echo "(no previous tag found)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            if [ "$INSTALLED_ON_DEVICE" != "true" ]; then
+              echo "::error::Stable release ${VERSION} without a device check. Install this build (or a beta containing every commit since ${PREV_TAG:-the last release}) on a real device with existing history, open the Activity view, then re-run with installed_on_device=true."
+              exit 1
+            fi
+            echo "Stable release: initial production rollout ${ROLLOUT}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pre-release: internal track, no rollout gate."
           fi
 
       - name: Bump versionName in mobile/build.gradle
@@ -109,8 +167,9 @@ jobs:
           if [ -f "$CHANGELOG" ]; then
             echo "Using existing changelog: $CHANGELOG"
           else
-            # Auto-generate from git log since the previous tag, skipping chore commits
-            PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+            # Same baseline as the release summary: stable → previous production
+            # tag, prerelease → nearest tag. Skip chore commits.
+            PREV_TAG="$(bash scripts/previous-release-tag.sh "${{ inputs.version }}")"
             if [ -n "$PREV_TAG" ]; then
               git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
                 | grep -v "^- chore:" \
@@ -161,6 +220,8 @@ jobs:
           git add mobile/build.gradle
           git add fastlane/metadata/android/en-US/changelogs/
           git commit -m "chore: bump versionName to ${VERSION}, versionCode to ${VERSION_CODE}"
-          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          # The Build workflow reads `rollout=` from the tag annotation to stage
+          # the production rollout; pre-releases go to the internal track.
+          git tag -a "v${VERSION}" -m "Release v${VERSION}" -m "rollout=${{ inputs.rollout }}"
           git push origin HEAD:master
           git push origin "v${VERSION}"

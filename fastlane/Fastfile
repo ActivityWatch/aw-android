@@ -54,6 +54,27 @@ platform :android do
     )
   end
 
+  desc "Widen (or complete) the staged rollout of the current production release"
+  lane :rollout do |options|
+    fraction = options[:fraction] || "1.0"
+    version_code = options[:version_code]
+    if version_code.nil? || version_code.to_s.empty?
+      version_code = google_play_track_version_codes(track: 'production').map(&:to_i).max
+    end
+    UI.message("Setting production rollout of versionCode #{version_code} to #{fraction}")
+    upload_to_play_store(
+      track: 'production',
+      rollout: fraction.to_s,
+      version_code: version_code.to_i,
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
   desc "Deploy a new version to the Google Play"
   lane :deploy do
     gradle(task: "clean assembleRelease")

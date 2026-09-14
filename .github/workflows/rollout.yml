@@ -1,0 +1,56 @@
+name: Rollout
+
+# Widen or complete the staged Play production rollout that a stable release
+# starts at (see release.yml). Check Play vitals for the new versionCode first:
+# crash and ANR clusters show up within hours.
+#
+# Usage: Actions → Rollout → Run workflow → pick the fraction (1.0 completes it).
+
+on:
+  workflow_dispatch:
+    inputs:
+      fraction:
+        description: 'Production rollout fraction to set for the current staged release'
+        required: true
+        default: '0.5'
+        type: choice
+        options: ['0.25', '0.5', '1.0']
+      version_code:
+        description: 'versionCode of the in-progress release (default: highest on the production track)'
+        required: false
+        type: string
+
+jobs:
+  rollout:
+    name: Set production rollout to ${{ inputs.fraction }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # version set by .ruby-version
+      - name: Set up Ruby and install fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - uses: adnsio/setup-age-action@v1.2.0
+
+      - name: Load Fastlane secrets
+        env:
+          KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+        run: |
+          printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+          cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
+            | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
+                     -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
+          rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+      - name: Update rollout
+        run: |
+          gem sources --add https://rubygems.org
+          bundle exec fastlane rollout fraction:"${{ inputs.fraction }}" version_code:"${{ inputs.version_code }}"
+          {
+            echo "## Play production rollout"
+            echo "- fraction: \`${{ inputs.fraction }}\`"
+            echo "- versionCode: \`${{ inputs.version_code || 'highest on production track' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

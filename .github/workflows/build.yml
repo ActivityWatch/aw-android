@@ -243,7 +243,9 @@ jobs:
     # The leftover job-level `SUPPLY_TRACK: production` here never reached
     # fastlane (release-fastlane sets its own) and was a copy-paste footgun.
     - name: Assert Play-track resolver
-      run: bash scripts/assert-play-track.sh --self-test
+      run: |
+        bash scripts/assert-play-track.sh --self-test
+        bash scripts/previous-release-tag.sh --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4
@@ -429,6 +431,17 @@ jobs:
     - name: Assert Play track matches tag
       run: bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
 
+    - name: Set SUPPLY_ROLLOUT
+      run: |
+        # Production releases start as a staged rollout. The Release workflow
+        # records the chosen fraction in the tag annotation; a tag pushed by hand
+        # gets the 10% default. Widen with the Rollout workflow.
+        TAG="${{ github.ref_name }}"
+        git fetch --force --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}" >/dev/null 2>&1 || true
+        SUPPLY_ROLLOUT="$(bash scripts/assert-play-track.sh rollout "$TAG" "$SUPPLY_TRACK")"
+        echo "SUPPLY_ROLLOUT=${SUPPLY_ROLLOUT}" >> "$GITHUB_ENV"
+        echo "- SUPPLY_ROLLOUT: \`${SUPPLY_ROLLOUT:-n/a (not production)}\`" >> "$GITHUB_STEP_SUMMARY"
+
     - uses: adnsio/setup-age-action@v1.2.0
     - name: Load Android secrets
       env:
@@ -450,7 +463,18 @@ jobs:
         # the historical path, but an explicit --track is the fail-closed one.
         bash scripts/assert-play-track.sh assert "${{ github.ref_name }}" "${SUPPLY_TRACK}"
         # bundle exec fastlane supply run --apk dist/*.apk
-        bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK"
+        # Store-listing images are not re-uploaded on release: supply would
+        # resend fastlane/metadata/**/images/icon.png every time, and Play
+        # records that as an app-icon change that needs listing review on every
+        # release. Change listing images deliberately, via the Play Console or
+        # a one-off `fastlane supply run --skip_upload_aab`.
+        if [ -n "$SUPPLY_ROLLOUT" ]; then
+          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK" --rollout "$SUPPLY_ROLLOUT" \
+            --skip_upload_images --skip_upload_screenshots
+        else
+          bundle exec fastlane supply run --aab dist/*.aab --track "$SUPPLY_TRACK" \
+            --skip_upload_images --skip_upload_screenshots
+        fi
 
   release-gh:
     needs: [build-apk, test]
