@@ -229,6 +229,27 @@ jobs:
         name: aw-android-${{ matrix.type }}
         path: dist/aw-android*.${{ matrix.type }}
 
+    # Release builds run R8 (mobile/build.gradle `minifyEnabled true`), so
+    # crash stacks are obfuscated without the mapping file. The AAB carries its
+    # own copy for Play (BUNDLE-METADATA/com.android.tools.build.obfuscation/
+    # proguard.map), but nothing deobfuscates a stack pasted into an issue from
+    # a sideloaded APK — so publish the mapping with the release too.
+    # Only release builds produce one: the Makefile builds `debug` unless
+    # RELEASE is true (i.e. on tags).
+    - name: Collect R8 mapping
+      if: env.RELEASE == 'true'
+      run: |
+        cp mobile/build/outputs/mapping/release/mapping.txt \
+           dist/aw-android-mapping-${{ matrix.type }}.txt
+
+    - name: Upload R8 mapping
+      if: env.RELEASE == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: aw-android-mapping-${{ matrix.type }}
+        path: dist/aw-android-mapping-${{ matrix.type }}.txt
+        if-no-files-found: error
+
   test:
     name: Test
     runs-on: ubuntu-24.04
@@ -561,7 +582,11 @@ jobs:
         # "false" is truthy because it is non-empty.
         # https://github.com/actions/runner/issues/1483#issuecomment-994986996
         prerelease: ${{ steps.tag.outputs.is_stable != 'true' }}
+        # aw-android-mapping-{apk,aab}.txt are the R8 mapping files for the
+        # two artifacts above; retrace an obfuscated stack from a sideloaded
+        # build with them. Play gets its copy from inside the AAB.
         files: |
           dist/*.apk
           dist/*.aab
+          dist/aw-android-mapping-*.txt
         body_path: release_notes.md

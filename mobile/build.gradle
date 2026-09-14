@@ -28,8 +28,14 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Run R8: Play flags releases whose DEX optimization is below
+            // its threshold ("Bad behavior -> DEX code optimization", #268).
+            // Keep rules for everything reached by name at runtime (JNI,
+            // @JavascriptInterface, WorkManager, reflective fragments) live
+            // in mobile/proguard-rules.pro.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             ndk {
                 debugSymbolLevel 'SYMBOL_TABLE'
             }
