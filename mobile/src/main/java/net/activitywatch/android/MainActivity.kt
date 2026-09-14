@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -206,6 +207,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val mode = if (usw.isUsingDiscreteEvents()) "discrete event insertion" else "heartbeat merging"
         Log.i("MainActivity", "Using $mode mode for event tracking")
         lifecycleScope.launch { usw.sendHeartbeatsSuspend() }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // configChanges keeps this activity (and the WebView) alive across rotation.
+        when (newConfig.orientation) {
+            Configuration.ORIENTATION_LANDSCAPE -> Log.i(TAG, "Screen orientation changed to landscape")
+            Configuration.ORIENTATION_PORTRAIT -> Log.i(TAG, "Screen orientation changed to portrait")
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

@@ -150,6 +150,49 @@ class NativeWindowInsetsTest {
         }
     }
 
+    @Test fun rotatingMainActivityKeepsTheSameWebView() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val prefs = AWPreferences(context)
+        val wasFirstTime = prefs.isFirstTime()
+        prefs.setFirstTimeRunFlag()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                device.waitForIdle()
+                var activityId = 0
+                var webViewId = 0
+                scenario.onActivity { activity ->
+                    val webView = activity.findViewById<android.webkit.WebView>(R.id.webview)
+                    assertNotNull("WebView must exist before rotation", webView)
+                    activityId = System.identityHashCode(activity)
+                    webViewId = System.identityHashCode(webView)
+                    activity.requestedOrientation =
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
+                device.waitForIdle()
+                scenario.onActivity { activity ->
+                    assertEquals(
+                        "MainActivity must survive rotation instead of being recreated",
+                        activityId,
+                        System.identityHashCode(activity),
+                    )
+                    val webView = activity.findViewById<android.webkit.WebView>(R.id.webview)
+                    assertNotNull("WebView must still exist after rotation", webView)
+                    assertEquals(
+                        "The same WebView instance must survive rotation",
+                        webViewId,
+                        System.identityHashCode(webView),
+                    )
+                    assertSafeContent(activity)
+                    activity.requestedOrientation =
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+                device.waitForIdle()
+            }
+        } finally {
+            if (wasFirstTime) prefs.resetFirstTimeRunFlag()
+        }
+    }
+
     @Test fun drawerAndWebContentClearSystemBars() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val prefs = AWPreferences(context)
