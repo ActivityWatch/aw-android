@@ -18,6 +18,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -367,20 +368,27 @@ class WebUIFragment : Fragment() {
         class MyWebViewClient : WebViewClient() {
             override fun onReceivedError(
                 view: WebView,
-                errorCode: Int,
-                description: String,
-                failingUrl: String
+                request: WebResourceRequest,
+                error: WebResourceError
             ) {
+                // Only a failed main frame warrants a reload; a failed subresource
+                // (icon, chunk, API call) must not throw away a usable dashboard.
+                if (!request.isForMainFrame) {
+                    return
+                }
                 // The local server may still be starting; retry with backoff.
                 // This used to Thread.sleep() on the main thread and reload
                 // immediately, which turned a slow server start into a tight
                 // reload loop on the UI thread (aw-android#261).
                 // TODO: Find way to not show the blinking Android error page
-                Log.e(TAG, "WebView received error: $description")
+                Log.e(TAG, "WebView received error: ${error.description}")
                 scheduleReload()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                // A page that loaded does not need the retry that a failed
+                // subresource or an earlier main-frame error may have queued.
+                reloadHandler.removeCallbacks(reloadRunnable)
                 reloadDelayMs = INITIAL_RELOAD_DELAY_MS
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
             }
