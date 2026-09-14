@@ -83,17 +83,13 @@ jobs:
         with:
           bundler-cache: true
 
-      - uses: adnsio/setup-age-action@v1.2.0
-
-      - name: Load Fastlane secrets
+      - name: Load Fastlane API credentials
         env:
-          KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+          KEY_FASTLANE_API_B64: ${{ secrets.KEY_FASTLANE_API_B64 }}
         run: |
-          printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-          cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
-            | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
-                     -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
-          rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+          printf '%s' "$KEY_FASTLANE_API_B64" | base64 --decode \
+            > fastlane/api-8546008605074111507-287154-450dc77b365f.json
+          chmod 600 fastlane/api-8546008605074111507-287154-450dc77b365f.json
 
       - name: Update versionCode
         uses: Wandalen/wretry.action@v3.8.0_js_action
