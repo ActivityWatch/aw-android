@@ -92,7 +92,10 @@ jobs:
           INSTALLED_ON_DEVICE: ${{ inputs.installed_on_device }}
           ROLLOUT: ${{ inputs.rollout }}
         run: |
-          PREV_TAG="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+          # Stable: previous production tag, not the nearest beta. `git describe`
+          # would hide the prerelease range and understate the release (the
+          # v0.14.0-shaped failure this gate exists to catch).
+          PREV_TAG="$(bash scripts/previous-release-tag.sh "$VERSION")"
           {
             echo "## Release v${VERSION}"
             if [ -n "$PREV_TAG" ]; then
@@ -164,8 +167,9 @@ jobs:
           if [ -f "$CHANGELOG" ]; then
             echo "Using existing changelog: $CHANGELOG"
           else
-            # Auto-generate from git log since the previous tag, skipping chore commits
-            PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+            # Same baseline as the release summary: stable → previous production
+            # tag, prerelease → nearest tag. Skip chore commits.
+            PREV_TAG="$(bash scripts/previous-release-tag.sh "${{ inputs.version }}")"
             if [ -n "$PREV_TAG" ]; then
               git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
                 | grep -v "^- chore:" \

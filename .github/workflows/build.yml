@@ -243,7 +243,9 @@ jobs:
     # The leftover job-level `SUPPLY_TRACK: production` here never reached
     # fastlane (release-fastlane sets its own) and was a copy-paste footgun.
     - name: Assert Play-track resolver
-      run: bash scripts/assert-play-track.sh --self-test
+      run: |
+        bash scripts/assert-play-track.sh --self-test
+        bash scripts/previous-release-tag.sh --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4

@@ -162,6 +162,30 @@ self_test() {
   expect_rollout $'rollout=0.37' v0.14.1 production FAIL          # unknown fraction: refuse
   expect_rollout $'rollout=' v0.14.1 production 0.1               # empty value: default
 
+  # Publication path: read an annotated tag via `git for-each-ref`, not the
+  # ROLLOUT_TAG_MESSAGE override the cases above use.
+  expect_git_rollout() {
+    local msg="$1" want="$2" tmpdir got
+    tmpdir="$(mktemp -d)"
+    git init -q "$tmpdir"
+    git -C "$tmpdir" config user.email "test@example.com"
+    git -C "$tmpdir" config user.name "test"
+    git -C "$tmpdir" config core.hooksPath /dev/null
+    git -C "$tmpdir" -c core.hooksPath=/dev/null commit --allow-empty -qm init
+    git -C "$tmpdir" tag -a v0.14.1 -m "$msg"
+    got="$(
+      env -u ROLLOUT_TAG_MESSAGE GIT_DIR="$tmpdir/.git" GIT_WORK_TREE="$tmpdir" \
+        bash "$0" rollout v0.14.1 production 2>/dev/null || echo FAIL
+    )"
+    rm -rf "$tmpdir"
+    if [[ "$got" != "$want" ]]; then
+      echo "FAIL git-backed rollout msg='${msg}': got '${got}' want '${want}'" >&2
+      fail=1
+    fi
+  }
+  expect_git_rollout $'Release v0.14.1\n\nrollout=0.25' 0.25
+  expect_git_rollout "Release v0.14.1" 0.1
+
   if [[ "$fail" -ne 0 ]]; then
     echo "assert-play-track self-test FAILED" >&2
     return 1
