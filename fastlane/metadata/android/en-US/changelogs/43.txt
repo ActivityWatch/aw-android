@@ -1,0 +1,7 @@
+- build(release): enable R8 minification and publish the mapping file (#270)
+- fix: re-enable orientation change without reloading the webview (#271)
+- test(e2e): tap the sync switch by view bounds instead of a uiautomator lookup (#266)
+- ci(release): device gate, diff summary, and staged production rollout (#265)
+- fix(watcher): bound accessibility tree traversal to stop StackOverflowError (#269)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.2b1
