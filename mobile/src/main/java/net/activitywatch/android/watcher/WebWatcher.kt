@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log
+import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import net.activitywatch.android.RustInterface
@@ -41,7 +42,7 @@ class WebWatcher : AccessibilityService() {
     private val bucket_id = "aw-watcher-android-web"
     private val lastDiagnosticDump = mutableMapOf<String, Long>()
 
-    private var ri : RustInterface? = null
+    @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
 
@@ -68,12 +69,19 @@ class WebWatcher : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
-        try {
-            ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
-        } catch (ex: Throwable) {
-            // Catch Throwable (not just Exception) because System.loadLibrary() throws
-            // UnsatisfiedLinkError (an Error subclass) when the native library is missing.
-            Log.e(TAG, "Failed to initialize RustInterface: ${ex.message}")
+        // createBucketHelper() blocks on the datastore worker. Doing that on the
+        // accessibility service's main thread produced "Executing service
+        // WebWatcher" ANRs whenever the worker was busy (aw-android#261), so
+        // initialize off the main thread; events arriving earlier are dropped by
+        // the null-safe ri?. calls, same as MediaWatcher.
+        thread(name = "WebWatcher-init") {
+            try {
+                ri = RustInterface(applicationContext).also { it.createBucketHelper(bucket_id, "web.tab.current") }
+            } catch (ex: Throwable) {
+                // Catch Throwable (not just Exception) because System.loadLibrary() throws
+                // UnsatisfiedLinkError (an Error subclass) when the native library is missing.
+                Log.e(TAG, "Failed to initialize RustInterface: ${ex.message}")
+            }
         }
     }
 

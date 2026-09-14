@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -27,7 +29,6 @@ import net.activitywatch.android.R
 import net.activitywatch.android.ensureDashboardApiKey
 import org.json.JSONObject
 import java.io.File
-import java.lang.Thread.sleep
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -37,6 +38,12 @@ import kotlin.concurrent.thread
 private const val TAG = "WebUI"
 
 private const val ARG_URL = "url"
+
+// Reload backoff while the local server is still starting (aw-android#261).
+internal const val INITIAL_RELOAD_DELAY_MS = 250L
+internal const val MAX_RELOAD_DELAY_MS = 5_000L
+
+internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
 
 // Stay under Binder's ~1 MiB transaction limit when shuttling export bodies from JS.
 internal const val EXPORT_BRIDGE_CHUNK_SIZE = 256 * 1024
@@ -296,6 +303,12 @@ class WebUIFragment : Fragment() {
     // TODO: Rename and change types of parameters
     private var listener: OnFragmentInteractionListener? = null
     private var webView: WebView? = null
+    private val reloadHandler = Handler(Looper.getMainLooper())
+    private var reloadDelayMs = INITIAL_RELOAD_DELAY_MS
+    private val reloadRunnable = Runnable {
+        val target = webView ?: return@Runnable
+        arguments?.getString(ARG_URL)?.let { target.loadUrl(it) }
+    }
     private val exportQueue = ExportSaveQueue()
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
@@ -358,16 +371,17 @@ class WebUIFragment : Fragment() {
                 description: String,
                 failingUrl: String
             ) {
-                // Retry
+                // The local server may still be starting; retry with backoff.
+                // This used to Thread.sleep() on the main thread and reload
+                // immediately, which turned a slow server start into a tight
+                // reload loop on the UI thread (aw-android#261).
                 // TODO: Find way to not show the blinking Android error page
                 Log.e(TAG, "WebView received error: $description")
-                sleep(100);
-                arguments?.let {
-                    it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
-                }
+                scheduleReload()
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                reloadDelayMs = INITIAL_RELOAD_DELAY_MS
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
             }
 
@@ -425,7 +439,15 @@ class WebUIFragment : Fragment() {
         return view
     }
 
+    private fun scheduleReload() {
+        val delay = reloadDelayMs
+        reloadDelayMs = nextReloadDelayMs(reloadDelayMs)
+        reloadHandler.removeCallbacks(reloadRunnable)
+        reloadHandler.postDelayed(reloadRunnable, delay)
+    }
+
     override fun onDestroyView() {
+        reloadHandler.removeCallbacks(reloadRunnable)
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         webView = null

@@ -222,4 +222,12 @@ class WebUIFragmentTest {
     private fun cachedExport(dir: File, name: String, content: String): PendingExport {
         return PendingExport(name, "application/json", File(dir, name).also { it.writeText(content) })
     }
+
+    @Test
+    fun reloadBackoffDoublesAndCaps() {
+        assertEquals(500L, nextReloadDelayMs(INITIAL_RELOAD_DELAY_MS))
+        assertEquals(4000L, nextReloadDelayMs(2000L))
+        assertEquals(MAX_RELOAD_DELAY_MS, nextReloadDelayMs(4000L))
+        assertEquals(MAX_RELOAD_DELAY_MS, nextReloadDelayMs(MAX_RELOAD_DELAY_MS))
+    }
 }
