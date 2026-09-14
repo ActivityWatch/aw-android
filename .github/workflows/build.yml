@@ -299,6 +299,17 @@ jobs:
       run: |
         make test
 
+    # R8 runs only for the release build type (#268), and the Makefile builds
+    # `debug` unless RELEASE is set — so a broken keep rule or a missing-class
+    # error would otherwise first surface on a release tag. This build is
+    # unsigned and is not published; it only has to get through
+    # minifyReleaseWithR8 and shrinkReleaseRes. lintVitalRelease is excluded:
+    # the tag build still runs it, and it is not what this step is checking.
+    - name: Build release variant (exercises R8)
+      run: |
+        ./gradlew :mobile:assembleRelease -x lintVitalRelease
+        test -s mobile/build/outputs/mapping/release/mapping.txt
+
 
   test-e2e:
     name: Test E2E
