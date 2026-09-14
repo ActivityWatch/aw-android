@@ -50,6 +50,11 @@ class BackgroundService : Service() {
     // full initialization when Android kills and recreates the service.
     private var isFullyStarted = false
 
+    // onStartCommand can run more than once per launch (activity start plus a
+    // sticky/boot restart). The migrations below are blocking datastore-worker
+    // commands; queueing them twice doubled the startup stall in aw-android#261.
+    private var migrationsQueued = false
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "BackgroundService created")
@@ -118,7 +123,8 @@ class BackgroundService : Service() {
         val prefs = AWPreferences(this)
         val needsHostnameMigration = !prefs.hasMigratedHostname()
         val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
-        if (needsHostnameMigration || needsWatcherBucketMigration) {
+        if ((needsHostnameMigration || needsWatcherBucketMigration) && !migrationsQueued) {
+            migrationsQueued = true
             CoroutineScope(Dispatchers.IO).launch {
                 if (needsHostnameMigration) {
                     val hostname = rustInterface.getDeviceName(this@BackgroundService)
