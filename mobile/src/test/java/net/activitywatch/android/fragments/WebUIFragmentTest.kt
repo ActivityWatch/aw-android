@@ -230,4 +230,45 @@ class WebUIFragmentTest {
         assertEquals(MAX_RELOAD_DELAY_MS, nextReloadDelayMs(4000L))
         assertEquals(MAX_RELOAD_DELAY_MS, nextReloadDelayMs(MAX_RELOAD_DELAY_MS))
     }
+
+    @Test
+    fun `subresource error does not schedule a reload`() {
+        val policy = DashboardReloadPolicy()
+        assertNull(policy.onReceivedError(isForMainFrame = false))
+        assertFalse(policy.currentLoadFailed)
+        assertTrue(policy.onPageFinished())
+        assertEquals(INITIAL_RELOAD_DELAY_MS, policy.delayMs)
+    }
+
+    @Test
+    fun `main-frame error keeps the pending retry through the error-page finish`() {
+        val policy = DashboardReloadPolicy()
+        assertEquals(INITIAL_RELOAD_DELAY_MS, policy.onReceivedError(isForMainFrame = true))
+        assertTrue(policy.currentLoadFailed)
+        assertFalse(policy.onPageFinished())
+        assertEquals(500L, policy.delayMs)
+    }
+
+    @Test
+    fun `successful load after a retry attempt cancels and resets backoff`() {
+        val policy = DashboardReloadPolicy()
+        policy.onReceivedError(isForMainFrame = true)
+        policy.onPageFinished()
+        policy.onPageStarted()
+        assertTrue(policy.onPageFinished())
+        assertEquals(INITIAL_RELOAD_DELAY_MS, policy.delayMs)
+        assertFalse(policy.currentLoadFailed)
+    }
+
+    @Test
+    fun `consecutive main-frame errors keep doubling the delay`() {
+        val policy = DashboardReloadPolicy()
+        assertEquals(250L, policy.onReceivedError(isForMainFrame = true))
+        policy.onPageFinished()
+        policy.onPageStarted()
+        assertEquals(500L, policy.onReceivedError(isForMainFrame = true))
+        policy.onPageFinished()
+        policy.onPageStarted()
+        assertEquals(1000L, policy.onReceivedError(isForMainFrame = true))
+    }
 }

@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -45,6 +46,45 @@ internal const val INITIAL_RELOAD_DELAY_MS = 250L
 internal const val MAX_RELOAD_DELAY_MS = 5_000L
 
 internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
+
+/**
+ * Decides when a dashboard WebView error should queue a full-page retry.
+ *
+ * WebView calls [android.webkit.WebViewClient.onPageFinished] after a failed
+ * main-frame load as well as a successful one. Cancelling the pending retry
+ * on every finish would drop the startup backoff (aw-android#261). Only a
+ * successful finish cancels; subresource errors never schedule a reload.
+ */
+internal class DashboardReloadPolicy {
+    var delayMs: Long = INITIAL_RELOAD_DELAY_MS
+        private set
+    var currentLoadFailed: Boolean = false
+        private set
+
+    fun onPageStarted() {
+        currentLoadFailed = false
+    }
+
+    /** Delay to schedule, or null if this error must not reload the page. */
+    fun onReceivedError(isForMainFrame: Boolean): Long? {
+        if (!isForMainFrame) {
+            return null
+        }
+        currentLoadFailed = true
+        val delay = delayMs
+        delayMs = nextReloadDelayMs(delayMs)
+        return delay
+    }
+
+    /** True when a pending retry should be dropped because the page loaded. */
+    fun onPageFinished(): Boolean {
+        if (currentLoadFailed) {
+            return false
+        }
+        delayMs = INITIAL_RELOAD_DELAY_MS
+        return true
+    }
+}
 
 // Stay under Binder's ~1 MiB transaction limit when shuttling export bodies from JS.
 internal const val EXPORT_BRIDGE_CHUNK_SIZE = 256 * 1024
@@ -305,7 +345,7 @@ class WebUIFragment : Fragment() {
     private var listener: OnFragmentInteractionListener? = null
     private var webView: WebView? = null
     private val reloadHandler = Handler(Looper.getMainLooper())
-    private var reloadDelayMs = INITIAL_RELOAD_DELAY_MS
+    private val reloadPolicy = DashboardReloadPolicy()
     private val reloadRunnable = Runnable {
         val target = webView ?: return@Runnable
         arguments?.getString(ARG_URL)?.let { target.loadUrl(it) }
@@ -366,30 +406,31 @@ class WebUIFragment : Fragment() {
         webView = myWebView
 
         class MyWebViewClient : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                reloadPolicy.onPageStarted()
+            }
+
             override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                // Only a failed main frame warrants a reload; a failed subresource
-                // (icon, chunk, API call) must not throw away a usable dashboard.
-                if (!request.isForMainFrame) {
-                    return
-                }
+                val delay = reloadPolicy.onReceivedError(request.isForMainFrame) ?: return
                 // The local server may still be starting; retry with backoff.
                 // This used to Thread.sleep() on the main thread and reload
                 // immediately, which turned a slow server start into a tight
                 // reload loop on the UI thread (aw-android#261).
                 // TODO: Find way to not show the blinking Android error page
                 Log.e(TAG, "WebView received error: ${error.description}")
-                scheduleReload()
+                scheduleReload(delay)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                // A page that loaded does not need the retry that a failed
-                // subresource or an earlier main-frame error may have queued.
-                reloadHandler.removeCallbacks(reloadRunnable)
-                reloadDelayMs = INITIAL_RELOAD_DELAY_MS
+                // Error-page finishes still call onPageFinished. Only a
+                // successful load should drop the pending startup retry.
+                if (reloadPolicy.onPageFinished()) {
+                    reloadHandler.removeCallbacks(reloadRunnable)
+                }
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
             }
 
@@ -447,9 +488,7 @@ class WebUIFragment : Fragment() {
         return view
     }
 
-    private fun scheduleReload() {
-        val delay = reloadDelayMs
-        reloadDelayMs = nextReloadDelayMs(reloadDelayMs)
+    private fun scheduleReload(delay: Long) {
         reloadHandler.removeCallbacks(reloadRunnable)
         reloadHandler.postDelayed(reloadRunnable, delay)
     }
