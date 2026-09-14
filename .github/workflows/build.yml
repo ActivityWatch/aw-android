@@ -492,11 +492,24 @@ jobs:
       working-directory: dist
       run: ls -R
 
-    # detect if version tag is stable/beta
-    - uses: nowsprinting/check-version-format-action@v4
-      id: version
-      with:
-        prefix: 'v'
+    # Classify the tag with the same rule as Play-track routing
+    # (scripts/assert-play-track.sh): X.Y.Z → stable, anything else → pre-release.
+    # Do not use check-version-format-action here: it treats 0.x.x as unstable
+    # per semver, but aw-android ships 0.x.x as production.
+    - name: Classify tag
+      id: tag
+      run: |
+        # Use GITHUB_REF_NAME (already an env var) instead of interpolating
+        # github.ref_name into the script. Tag names can contain shell
+        # metacharacters; expression expansion happens before Bash parses.
+        TRACK="$(bash scripts/assert-play-track.sh resolve "$GITHUB_REF_NAME")"
+        if [[ "$TRACK" == production ]]; then
+          IS_STABLE=true
+        else
+          IS_STABLE=false
+        fi
+        echo "is_stable=${IS_STABLE}" >> "$GITHUB_OUTPUT"
+        echo "Classified ${GITHUB_REF_NAME}: track=${TRACK} is_stable=${IS_STABLE}"
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -511,16 +524,7 @@ jobs:
         # get_latest_release.sh excludes the tag being released, so this
         # resolves to the previous release. STABLE_ONLY makes a stable release
         # diff against the last stable one rather than the last beta.
-        # NOTE: check-version-format-action classifies 0.x.x as not stable per
-        # semver, but aw-android uses 0.x.x for production releases. Use the
-        # same regex the release-play job uses to detect stability correctly.
-        TAG="${{ github.ref_name }}"
-        VERSION="${TAG#v}"
-        if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          IS_STABLE="true"
-        else
-          IS_STABLE="false"
-        fi
+        IS_STABLE="${{ steps.tag.outputs.is_stable }}"
         LAST_RELEASE=$(STABLE_ONLY=${IS_STABLE} \
           .changelog-tools/scripts/get_latest_release.sh)
         if [ -z "$LAST_RELEASE" ]; then
@@ -547,8 +551,16 @@ jobs:
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
-        draft: true
-        prerelease: ${{ !(steps.version.outputs.is_stable == 'true') }}  # must compare to true, since boolean outputs are actually just strings, and "false" is truthy since it's not empty: https://github.com/actions/runner/issues/1483#issuecomment-994986996
+        # Never create drafts. v0.14.0b2's Play Store "full changelog" link
+        # pointed at a page non-admins could not see, and v0.14.0 sat as a
+        # draft until it was published by hand (2026-09-13). Empty bodies
+        # are already fail-closed above. Pre-releases are marked prerelease
+        # so they do not steal "Latest release".
+        draft: false
+        # Compare to the string 'true': GHA boolean outputs are strings, and
+        # "false" is truthy because it is non-empty.
+        # https://github.com/actions/runner/issues/1483#issuecomment-994986996
+        prerelease: ${{ steps.tag.outputs.is_stable != 'true' }}
         files: |
           dist/*.apk
           dist/*.aab
