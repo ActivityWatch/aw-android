@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.GravityCompat
@@ -121,8 +122,8 @@ class NativeWindowInsetsTest {
     }
 
     private fun awaitSyncEnabled(prefs: AWPreferences, expected: Boolean, message: String) {
-        val deadline = System.currentTimeMillis() + 5000
-        while (System.currentTimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
+        val deadline = SystemClock.uptimeMillis() + 5000
+        while (SystemClock.uptimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
             Thread.sleep(100)
         }
         assertEquals(message, expected, prefs.isSyncEnabled())
