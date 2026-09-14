@@ -1,0 +1,4 @@
+- build(deps): bump aw-server-rust for the linear legacy-bucket merge (#263)
+- ci(release): publish GitHub releases instead of leaving them as drafts (#259)
+- fix(android): inset native windows below system bars (#258)
+- fix(android): handle rejected foreground service starts (#257)
