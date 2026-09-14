@@ -62,8 +62,18 @@ test: test-unit
 test-unit:
 	./gradlew test
 
-test-e2e:
-	./gradlew connectedAndroidTest --stacktrace
+# The upgrade test seeds a large legacy database before the datastore opens, so it
+# needs its own instrumentation process: run it after the rest, in a separate
+# gradle invocation (see UpgradeWithHistoryTest).
+test-e2e: test-e2e-main test-e2e-upgrade
+
+test-e2e-main:
+	./gradlew connectedAndroidTest --stacktrace \
+		-Pandroid.testInstrumentationRunnerArguments.notClass=net.activitywatch.android.UpgradeWithHistoryTest
+
+test-e2e-upgrade:
+	./gradlew connectedAndroidTest --stacktrace \
+		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.UpgradeWithHistoryTest
 
 test-e2e-screenshot-only:
 	@# To only run screenshot test:
