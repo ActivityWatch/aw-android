@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.GravityCompat
@@ -101,31 +102,48 @@ class NativeWindowInsetsTest {
 
     @Test fun authClearsSystemBarsAfterRecreation() = checkWindow(AuthSettingsActivity::class.java)
 
+    /**
+     * Tap the centre of a view through the input pipeline (a real screen tap, not
+     * View.performClick), locating it from the activity's own layout. UiAutomator's
+     * accessibility lookup was the flaky part here: on a loaded CI emulator it kept
+     * answering from the previous window for seconds after the activity was displayed
+     * and never found the switch (v0.14.1 tag build, 2026-09-14).
+     */
+    private fun tapViewCenter(scenario: ActivityScenario<*>, viewId: Int, what: String) {
+        val bounds = android.graphics.Rect()
+        device.waitForIdle()
+        scenario.onActivity { activity ->
+            val view = activity.findViewById<View>(viewId)
+            assertNotNull("$what must exist", view)
+            assertTrue("$what must be laid out on screen", view.getGlobalVisibleRect(bounds))
+            assertTrue("$what must have a tappable area", bounds.width() > 0 && bounds.height() > 0)
+        }
+        assertTrue("$what tap must be injected", device.click(bounds.centerX(), bounds.centerY()))
+    }
+
+    private fun awaitSyncEnabled(prefs: AWPreferences, expected: Boolean, message: String) {
+        val deadline = SystemClock.uptimeMillis() + 5000
+        while (SystemClock.uptimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
+            Thread.sleep(100)
+        }
+        assertEquals(message, expected, prefs.isSyncEnabled())
+    }
+
     @Test fun syncToggleReceivesRealTap() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val prefs = AWPreferences(context)
         val original = prefs.isSyncEnabled()
         try {
             ActivityScenario.launch(SyncSettingsActivity::class.java).use { scenario ->
-                val toggle = device.wait(Until.findObject(By.res(context.packageName, "switch_sync_enabled")), 5000)
-                assertNotNull("Sync switch must be visible", toggle)
                 scenario.onActivity { assertSafeContent(it) }
-                toggle.click()
-                device.wait(
-                    Until.findObject(By.res(context.packageName, "switch_sync_enabled").checked(!original)),
-                    5000
-                )
-                assertEquals("A screen tap must change the persisted setting", !original, prefs.isSyncEnabled())
+                tapViewCenter(scenario, R.id.switch_sync_enabled, "Sync switch")
+                awaitSyncEnabled(prefs, !original, "A screen tap must change the persisted setting")
                 scenario.recreate()
                 device.waitForIdle()
                 scenario.onActivity { assertSafeContent(it) }
                 assertEquals(!original, prefs.isSyncEnabled())
-                device.findObject(By.res(context.packageName, "switch_sync_enabled")).click()
-                device.wait(
-                    Until.findObject(By.res(context.packageName, "switch_sync_enabled").checked(original)),
-                    5000
-                )
-                assertEquals(original, prefs.isSyncEnabled())
+                tapViewCenter(scenario, R.id.switch_sync_enabled, "Sync switch")
+                awaitSyncEnabled(prefs, original, "A second tap must restore the persisted setting")
             }
         } finally {
             prefs.setSyncEnabled(original)
