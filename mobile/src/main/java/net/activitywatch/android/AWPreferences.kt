@@ -45,6 +45,17 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putBoolean("hasMigratedHostname", true).apply()
     }
 
+    // Sanitized-hostname follow-up (ActivityWatch/aw-android#272). Distinct from
+    // hasMigratedHostname, which only rewrites unknown/Unknown and is already true
+    // on devices that still store the pre-#183 marketing name.
+    fun sanitizedHostnameMigratedTo(): String? {
+        return sharedPreferences.getString("sanitizedHostnameMigratedTo", null)
+    }
+
+    fun setSanitizedHostnameMigratedTo(hostname: String) {
+        sharedPreferences.edit().putString("sanitizedHostnameMigratedTo", hostname).apply()
+    }
+
     fun hasMigratedWatcherAndroidBucketNames(): Boolean {
         return sharedPreferences.getBoolean("hasMigratedWatcherAndroidBucketNames", false)
     }

@@ -20,9 +20,17 @@ internal fun sanitizeDeviceHostname(raw: String?): String {
         .ifEmpty { "unknown" }
 }
 
-internal fun deviceHostname(context: Context): String {
-    val named = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
+internal fun rawDeviceName(context: Context): String? =
+    Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
-    return sanitizeDeviceHostname(named ?: android.os.Build.DEVICE)
-}
+
+internal fun deviceHostname(context: Context): String =
+    sanitizeDeviceHostname(rawDeviceName(context) ?: android.os.Build.DEVICE)
+
+internal fun legacyDeviceHostnames(context: Context): List<String> =
+    SanitizedHostnameMigration.legacyHostnames(
+        current = deviceHostname(context),
+        deviceName = rawDeviceName(context),
+        model = android.os.Build.MODEL,
+    )

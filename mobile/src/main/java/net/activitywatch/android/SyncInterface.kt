@@ -48,6 +48,7 @@ class SyncInterface(context: Context) {
     
     init {
         syncDir = resolveSyncDirectory(context).absolutePath
+        migrateLegacySyncFolders()
         Os.setenv("AW_SYNC_DIR", syncDir, true)
         
         // Set XDG environment variables to app-writable paths
@@ -239,6 +240,7 @@ class SyncInterface(context: Context) {
             throw IOException("Configured SAF directory is not accessible")
         }
 
+        deleteStaleSafHostnameDirs(safDir)
         val counts = intArrayOf(0, 0) // [copied, skipped]
         mirrorDirectory(File(syncDir), safDir, counts)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
@@ -322,4 +324,74 @@ class SyncInterface(context: Context) {
     }
 
     fun getSyncDirectory(): String = syncDir
+
+    private fun migrateLegacySyncFolders() {
+        val current = getDeviceName()
+        val deviceId =
+            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }
+        val moved =
+            SanitizedHostnameMigration.migrateSyncFolders(
+                File(syncDir),
+                current,
+                SanitizedHostnameMigration.legacyHostnames(
+                    current,
+                    rawDeviceName(appContext),
+                    android.os.Build.MODEL,
+                ),
+                deviceId,
+            )
+        if (moved > 0) {
+            Log.i(TAG, "Migrated $moved leftover sync-folder entries to '$current'")
+        }
+    }
+
+    private fun deleteStaleSafHostnameDirs(safDir: DocumentFile) {
+        val current = getDeviceName()
+        val legacy =
+            SanitizedHostnameMigration.legacyHostnames(
+                current,
+                rawDeviceName(appContext),
+                android.os.Build.MODEL,
+            )
+        val deviceId =
+            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }
+        for (name in legacy) {
+            val stale = safDir.findFile(name) ?: continue
+            if (!stale.isDirectory) continue
+            val removed =
+                if (deviceId != null) {
+                    val deviceDir = stale.findFile(deviceId)
+                    val deviceGone = deviceDir == null || deleteDocumentRecursively(deviceDir)
+                    val empty = stale.listFiles().isEmpty()
+                    deviceGone && (!empty || stale.delete())
+                } else {
+                    deleteDocumentRecursively(stale)
+                }
+            if (removed) {
+                Log.i(TAG, "Removed stale SAF hostname dir '$name'")
+            } else {
+                Log.w(TAG, "Could not remove stale SAF hostname dir '$name'")
+            }
+        }
+    }
+
+    private fun deleteDocumentRecursively(doc: DocumentFile): Boolean {
+        if (doc.isDirectory) {
+            for (child in doc.listFiles()) {
+                if (!deleteDocumentRecursively(child)) return false
+            }
+        }
+        return doc.delete()
+    }
+}
+
+internal fun existingAwSyncDirectory(context: Context): File? {
+    val preferred = File(context.getExternalFilesDir(null) ?: context.filesDir, "sync")
+    if (preferred.isDirectory) return preferred
+    val fallback = File(context.filesDir, "sync")
+    return fallback.takeIf { it.isDirectory }
 }
