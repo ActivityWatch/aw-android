@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,13 +115,15 @@ class BackgroundService : Service() {
         // exists here as well.
         ensureDashboardApiKey(this)
 
+        val prefs = AWPreferences(this)
+        migrateSanitizedHostnameIdentity(prefs)
+
         // Start the server
         rustInterface.startServerTask()
 
         // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
         // Watcher-bucket migration must follow hostname migration so IDs are stable first.
-        val prefs = AWPreferences(this)
         val needsHostnameMigration = !prefs.hasMigratedHostname()
         val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
         if ((needsHostnameMigration || needsWatcherBucketMigration) && !migrationsQueued) {
@@ -159,6 +162,44 @@ class BackgroundService : Service() {
         // A sticky recreation can occur while the app is backgrounded, where Android 12+
         // may reject foreground promotion. Only explicit, eligible callers restart us.
         return BACKGROUND_SERVICE_RESTART_MODE
+    }
+
+    /**
+     * Rewrite unsanitized bucket hostnames and fold leftover sync folders before
+     * the datastore worker opens sqlite.db. Must run before [startServerTask].
+     */
+    private fun migrateSanitizedHostnameIdentity(prefs: AWPreferences) {
+        val current = deviceHostname(this)
+        val legacy = legacyDeviceHostnames(this)
+
+        val syncDir = existingAwSyncDirectory(this)
+        if (syncDir != null) {
+            val deviceId =
+                File(filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+                    it.isNotEmpty()
+                }
+            val moved =
+                SanitizedHostnameMigration.migrateSyncFolders(syncDir, current, legacy, deviceId)
+            if (moved > 0) {
+                Log.i(TAG, "Migrated $moved leftover sync-folder entries to '$current'")
+            }
+        }
+
+        if (prefs.sanitizedHostnameMigratedTo() == current) return
+        if (RustInterface.serverStarted) {
+            Log.i(TAG, "Skipping bucket hostname rewrite; datastore already open")
+            return
+        }
+        val dbFile = File(filesDir, "sqlite.db")
+        if (!dbFile.isFile) {
+            prefs.setSanitizedHostnameMigratedTo(current)
+            return
+        }
+        val updated =
+            SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
+        if (updated >= 0) {
+            prefs.setSanitizedHostnameMigratedTo(current)
+        }
     }
 
     private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences) {
