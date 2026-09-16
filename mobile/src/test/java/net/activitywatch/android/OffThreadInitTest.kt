@@ -114,6 +114,25 @@ class OffThreadInitTest {
     }
 
     @Test
+    fun constructErrorIsWrappedAsException() {
+        val init = OffThreadInit<String>(
+            threadName = "off-thread-init-test",
+            logTag = "OffThreadInitTest",
+        ) {
+            throw UnsatisfiedLinkError("missing libaw_server")
+        }
+        try {
+            init.await()
+            org.junit.Assert.fail("expected UnsatisfiedLinkError to be wrapped as Exception")
+        } catch (e: UnsatisfiedLinkError) {
+            org.junit.Assert.fail("UnsatisfiedLinkError escaped await(); EventParsingWorker cannot retry it")
+        } catch (e: Exception) {
+            assertTrue(e.cause is UnsatisfiedLinkError)
+            assertTrue(e.cause?.message?.contains("missing libaw_server") == true)
+        }
+    }
+
+    @Test
     fun awaitTimesOutWhenConstructHangs() {
         val release = CountDownLatch(1)
         val init = OffThreadInit(

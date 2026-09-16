@@ -51,10 +51,12 @@ internal class OffThreadInit<T>(
      * Wait for construction unless this is the Android main thread.
      *
      * Off the main thread this waits until the worker finishes, then rethrows
-     * a construction failure so batch callers (EventParsingWorker, IO
-     * coroutines) retry instead of silently skipping a cycle. On the main
-     * thread it always returns null — even after init has finished — so a
-     * late MainActivity/AlarmReceiver call cannot run JNI on the UI thread.
+     * a construction failure as [Exception] so batch callers (EventParsingWorker,
+     * IO coroutines) retry instead of silently skipping a cycle. Native
+     * [Error]s such as [UnsatisfiedLinkError] are wrapped — Worker's
+     * `catch (Exception)` would otherwise let them escape the retry path.
+     * On the main thread it always returns null — even after init has finished
+     * — so a late MainActivity/AlarmReceiver call cannot run JNI on the UI thread.
      *
      * [awaitTimeoutSeconds] is 0 (unbounded) in production. Tests may pass a
      * positive timeout to exercise the hang path without stalling the suite.
@@ -73,8 +75,18 @@ internal class OffThreadInit<T>(
         } else {
             ready.await()
         }
-        failure?.let { throw it }
+        failure?.let { throw asCallerException(it) }
         return value
+    }
+
+    /**
+     * EventParsingWorker (and other WorkManager workers) catch [Exception], not
+     * [Throwable]. [System.loadLibrary] throws [UnsatisfiedLinkError], an
+     * [Error], so rethrowing it unchanged would crash the worker instead of
+     * returning Result.retry().
+     */
+    private fun asCallerException(failure: Throwable): Exception {
+        return failure as? Exception ?: Exception("Initialization failed", failure)
     }
 
     private fun logE(msg: String) {
