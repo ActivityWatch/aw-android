@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
@@ -11,6 +12,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -54,6 +58,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var dashboardApiKey: String
+    private var webUiSchemeFromPage = false
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -81,6 +86,31 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
+    }
+
+    override fun onWebUiColorSchemeChanged(dark: Boolean) {
+        webUiSchemeFromPage = true
+        applyWebUiChrome(dark)
+    }
+
+    private fun applyWebUiChrome(dark: Boolean) {
+        applySystemBarAppearance(dark)
+        val bg = ContextCompat.getColor(this, if (dark) R.color.chrome_dark else R.color.chrome_light)
+        val fg = ContextCompat.getColor(this, if (dark) R.color.chrome_on_dark else R.color.chrome_on_light)
+        val accent = ContextCompat.getColor(this, R.color.colorAccent)
+        binding.root.setBackgroundColor(bg)
+        val nav = binding.navView
+        nav.setBackgroundColor(bg)
+        val itemColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(accent, fg),
+        )
+        nav.itemTextColor = itemColors
+        nav.itemIconTintList = itemColors
+        nav.getHeaderView(0)?.let { header ->
+            header.setBackgroundColor(bg)
+            tintTextTree(header, fg)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,6 +142,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val view = binding.root
         setContentView(view)
         applySafeWindowInsets()
+        // Best-effort match for webui theme=auto until the page reports the stored setting.
+        applyWebUiChrome(isSystemNightMode())
 
         // Set up alarm to send heartbeats
         val usw = UsageStatsWatcher(this)
@@ -216,6 +248,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             Configuration.ORIENTATION_LANDSCAPE -> Log.i(TAG, "Screen orientation changed to landscape")
             Configuration.ORIENTATION_PORTRAIT -> Log.i(TAG, "Screen orientation changed to portrait")
         }
+        if (!webUiSchemeFromPage) {
+            applyWebUiChrome(isSystemNightMode(newConfig))
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -300,5 +335,16 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onDestroy() {
         super.onDestroy()
+    }
+}
+
+private fun tintTextTree(view: View, color: Int) {
+    if (view is TextView) {
+        view.setTextColor(color)
+    }
+    if (view is ViewGroup) {
+        for (i in 0 until view.childCount) {
+            tintTextTree(view.getChildAt(i), color)
+        }
     }
 }

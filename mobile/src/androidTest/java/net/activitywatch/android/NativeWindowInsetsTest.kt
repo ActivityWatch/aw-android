@@ -67,7 +67,7 @@ class NativeWindowInsetsTest {
         }
     }
 
-    private fun assertSafeContent(activity: Activity) {
+    private fun assertSafeContent(activity: Activity, requireLightStatusIcons: Boolean = true) {
         val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
         val insets = requireNotNull(ViewCompat.getRootWindowInsets(root))
         val safe = insets.getInsets(
@@ -79,8 +79,10 @@ class NativeWindowInsetsTest {
         assertTrue("Content left must clear cutout", position[0] + root.paddingLeft >= safe.left)
         assertTrue("Content bottom must clear navigation", position[1] + root.height - root.paddingBottom <= device.displayHeight - safe.bottom)
         assertTrue("Content right must clear cutout", position[0] + root.width - root.paddingRight <= device.displayWidth - safe.right)
-        assertTrue("Light native surface needs dark status icons",
-            WindowCompat.getInsetsController(activity.window, root).isAppearanceLightStatusBars)
+        if (requireLightStatusIcons) {
+            assertTrue("Light native surface needs dark status icons",
+                WindowCompat.getInsetsController(activity.window, root).isAppearanceLightStatusBars)
+        }
 
         val padding = listOf(root.paddingLeft, root.paddingTop, root.paddingRight, root.paddingBottom)
         repeat(3) { ViewCompat.dispatchApplyWindowInsets(root, insets) }
@@ -182,7 +184,7 @@ class NativeWindowInsetsTest {
                         webViewId,
                         System.identityHashCode(webView),
                     )
-                    assertSafeContent(activity)
+                    assertSafeContent(activity, requireLightStatusIcons = false)
                     activity.requestedOrientation =
                         android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 }
@@ -202,7 +204,7 @@ class NativeWindowInsetsTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 device.waitForIdle()
                 scenario.onActivity {
-                    assertSafeContent(it)
+                    assertSafeContent(it, requireLightStatusIcons = false)
                     it.findViewById<DrawerLayout>(R.id.drawer_layout).openDrawer(GravityCompat.START, false)
                 }
                 device.waitForIdle()
@@ -214,7 +216,7 @@ class NativeWindowInsetsTest {
                 }
                 scenario.recreate()
                 device.waitForIdle()
-                scenario.onActivity { assertSafeContent(it) }
+                scenario.onActivity { assertSafeContent(it, requireLightStatusIcons = false) }
             }
         } finally {
             if (wasFirstTime) prefs.resetFirstTimeRunFlag()
