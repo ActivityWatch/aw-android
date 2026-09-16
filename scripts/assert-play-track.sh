@@ -34,8 +34,10 @@ is_stable_version() {
 }
 
 is_research_tag() {
-  # A -research suffix marks a study/research build: GitHub release only, never Play.
-  [[ "$1" == *-research* ]]
+  # A -research suffix (any case) marks a study/research build: GitHub release
+  # only, never Play. Case-insensitive so a tag like v1.2.3-Research cannot
+  # fall through to the internal Play track.
+  [[ "$1" == *-[rR][eE][sS][eE][aA][rR][cC][hH]* ]]
 }
 
 tag_to_version() {
@@ -160,6 +162,8 @@ self_test() {
   expect_resolve v0.14.2b1-research none
   expect_resolve v0.14.2-research none
   expect_resolve 0.14.2b1-research none
+  expect_resolve v0.14.2b1-Research none   # case-insensitive
+  expect_resolve v0.14.2-RESEARCH none     # case-insensitive
   expect_resolve v0.14.2b1 internal    # confirm plain prerelease still → internal
 
   expect_assert_ok v0.14.0 production
@@ -174,6 +178,8 @@ self_test() {
   # research tags: only none is valid; production/internal must be rejected
   expect_assert_ok v0.14.2b1-research none
   expect_assert_ok v0.14.2-research none
+  expect_assert_ok v0.14.2b1-Research none
+  expect_assert_fail v0.14.2b1-Research internal   # case variants must also never reach Play
   expect_assert_fail v0.14.2b1-research internal   # research → Play (any track) is wrong
   expect_assert_fail v0.14.2b1-research production
   expect_assert_fail v0.14.2b1 none               # none is only for research tags
