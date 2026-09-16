@@ -2,12 +2,14 @@
 # Resolve or assert the Play Store supply track for an aw-android release tag.
 #
 # Contract:
-#   X.Y.Z (no suffix)  → production
-#   anything else      → internal  (0.14.0b2, 0.14.0devYYYYMMDD, 0.14.0-rc1, …)
+#   X.Y.Z (no suffix)         → production
+#   X.Y.Z-research (any form) → none      (GitHub release only; Play publish skipped)
+#   anything else             → internal  (0.14.0b2, 0.14.0devYYYYMMDD, 0.14.0-rc1, …)
 #
 # Fail closed: a pre-release tag must never publish to production, even if
 # SUPPLY_TRACK is later hardcoded or the resolver regresses. Stable tags may
 # still be sent to internal (staged rollout); that is not this guard.
+# Research tags must NEVER reach Play at all — they are GitHub-only study builds.
 #
 # Usage:
 #   scripts/assert-play-track.sh resolve <tag>
@@ -31,6 +33,13 @@ is_stable_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+is_research_tag() {
+  # A -research suffix (any case) marks a study/research build: GitHub release
+  # only, never Play. Case-insensitive so a tag like v1.2.3-Research cannot
+  # fall through to the internal Play track.
+  [[ "$1" == *-[rR][eE][sS][eE][aA][rR][cC][hH]* ]]
+}
+
 tag_to_version() {
   local tag="$1"
   if [[ -z "$tag" ]]; then
@@ -43,7 +52,9 @@ tag_to_version() {
 resolve_track() {
   local version
   version="$(tag_to_version "$1")"
-  if is_stable_version "$version"; then
+  if is_research_tag "$version"; then
+    echo none   # GitHub-only; Play publish must be skipped by the caller
+  elif is_stable_version "$version"; then
     echo production
   else
     echo internal
@@ -60,8 +71,20 @@ assert_track() {
     echo "error: SUPPLY_TRACK is empty; refusing to publish ${tag}" >&2
     return 1
   fi
-  if [[ "$track" != production && "$track" != internal ]]; then
+  if [[ "$track" != production && "$track" != internal && "$track" != none ]]; then
     echo "error: unknown SUPPLY_TRACK=${track} for ${tag}" >&2
+    return 1
+  fi
+  if [[ "$track" == none ]]; then
+    if ! is_research_tag "$version"; then
+      echo "error: SUPPLY_TRACK=none is only valid for -research tags (tag=${tag})" >&2
+      return 1
+    fi
+    echo "ok: tag=${tag} version=${version} SUPPLY_TRACK=none (research build; Play publish skipped)"
+    return 0
+  fi
+  if is_research_tag "$version"; then
+    echo "error: research tag ${tag} must use SUPPLY_TRACK=none; refusing to publish to Play (track=${track})" >&2
     return 1
   fi
   if [[ "$track" == production ]] && ! is_stable_version "$version"; then
@@ -135,6 +158,13 @@ self_test() {
   expect_resolve v0.14.0-rc1 internal
   expect_resolve v0.14.0rc1 internal
   expect_resolve v0.14 internal
+  # research tags → none (GitHub-only; Play publish must be skipped)
+  expect_resolve v0.14.2b1-research none
+  expect_resolve v0.14.2-research none
+  expect_resolve 0.14.2b1-research none
+  expect_resolve v0.14.2b1-Research none   # case-insensitive
+  expect_resolve v0.14.2-RESEARCH none     # case-insensitive
+  expect_resolve v0.14.2b1 internal    # confirm plain prerelease still → internal
 
   expect_assert_ok v0.14.0 production
   expect_assert_ok v0.14.0 internal
@@ -145,6 +175,14 @@ self_test() {
   expect_assert_fail v0.14.0 ""
   expect_assert_fail v0.14.0 alpha
   expect_assert_fail "" production
+  # research tags: only none is valid; production/internal must be rejected
+  expect_assert_ok v0.14.2b1-research none
+  expect_assert_ok v0.14.2-research none
+  expect_assert_ok v0.14.2b1-Research none
+  expect_assert_fail v0.14.2b1-Research internal   # case variants must also never reach Play
+  expect_assert_fail v0.14.2b1-research internal   # research → Play (any track) is wrong
+  expect_assert_fail v0.14.2b1-research production
+  expect_assert_fail v0.14.2b1 none               # none is only for research tags
 
   expect_rollout() {
     local msg="$1" tag="$2" track="$3" want="$4" got
