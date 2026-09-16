@@ -222,10 +222,13 @@ jobs:
         fi
 
     - name: Load Android keystore
-      if: ${{ secrets.KEY_ANDROID_JKS_B64 != '' }}
       env:
         KEY_ANDROID_JKS_B64: ${{ secrets.KEY_ANDROID_JKS_B64 }}
       run: |
+        if [ -z "$KEY_ANDROID_JKS_B64" ]; then
+          echo "No keystore secret configured; skipping."
+          exit 0
+        fi
         printf '%s' "$KEY_ANDROID_JKS_B64" | base64 --decode > android.jks
         chmod 600 android.jks
 
