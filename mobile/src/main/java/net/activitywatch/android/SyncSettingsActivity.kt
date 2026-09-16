@@ -26,8 +26,15 @@ private const val TAG = "SyncSettingsActivity"
 internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
     if (status == null) return "Last sync: never"
 
-    val outcome = if (status.success) "succeeded" else "failed"
-    return "Last sync $outcome at ${dateFormat.format(Date(status.completedAt))}"
+    val whenText = dateFormat.format(Date(status.completedAt))
+    if (status.success) return "Last sync succeeded at $whenText"
+
+    val error = SyncStatus.normalizeError(status.error)
+    return if (error != null) {
+        "Last sync failed at $whenText: $error"
+    } else {
+        "Last sync failed at $whenText"
+    }
 }
 
 class SyncSettingsActivity : AppCompatActivity() {

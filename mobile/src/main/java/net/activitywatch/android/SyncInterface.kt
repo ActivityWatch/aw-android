@@ -20,7 +20,21 @@ private const val TAG = "SyncInterface"
 data class SyncStatus(
     val completedAt: Long,
     val success: Boolean,
-)
+    // JNI already returns {"success": false, "error": "..."}; keep a bounded
+    // copy so the settings line can say why, not just that it failed.
+    val error: String? = null,
+) {
+    companion object {
+        const val MAX_ERROR_CHARS = 500
+        private val WHITESPACE = Regex("\\s+")
+
+        fun normalizeError(raw: String?): String? =
+            raw?.trim()
+                ?.replace(WHITESPACE, " ")
+                ?.take(MAX_ERROR_CHARS)
+                ?.ifBlank { null }
+    }
+}
 
 class SyncInterface(context: Context) {
 
@@ -134,6 +148,7 @@ class SyncInterface(context: Context) {
                     SyncStatus(
                         completedAt = System.currentTimeMillis(),
                         success = success,
+                        error = if (success) null else SyncStatus.normalizeError(message),
                     )
                 )
                 callback(success, message)

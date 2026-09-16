@@ -43,4 +43,41 @@ class SyncSettingsActivityTest {
             ),
         )
     }
+
+    @Test
+    fun formatSyncStatus_includesJniErrorOnFailure() {
+        assertEquals(
+            "Last sync failed at 2026-09-01 01:30: Pull phase failed: connection refused",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = false,
+                    error = "Pull phase failed: connection refused",
+                ),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_collapsesWhitespaceInError() {
+        assertEquals(
+            "Last sync failed at 2026-09-01 01:30: panic in syncBoth: boom",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = false,
+                    error = "panic in syncBoth:\n  boom\n",
+                ),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun normalizeError_capsLength() {
+        val raw = "x".repeat(SyncStatus.MAX_ERROR_CHARS + 50)
+        val normalized = SyncStatus.normalizeError(raw)
+        assertEquals(SyncStatus.MAX_ERROR_CHARS, normalized!!.length)
+    }
 }
