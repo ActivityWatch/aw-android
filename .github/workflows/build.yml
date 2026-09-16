@@ -414,7 +414,7 @@ jobs:
 
   release-fastlane:
     needs: [build-apk, test, get-versionCode]
-    if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-research')  # skip research builds (GitHub release only)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
