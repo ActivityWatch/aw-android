@@ -204,7 +204,7 @@ jobs:
     # Keep the two implementations consistent when changing either.
     # Keystore is delivered as a base64 secret (KEY_ANDROID_JKS_B64) and decoded
     # here; the signer cert SHA-256 is pinned in ANDROID_CERT_SHA256 (repo variable)
-    # and verified after each APK is signed.
+    # and verified after each APK and AAB is signed.
     - name: Require signing configuration on release tags
       if: startsWith(github.ref, 'refs/tags/v')
       env:
@@ -233,26 +233,35 @@ jobs:
       env:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
+        ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
       run: |
         make dist/aw-android.${{ matrix.type }}
 
-    - name: Verify APK signer certificate
-      if: matrix.type == 'apk' && vars.ANDROID_CERT_SHA256 != ''
+    - name: Verify signer certificate
+      if: vars.ANDROID_CERT_SHA256 != ''
       env:
         ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
       run: |
-        apksigner=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -print | sort -V | tail -1)
-        apk=dist/aw-android.apk
-        actual=$("$apksigner" verify --print-certs "$apk" \
-          | grep "Signer #1 certificate SHA-256 digest:" \
-          | awk '{print $NF}')
+        artifact=dist/aw-android.${{ matrix.type }}
+        expected=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d ' :\n' | tr 'A-F' 'a-f')
+        if [ "${{ matrix.type }}" = "apk" ]; then
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -print | sort -V | tail -1)
+          actual=$("$apksigner" verify --print-certs "$artifact" \
+            | grep "Signer #1 certificate SHA-256 digest:" \
+            | awk '{print $NF}')
+        else
+          actual=$(keytool -printcert -jarfile "$artifact" \
+            | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' \
+            | head -n 1)
+        fi
+        actual=$(printf '%s' "$actual" | tr -d ' :\n' | tr 'A-F' 'a-f')
         if [ -z "$actual" ]; then
-          echo "::error::Could not extract signer certificate from $apk"
+          echo "::error::Could not extract signer certificate from $artifact"
           exit 1
         fi
-        if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
+        if [ "$actual" != "$expected" ]; then
           echo "::error::Signer certificate SHA-256 mismatch — possible key rotation or wrong keystore."
-          echo "::error::  expected: $ANDROID_CERT_SHA256"
+          echo "::error::  expected: $expected"
           echo "::error::  actual:   $actual"
           exit 1
         fi

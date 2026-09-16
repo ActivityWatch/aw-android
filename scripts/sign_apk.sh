@@ -9,8 +9,10 @@
 # Keep the two implementations consistent when changing either.
 #
 # Optional: set ANDROID_CERT_SHA256 to the expected signer cert SHA-256 digest
-# (from `apksigner verify --print-certs`). When set, the script verifies the
-# APK's actual signer cert matches — fails loudly on mismatch.
+# (from `apksigner verify --print-certs`, lowercase hex without colons). When
+# set, the script verifies the signed APK *and* AAB signer cert matches —
+# fails loudly on mismatch. keytool fingerprints (colon-separated uppercase)
+# are normalized to the same form.
 
 set -e
 
@@ -33,6 +35,45 @@ if [ -z $JKS_KEYPASS ]; then
     exit 1
 fi
 
+# apksigner prints lowercase hex without colons; keytool prints uppercase
+# colon-separated SHA256. Normalize both (and the pin) before comparing.
+_normalize_sha256() {
+    printf '%s' "$1" | tr -d ' :\n' | tr 'A-F' 'a-f'
+}
+
+# Fail closed when ANDROID_CERT_SHA256 is set and the signed artifact's
+# signer cert does not match. APKs use apksigner; AABs use keytool because
+# apksigner does not support app bundles.
+_verify_pinned_cert() {
+    local file=$1
+    local actual expected
+    if [ -z "${ANDROID_CERT_SHA256:-}" ]; then
+        return 0
+    fi
+    if [[ $file == *.apk ]]; then
+        actual=$($apksigner verify --print-certs "$file" \
+            | grep "Signer #1 certificate SHA-256 digest:" \
+            | awk '{print $NF}')
+    else
+        actual=$(keytool -printcert -jarfile "$file" \
+            | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' \
+            | head -n 1)
+    fi
+    actual=$(_normalize_sha256 "$actual")
+    expected=$(_normalize_sha256 "$ANDROID_CERT_SHA256")
+    if [ -z "$actual" ]; then
+        echo "ERROR: Could not extract signer certificate SHA-256 from $file"
+        exit 1
+    fi
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: Signer certificate SHA-256 mismatch — possible key rotation or wrong keystore."
+        echo "  expected: $expected"
+        echo "  actual:   $actual"
+        exit 1
+    fi
+    echo "Signer certificate verified: $actual"
+}
+
 # Zipalign
 # Not needed for AABs
 if [[ $input == *.apk ]]; then
@@ -53,23 +94,7 @@ if [[ $input == *.apk ]]; then
     # Verify signature integrity
     $apksigner verify $input
 
-    # Verify signer cert SHA-256 if pinned (set ANDROID_CERT_SHA256 to pin)
-    if [ -n "${ANDROID_CERT_SHA256:-}" ]; then
-        actual=$($apksigner verify --print-certs "$input" \
-            | grep "Signer #1 certificate SHA-256 digest:" \
-            | awk '{print $NF}')
-        if [ -z "$actual" ]; then
-            echo "ERROR: Could not extract signer certificate SHA-256 from $input"
-            exit 1
-        fi
-        if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
-            echo "ERROR: Signer certificate SHA-256 mismatch — possible key rotation or wrong keystore."
-            echo "  expected: $ANDROID_CERT_SHA256"
-            echo "  actual:   $actual"
-            exit 1
-        fi
-        echo "Signer certificate verified: $actual"
-    fi
+    _verify_pinned_cert "$input"
 fi
 if [[ $input == *.aab ]]; then
     jarsigner -verbose \
@@ -81,6 +106,8 @@ if [[ $input == *.aab ]]; then
     # certificate problems that jarsigner otherwise reports as warnings into a
     # non-zero exit status.
     jarsigner -verify -strict "$input"
+
+    _verify_pinned_cert "$input"
 fi
 
 # Move to output destination
