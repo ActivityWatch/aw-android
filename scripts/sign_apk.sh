@@ -43,7 +43,9 @@ _normalize_sha256() {
 
 # Fail closed when ANDROID_CERT_SHA256 is set and the signed artifact's
 # signer cert does not match. APKs use apksigner; AABs use keytool because
-# apksigner does not support app bundles.
+# apksigner does not support app bundles. jarsigner-signed AABs are JARs,
+# so `keytool -printcert -jarfile` reads the META-INF PKCS7 signer cert
+# (same command as gptme/gptme .github/workflows/tauri.yml).
 _verify_pinned_cert() {
     local file=$1
     local actual expected
@@ -102,10 +104,16 @@ if [[ $input == *.aab ]]; then
         -storepass $JKS_STOREPASS -keypass $JKS_KEYPASS \
         $input activitywatch
 
-    # Verify the bundle before it can be uploaded. `-strict` turns signer and
-    # certificate problems that jarsigner otherwise reports as warnings into a
-    # non-zero exit status.
-    jarsigner -verify -strict "$input"
+    # Verify the bundle before it can be uploaded. Do not use -strict:
+    # Android upload keys are self-signed, so PKIX chain validation fails
+    # with exit 4 even when the signature is valid. Identity is enforced
+    # by the ANDROID_CERT_SHA256 pin below (same as gptme/gptme tauri.yml).
+    verify_out=$(jarsigner -verify "$input")
+    printf '%s\n' "$verify_out"
+    if ! printf '%s' "$verify_out" | grep -q "jar verified"; then
+        echo "ERROR: AAB signature verification failed: $input"
+        exit 1
+    fi
 
     _verify_pinned_cert "$input"
 fi

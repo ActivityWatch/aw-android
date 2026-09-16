@@ -250,6 +250,8 @@ jobs:
             | grep "Signer #1 certificate SHA-256 digest:" \
             | awk '{print $NF}')
         else
+          # jarsigner-signed AABs are JARs; keytool reads META-INF PKCS7
+          # (same as gptme/gptme .github/workflows/tauri.yml).
           actual=$(keytool -printcert -jarfile "$artifact" \
             | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' \
             | head -n 1)
