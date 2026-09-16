@@ -16,7 +16,8 @@ import kotlin.concurrent.thread
  *
  * Worker-thread callers should use [await], which waits until construction
  * finishes (or failed) so batch processors do not drop events. Main-thread
- * callers get null if construction has not finished, so they never ANR.
+ * callers always get null, even after init has finished, so they never run
+ * JNI on the UI thread.
  */
 internal class OffThreadInit<T>(
     threadName: String,
@@ -52,17 +53,18 @@ internal class OffThreadInit<T>(
      * Off the main thread this waits until the worker finishes, then rethrows
      * a construction failure so batch callers (EventParsingWorker, IO
      * coroutines) retry instead of silently skipping a cycle. On the main
-     * thread it returns null if the value is not ready yet.
+     * thread it always returns null — even after init has finished — so a
+     * late MainActivity/AlarmReceiver call cannot run JNI on the UI thread.
      *
      * [awaitTimeoutSeconds] is 0 (unbounded) in production. Tests may pass a
      * positive timeout to exercise the hang path without stalling the suite.
      */
     fun await(): T? {
-        value?.let { return it }
         if (isMainThread()) {
-            logW("Not ready; skipping on main thread")
+            logW("Skipping on main thread")
             return null
         }
+        value?.let { return it }
         if (awaitTimeoutSeconds > 0) {
             if (!ready.await(awaitTimeoutSeconds, TimeUnit.SECONDS)) {
                 logW("Timed out waiting after ${awaitTimeoutSeconds}s")

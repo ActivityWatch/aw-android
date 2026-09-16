@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class OffThreadInitTest {
@@ -45,6 +46,19 @@ class OffThreadInitTest {
         }
         assertEquals("ok", init.await())
         assertNotEquals(caller, constructedOn.get())
+    }
+
+    @Test
+    fun awaitOnMainThreadSkipsEvenAfterReady() {
+        val onMain = AtomicBoolean(false)
+        val init = OffThreadInit(
+            threadName = "off-thread-init-test",
+            logTag = "OffThreadInitTest",
+            isMainThread = { onMain.get() },
+        ) { "ok" }
+        assertEquals("ok", init.await())
+        onMain.set(true)
+        assertNull(init.await())
     }
 
     @Test
