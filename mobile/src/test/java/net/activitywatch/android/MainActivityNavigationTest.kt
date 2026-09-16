@@ -55,4 +55,62 @@ class MainActivityNavigationTest {
             shouldOpenActivityViewImmediately(openActivityView = true, isResumed = false),
         )
     }
+
+    @Test
+    fun nativeHomeResetsChrome_webUiKeepsPageReports() {
+        assertTrue(shouldResetChromeForNativeDestination(isWebUiDestination = false))
+        assertFalse(shouldResetChromeForNativeDestination(isWebUiDestination = true))
+    }
+
+    @Test
+    fun configChangeKeepsPageReportedWebUiChrome() {
+        assertEquals(
+            null,
+            chromeOnConfigurationChange(
+                showingWebUi = true,
+                webUiSchemeFromPage = true,
+                systemNight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun configChangeAppliesSystemNightUntilPageReports() {
+        assertEquals(
+            true,
+            chromeOnConfigurationChange(
+                showingWebUi = true,
+                webUiSchemeFromPage = false,
+                systemNight = true,
+            ),
+        )
+        assertEquals(
+            false,
+            chromeOnConfigurationChange(
+                showingWebUi = true,
+                webUiSchemeFromPage = false,
+                systemNight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun configChangeKeepsNativeHomeLightEvenIfSystemIsNight() {
+        assertEquals(
+            false,
+            chromeOnConfigurationChange(
+                showingWebUi = false,
+                webUiSchemeFromPage = true,
+                systemNight = true,
+            ),
+        )
+        assertEquals(
+            false,
+            chromeOnConfigurationChange(
+                showingWebUi = false,
+                webUiSchemeFromPage = false,
+                systemNight = true,
+            ),
+        )
+    }
 }

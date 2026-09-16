@@ -53,12 +53,32 @@ internal fun initialWebUiUrl(
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
 
+/** Native Home lives in MainActivity, so it inherits the last WebView chrome unless reset. */
+internal fun shouldResetChromeForNativeDestination(isWebUiDestination: Boolean): Boolean =
+    !isWebUiDestination
+
+/**
+ * Chrome to apply on configuration change, or null to keep the last page-reported
+ * scheme. Native surfaces stay light; WebUI follows system night only until the
+ * page reports.
+ */
+internal fun chromeOnConfigurationChange(
+    showingWebUi: Boolean,
+    webUiSchemeFromPage: Boolean,
+    systemNight: Boolean,
+): Boolean? = when {
+    showingWebUi && webUiSchemeFromPage -> null
+    showingWebUi -> systemNight
+    else -> false
+}
+
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var dashboardApiKey: String
     private var webUiSchemeFromPage = false
+    private var showingWebUi = true
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -89,6 +109,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     override fun onWebUiColorSchemeChanged(dark: Boolean) {
+        if (!showingWebUi) return
         webUiSchemeFromPage = true
         applyWebUiChrome(dark)
     }
@@ -170,6 +191,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         })
 
         if (savedInstanceState != null) {
+            showingWebUi = supportFragmentManager.findFragmentById(R.id.fragment_container) is WebUIFragment
+            if (shouldResetChromeForNativeDestination(showingWebUi)) {
+                webUiSchemeFromPage = false
+                applyWebUiChrome(false)
+            }
             return
         }
         // Cold start: pick the right first fragment so we don't flash dashboard
@@ -207,6 +233,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun showWebUi(url: String, replace: Boolean) {
+        showingWebUi = true
         val fragment = WebUIFragment.newInstance(authenticatedUrl(url))
         val transaction = supportFragmentManager.beginTransaction()
         if (replace) {
@@ -248,9 +275,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             Configuration.ORIENTATION_LANDSCAPE -> Log.i(TAG, "Screen orientation changed to landscape")
             Configuration.ORIENTATION_PORTRAIT -> Log.i(TAG, "Screen orientation changed to portrait")
         }
-        if (!webUiSchemeFromPage) {
-            applyWebUiChrome(isSystemNightMode(newConfig))
-        }
+        chromeOnConfigurationChange(
+            showingWebUi,
+            webUiSchemeFromPage,
+            isSystemNightMode(newConfig),
+        )?.let { applyWebUiChrome(it) }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -324,6 +353,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
         if(fragment != null) {
+            val isWebUi = fragment is WebUIFragment
+            showingWebUi = isWebUi
+            if (shouldResetChromeForNativeDestination(isWebUi)) {
+                webUiSchemeFromPage = false
+                applyWebUiChrome(false)
+            }
             // Insert the fragment by replacing any existing fragment
             val fragmentManager = supportFragmentManager
             fragmentManager.beginTransaction().replace(R.id.fragment_container, fragment).commit()
