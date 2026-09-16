@@ -173,4 +173,62 @@ class SanitizedHostnameMigrationTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun plan_withoutDeviceId_renamesOnlySingleUnambiguousCandidate() {
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra"),
+                deviceIdsByHostname = mapOf("POCO F8 Ultra" to setOf("dev-1")),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra"),
+                localDeviceId = null,
+            )
+        assertEquals(
+            listOf(
+                SanitizedHostnameMigration.FolderAction.RenameHostnameDir(
+                    "POCO F8 Ultra",
+                    "poco_f8_ultra",
+                )
+            ),
+            actions,
+        )
+    }
+
+    @Test
+    fun plan_withoutDeviceId_leavesAmbiguousCandidatesAlone() {
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra", "Poco F8 Ultra"),
+                deviceIdsByHostname =
+                    mapOf(
+                        "POCO F8 Ultra" to setOf("dev-1"),
+                        "Poco F8 Ultra" to setOf("other"),
+                    ),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra", "Poco F8 Ultra"),
+                localDeviceId = null,
+            )
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun plan_withoutDeviceId_andSanitizedDirExistsOnlyPlansEmptyDirDeletes() {
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra", "poco_f8_ultra"),
+                deviceIdsByHostname =
+                    mapOf(
+                        "POCO F8 Ultra" to setOf("other"),
+                        "poco_f8_ultra" to setOf("dev-1"),
+                    ),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra"),
+                localDeviceId = null,
+            )
+        assertEquals(
+            listOf(SanitizedHostnameMigration.FolderAction.DeleteHostnameDir("POCO F8 Ultra")),
+            actions,
+        )
+    }
 }

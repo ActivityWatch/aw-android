@@ -68,6 +68,11 @@ object SanitizedHostnameMigration {
         val newExists = currentHostname in existingHostnameDirs
         val scopedId = localDeviceId?.takeIf { isSafeDirName(it) }
 
+        val presentLegacy =
+            legacyHostnames
+                .distinct()
+                .filter { it != currentHostname && isSafeDirName(it) && it in existingHostnameDirs }
+
         for (legacy in legacyHostnames.distinct()) {
             if (legacy == currentHostname || !isSafeDirName(legacy)) continue
             if (legacy !in existingHostnameDirs) continue
@@ -105,10 +110,20 @@ object SanitizedHostnameMigration {
                         }
                     }
                 }
-            } else if (!newExists) {
-                actions.add(FolderAction.RenameHostnameDir(legacy, currentHostname))
             } else {
-                actions.add(FolderAction.DeleteHostnameDir(legacy))
+                // No local device id: a legacy dir cannot be attributed to this
+                // device, so renaming every candidate could fold another device's
+                // data under the current hostname. Only fold a single unambiguous
+                // candidate (nothing else could claim it); leave the rest for a
+                // start where the device id is available. Deleting when the
+                // sanitized dir already exists stays safe: applyFolderMigration
+                // only removes a hostname dir that is empty.
+                when {
+                    !newExists && presentLegacy.size == 1 ->
+                        actions.add(FolderAction.RenameHostnameDir(legacy, currentHostname))
+                    newExists -> actions.add(FolderAction.DeleteHostnameDir(legacy))
+                    else -> info("Leaving legacy dir '$legacy' in place; local device id unavailable")
+                }
             }
         }
         return actions

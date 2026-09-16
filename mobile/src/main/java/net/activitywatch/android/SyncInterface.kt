@@ -364,12 +364,19 @@ class SyncInterface(context: Context) {
             if (!stale.isDirectory) continue
             val removed =
                 if (deviceId != null) {
+                    // Scoped deletion: only remove this device's subdirectory, and
+                    // only drop the hostname dir itself when nothing else remains.
+                    // A dir holding other devices' data is never destroyed.
                     val deviceDir = stale.findFile(deviceId)
                     val deviceGone = deviceDir == null || deleteDocumentRecursively(deviceDir)
                     val empty = stale.listFiles().isEmpty()
                     deviceGone && (!empty || stale.delete())
                 } else {
-                    deleteDocumentRecursively(stale)
+                    // Without the local device id we cannot tell whether a legacy
+                    // hostname dir belongs to this device; deleting it wholesale
+                    // could destroy other devices' synced data. Leave it.
+                    Log.w(TAG, "Leaving stale SAF hostname dir '$name'; local device id unavailable")
+                    false
                 }
             if (removed) {
                 Log.i(TAG, "Removed stale SAF hostname dir '$name'")

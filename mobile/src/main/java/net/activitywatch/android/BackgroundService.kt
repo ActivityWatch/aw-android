@@ -41,6 +41,11 @@ class BackgroundService : Service() {
         const val START_ORIGIN_BOOT = "boot"
         const val START_ORIGIN_SETTINGS = "settings"
         const val START_ORIGIN_SYSTEM_RESTART = "system-restart"
+
+        // How long the queued hostname rewrite waits for the server task to exit
+        // before giving up (the next service start retries).
+        private const val SERVER_EXIT_WAIT_MS = 60_000L
+        private const val SERVER_EXIT_POLL_MS = 1_000L
     }
 
     private lateinit var syncScheduler: SyncScheduler
@@ -186,19 +191,57 @@ class BackgroundService : Service() {
         }
 
         if (prefs.sanitizedHostnameMigratedTo() == current) return
-        if (RustInterface.serverStarted) {
-            Log.i(TAG, "Skipping bucket hostname rewrite; datastore already open")
-            return
-        }
         val dbFile = File(filesDir, "sqlite.db")
         if (!dbFile.isFile) {
             prefs.setSanitizedHostnameMigratedTo(current)
+            return
+        }
+        if (RustInterface.serverStarted) {
+            // The datastore worker owns sqlite.db while the server runs; a raw
+            // rewrite under it is unsafe. Queue the rewrite for when the server
+            // task exits instead of skipping silently — a silent skip here would
+            // leave the preference unset and the rewrite would never converge
+            // (every later start sees serverStarted true again).
+            Log.i(TAG, "Datastore already open; queueing bucket hostname rewrite until the server task exits")
+            queueHostnameRewriteAfterServerExit(prefs, dbFile, current, legacy)
             return
         }
         val updated =
             SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
         if (updated >= 0) {
             prefs.setSanitizedHostnameMigratedTo(current)
+        }
+    }
+
+    private fun queueHostnameRewriteAfterServerExit(
+        prefs: AWPreferences,
+        dbFile: File,
+        current: String,
+        legacy: List<String>,
+    ) {
+        Thread {
+            try {
+                var waitedMs = 0L
+                while (RustInterface.serverStarted && waitedMs < SERVER_EXIT_WAIT_MS) {
+                    Thread.sleep(SERVER_EXIT_POLL_MS)
+                    waitedMs += SERVER_EXIT_POLL_MS
+                }
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            if (RustInterface.serverStarted) {
+                Log.i(TAG, "Server task still running; hostname rewrite stays deferred to the next start")
+                return@Thread
+            }
+            val updated =
+                SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
+            if (updated >= 0) {
+                prefs.setSanitizedHostnameMigratedTo(current)
+            }
+        }.apply {
+            name = "sanitized-hostname-rewrite"
+            isDaemon = true
+            start()
         }
     }
 
