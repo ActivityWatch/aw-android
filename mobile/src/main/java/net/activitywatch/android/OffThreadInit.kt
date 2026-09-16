@@ -14,17 +14,19 @@ import kotlin.concurrent.thread
  * [net.activitywatch.android.watcher.SessionEventWatcher] and
  * [net.activitywatch.android.watcher.UsageStatsWatcher] can share it.
  *
- * Worker-thread callers should use [await]; main-thread callers get null if
- * construction has not finished, so they never ANR waiting on native init.
+ * Worker-thread callers should use [await], which waits until construction
+ * finishes (or failed) so batch processors do not drop events. Main-thread
+ * callers get null if construction has not finished, so they never ANR.
  */
 internal class OffThreadInit<T>(
     threadName: String,
     private val logTag: String,
     private val isMainThread: () -> Boolean = Companion::isAndroidMainThread,
-    private val awaitTimeoutSeconds: Long = DEFAULT_AWAIT_TIMEOUT_SECONDS,
+    private val awaitTimeoutSeconds: Long = UNBOUNDED_AWAIT,
     construct: () -> T,
 ) {
     @Volatile private var value: T? = null
+    @Volatile private var failure: Throwable? = null
     private val ready = CountDownLatch(1)
 
     init {
@@ -33,6 +35,7 @@ internal class OffThreadInit<T>(
                 value = construct()
             } catch (ex: Throwable) {
                 // System.loadLibrary throws UnsatisfiedLinkError (an Error subclass).
+                failure = ex
                 logE("Failed to initialize: ${ex.message}")
             } finally {
                 ready.countDown()
@@ -45,7 +48,14 @@ internal class OffThreadInit<T>(
 
     /**
      * Wait for construction unless this is the Android main thread.
-     * Returns null on timeout, init failure, or main-thread skip.
+     *
+     * Off the main thread this waits until the worker finishes, then rethrows
+     * a construction failure so batch callers (EventParsingWorker, IO
+     * coroutines) retry instead of silently skipping a cycle. On the main
+     * thread it returns null if the value is not ready yet.
+     *
+     * [awaitTimeoutSeconds] is 0 (unbounded) in production. Tests may pass a
+     * positive timeout to exercise the hang path without stalling the suite.
      */
     fun await(): T? {
         value?.let { return it }
@@ -53,9 +63,15 @@ internal class OffThreadInit<T>(
             logW("Not ready; skipping on main thread")
             return null
         }
-        if (!ready.await(awaitTimeoutSeconds, TimeUnit.SECONDS)) {
-            logW("Timed out waiting after ${awaitTimeoutSeconds}s")
+        if (awaitTimeoutSeconds > 0) {
+            if (!ready.await(awaitTimeoutSeconds, TimeUnit.SECONDS)) {
+                logW("Timed out waiting after ${awaitTimeoutSeconds}s")
+                return value
+            }
+        } else {
+            ready.await()
         }
+        failure?.let { throw it }
         return value
     }
 
@@ -76,7 +92,7 @@ internal class OffThreadInit<T>(
     }
 
     companion object {
-        const val DEFAULT_AWAIT_TIMEOUT_SECONDS = 10L
+        const val UNBOUNDED_AWAIT = 0L
 
         fun isAndroidMainThread(): Boolean {
             return try {

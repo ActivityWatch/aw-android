@@ -67,14 +67,36 @@ class OffThreadInitTest {
     }
 
     @Test
-    fun constructFailureReturnsNull() {
+    fun constructFailureOnMainThreadDoesNotThrow() {
+        val started = CountDownLatch(1)
+        val init = OffThreadInit<String>(
+            threadName = "off-thread-init-test",
+            logTag = "OffThreadInitTest",
+            isMainThread = { true },
+        ) {
+            started.countDown()
+            error("boom")
+        }
+        assertNull(init.await())
+        assertTrue(started.await(2, TimeUnit.SECONDS))
+        // Still main: even after the worker has failed, skip rather than crash UI.
+        assertNull(init.await())
+    }
+
+    @Test
+    fun constructFailureRethrowsOnAwait() {
         val init = OffThreadInit<String>(
             threadName = "off-thread-init-test",
             logTag = "OffThreadInitTest",
         ) {
             error("boom")
         }
-        assertNull(init.await())
+        try {
+            init.await()
+            org.junit.Assert.fail("expected construction failure to be rethrown")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("boom") == true)
+        }
     }
 
     @Test
