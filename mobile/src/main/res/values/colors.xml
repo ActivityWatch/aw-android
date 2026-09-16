@@ -5,6 +5,12 @@
     <color name="colorAccent">#D81B60</color>
     <color name="default_text_color">#000000</color>
 
+    <!-- Native chrome around the embedded web UI. Dark values match aw-webui's dark.css. -->
+    <color name="chrome_light">#FFFFFF</color>
+    <color name="chrome_dark">#0F131A</color>
+    <color name="chrome_on_light">#000000</color>
+    <color name="chrome_on_dark">#E9EBF0</color>
+
     <!-- Widget theme colors (light mode defaults) -->
     <color name="widget_background">#F5F5F5</color>
     <color name="widget_text_primary">#1A1A1A</color>

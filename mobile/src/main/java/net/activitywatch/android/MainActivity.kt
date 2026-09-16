@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
@@ -11,6 +12,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -49,11 +53,32 @@ internal fun initialWebUiUrl(
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
 
+/** Native Home lives in MainActivity, so it inherits the last WebView chrome unless reset. */
+internal fun shouldResetChromeForNativeDestination(isWebUiDestination: Boolean): Boolean =
+    !isWebUiDestination
+
+/**
+ * Chrome to apply on configuration change, or null to keep the last page-reported
+ * scheme. Native surfaces stay light; WebUI follows system night only until the
+ * page reports.
+ */
+internal fun chromeOnConfigurationChange(
+    showingWebUi: Boolean,
+    webUiSchemeFromPage: Boolean,
+    systemNight: Boolean,
+): Boolean? = when {
+    showingWebUi && webUiSchemeFromPage -> null
+    showingWebUi -> systemNight
+    else -> false
+}
+
 
 class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener, WebUIFragment.OnFragmentInteractionListener {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var dashboardApiKey: String
+    private var webUiSchemeFromPage = false
+    private var showingWebUi = true
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -81,6 +106,32 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
+    }
+
+    override fun onWebUiColorSchemeChanged(dark: Boolean) {
+        if (!showingWebUi) return
+        webUiSchemeFromPage = true
+        applyWebUiChrome(dark)
+    }
+
+    private fun applyWebUiChrome(dark: Boolean) {
+        applySystemBarAppearance(dark)
+        val bg = ContextCompat.getColor(this, if (dark) R.color.chrome_dark else R.color.chrome_light)
+        val fg = ContextCompat.getColor(this, if (dark) R.color.chrome_on_dark else R.color.chrome_on_light)
+        val accent = ContextCompat.getColor(this, R.color.colorAccent)
+        binding.root.setBackgroundColor(bg)
+        val nav = binding.navView
+        nav.setBackgroundColor(bg)
+        val itemColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(accent, fg),
+        )
+        nav.itemTextColor = itemColors
+        nav.itemIconTintList = itemColors
+        nav.getHeaderView(0)?.let { header ->
+            header.setBackgroundColor(bg)
+            tintTextTree(header, fg)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,6 +163,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val view = binding.root
         setContentView(view)
         applySafeWindowInsets()
+        // Best-effort match for webui theme=auto until the page reports the stored setting.
+        applyWebUiChrome(isSystemNightMode())
 
         // Set up alarm to send heartbeats
         val usw = UsageStatsWatcher(this)
@@ -138,6 +191,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         })
 
         if (savedInstanceState != null) {
+            showingWebUi = supportFragmentManager.findFragmentById(R.id.fragment_container) is WebUIFragment
+            if (shouldResetChromeForNativeDestination(showingWebUi)) {
+                webUiSchemeFromPage = false
+                applyWebUiChrome(false)
+            }
             return
         }
         // Cold start: pick the right first fragment so we don't flash dashboard
@@ -175,6 +233,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun showWebUi(url: String, replace: Boolean) {
+        showingWebUi = true
         val fragment = WebUIFragment.newInstance(authenticatedUrl(url))
         val transaction = supportFragmentManager.beginTransaction()
         if (replace) {
@@ -216,6 +275,11 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             Configuration.ORIENTATION_LANDSCAPE -> Log.i(TAG, "Screen orientation changed to landscape")
             Configuration.ORIENTATION_PORTRAIT -> Log.i(TAG, "Screen orientation changed to portrait")
         }
+        chromeOnConfigurationChange(
+            showingWebUi,
+            webUiSchemeFromPage,
+            isSystemNightMode(newConfig),
+        )?.let { applyWebUiChrome(it) }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -289,6 +353,12 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
 
         if(fragment != null) {
+            val isWebUi = fragment is WebUIFragment
+            showingWebUi = isWebUi
+            if (shouldResetChromeForNativeDestination(isWebUi)) {
+                webUiSchemeFromPage = false
+                applyWebUiChrome(false)
+            }
             // Insert the fragment by replacing any existing fragment
             val fragmentManager = supportFragmentManager
             fragmentManager.beginTransaction().replace(R.id.fragment_container, fragment).commit()
@@ -300,5 +370,16 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onDestroy() {
         super.onDestroy()
+    }
+}
+
+private fun tintTextTree(view: View, color: Int) {
+    if (view is TextView) {
+        view.setTextColor(color)
+    }
+    if (view is ViewGroup) {
+        for (i in 0 until view.childCount) {
+            tintTextTree(view.getChildAt(i), color)
+        }
     }
 }

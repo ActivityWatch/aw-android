@@ -25,8 +25,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import net.activitywatch.android.ANDROID_THEME_HOOK_JS
 import net.activitywatch.android.R
 import net.activitywatch.android.ensureDashboardApiKey
 import org.json.JSONObject
@@ -432,6 +434,7 @@ class WebUIFragment : Fragment() {
                     reloadHandler.removeCallbacks(reloadRunnable)
                 }
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
+                view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
             }
 
             // Open external links in external browser
@@ -480,7 +483,10 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
-        myWebView.addJavascriptInterface(WebAppInterface(::queueExport), "Android")
+        myWebView.addJavascriptInterface(
+            WebAppInterface(::queueExport, ::onColorSchemeReported),
+            "Android",
+        )
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
@@ -680,6 +686,25 @@ class WebUIFragment : Fragment() {
         }
     }
 
+    private fun onColorSchemeReported(scheme: String) {
+        val dark = scheme.equals("dark", ignoreCase = true)
+        val apply = {
+            if (isAdded) {
+                listener?.onWebUiColorSchemeChanged(dark)
+                val ctx = context
+                if (ctx != null) {
+                    webView?.setBackgroundColor(
+                        ContextCompat.getColor(
+                            ctx,
+                            if (dark) R.color.chrome_dark else R.color.chrome_light,
+                        ),
+                    )
+                }
+            }
+        }
+        view?.post(apply) ?: if (isAdded) requireActivity().runOnUiThread(apply) else Unit
+    }
+
     override fun onDetach() {
         super.onDetach()
         listener = null
@@ -699,6 +724,7 @@ class WebUIFragment : Fragment() {
     interface OnFragmentInteractionListener {
         // TODO: Update argument type and name
         fun onFragmentInteraction(uri: Uri)
+        fun onWebUiColorSchemeChanged(dark: Boolean) {}
     }
 
     companion object {
@@ -727,6 +753,7 @@ internal fun writeExport(context: Context, uri: Uri, source: File): Boolean {
 
 class WebAppInterface(
     private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
+    private val onColorScheme: (String) -> Unit = {},
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -771,5 +798,10 @@ class WebAppInterface(
             buffer.setLength(0)
         }
         onExport(content, name, mime)
+    }
+
+    @JavascriptInterface
+    fun reportColorScheme(scheme: String) {
+        onColorScheme(scheme)
     }
 }

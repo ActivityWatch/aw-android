@@ -90,9 +90,9 @@ class WebUIFragmentTest {
     @Test
     fun `WebAppInterface reassembles chunked exports`() {
         var received: Triple<String, String, String>? = null
-        val bridge = WebAppInterface { content, filename, mimeType ->
+        val bridge = WebAppInterface(onExport = { content, filename, mimeType ->
             received = Triple(content, filename, mimeType)
-        }
+        })
 
         bridge.beginExport("../aw-bucket-export.json", "application/json")
         bridge.appendExport("{\"buckets\":")
@@ -103,11 +103,23 @@ class WebUIFragmentTest {
     }
 
     @Test
+    fun `WebAppInterface reports color scheme independently of exports`() {
+        val schemes = mutableListOf<String>()
+        val bridge = WebAppInterface(
+            onExport = { _, _, _ -> error("export must not run") },
+            onColorScheme = { schemes.add(it) },
+        )
+        bridge.reportColorScheme("dark")
+        bridge.reportColorScheme("light")
+        assertEquals(listOf("dark", "light"), schemes)
+    }
+
+    @Test
     fun `WebAppInterface download helpers keep explicit mime types`() {
         val received = mutableListOf<Triple<String, String, String>>()
-        val bridge = WebAppInterface { content, filename, mimeType ->
+        val bridge = WebAppInterface(onExport = { content, filename, mimeType ->
             received.add(Triple(content, filename, mimeType))
-        }
+        })
 
         bridge.downloadJSON("{}", "data.json")
         bridge.downloadCSV("a,b", "data.csv")
