@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.content.Context
 import android.util.Log
+import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
 import net.activitywatch.android.parser.SessionParser
@@ -18,7 +19,14 @@ const val SESSION_BUCKET_ID = "aw-watcher-android"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
 
 class SessionEventWatcher(val context: Context) {
-    private val ri = RustInterface(context)
+    // RustInterface construction calls System.loadLibrary + JNI initialize.
+    // Doing that on the thread that constructed us (MainActivity, AlarmReceiver,
+    // widget refresh, TestFragment) blocked those callers; same pattern as
+    // WebWatcher/MediaWatcher in aw-android#262.
+    private val rust = OffThreadInit(
+        threadName = "SessionEventWatcher-init",
+        logTag = TAG,
+    ) { RustInterface(context.applicationContext) }
     private val sessionParser = SessionParser(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
 
@@ -41,7 +49,10 @@ class SessionEventWatcher(val context: Context) {
         }
     }
 
+    private fun rustInterface(): RustInterface? = rust.await()
+
     private fun getLastEventTime(): Instant? {
+        val ri = rustInterface() ?: return null
         val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
         return if (events.length() == 1) {
             val lastEvent = events[0] as JSONObject
@@ -78,6 +89,10 @@ class SessionEventWatcher(val context: Context) {
     }
 
     private fun processEventsSinceLastUpdateLocked(): Int {
+        val ri = rustInterface() ?: run {
+            Log.w(TAG, "RustInterface not ready; skipping session event processing")
+            return 0
+        }
         Log.i(TAG, "Processing session events...")
 
         // Create bucket for session events
@@ -114,6 +129,7 @@ class SessionEventWatcher(val context: Context) {
      * Insert a single session as an individual event (not a heartbeat)
      */
     private fun insertSessionAsEvent(session: AppSession) {
+        val ri = rustInterface() ?: return
         val startInstant = DateTimeUtils.toInstant(java.util.Date(session.startTime))
         val duration = session.durationSeconds
         val data = session.toEventData()
@@ -143,6 +159,7 @@ class SessionEventWatcher(val context: Context) {
             endTime = startTime + durationMs
         )
 
+        val ri = rustInterface() ?: return
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
         insertSessionAsEvent(session)
 
@@ -162,6 +179,7 @@ class SessionEventWatcher(val context: Context) {
      * Get count of events in session bucket
      */
     fun getSessionEventCount(): Int {
+        val ri = rustInterface() ?: return 0
         val events = ri.getEventsJSON(SESSION_BUCKET_ID)
         return events.length()
     }
