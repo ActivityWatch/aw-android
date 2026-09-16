@@ -231,6 +231,9 @@ class SyncInterface(context: Context) {
      *
      * Errors propagate to the caller so a configured directory is never reported as successfully
      * synced when the files could not be mirrored there.
+     *
+     * Stale legacy hostname directories in the SAF tree are removed only after the mirror
+     * succeeds, so a leftover local legacy folder can never be re-mirrored after deletion.
      */
     private fun copySyncFilesToSafDir() {
         val uriStr = AWPreferences(appContext).getSyncDirUri() ?: return
@@ -240,7 +243,6 @@ class SyncInterface(context: Context) {
             throw IOException("Configured SAF directory is not accessible")
         }
 
-        deleteStaleSafHostnameDirs(safDir)
         val counts = intArrayOf(0, 0) // [copied, skipped]
         mirrorDirectory(File(syncDir), safDir, counts)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
@@ -250,6 +252,13 @@ class SyncInterface(context: Context) {
         if (counts[1] > 0) {
             throw IOException("SAF mirror skipped ${counts[1]} item(s)")
         }
+        // Stale-SAF cleanup runs only after a fully successful mirror: deleting
+        // first would let the mirror re-copy a leftover local legacy folder back
+        // into the SAF tree (the fork would persist), and deleting after a
+        // partial mirror could drop data the local copy still holds. If the
+        // local legacy folder could not be renamed, it is deleted here each run
+        // after being mirrored, so the Syncthing-visible fork stays gone.
+        deleteStaleSafHostnameDirs(safDir)
     }
 
     /**
