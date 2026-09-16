@@ -91,14 +91,22 @@ class AWPreferences(context: Context) {
         return SyncStatus(
             completedAt = completedAt,
             success = sharedPreferences.getBoolean("lastSyncSucceeded", false),
+            error = sharedPreferences.getString("lastSyncError", null)
+                ?.takeIf { it.isNotEmpty() },
         )
     }
 
     fun setLastSyncStatus(status: SyncStatus) {
-        sharedPreferences.edit()
+        val editor = sharedPreferences.edit()
             .putLong("lastSyncCompletedAt", status.completedAt)
             .putBoolean("lastSyncSucceeded", status.success)
-            .apply()
+        val error = status.error?.takeIf { it.isNotEmpty() }
+        if (error == null) {
+            editor.remove("lastSyncError")
+        } else {
+            editor.putString("lastSyncError", error)
+        }
+        editor.apply()
         appContext.sendBroadcast(
             android.content.Intent(LAST_SYNC_STATUS_CHANGED_ACTION).setPackage(appContext.packageName)
         )
