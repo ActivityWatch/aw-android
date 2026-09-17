@@ -62,6 +62,12 @@ object SanitizedHostnameMigration {
         currentHostname: String,
         legacyHostnames: Collection<String>,
         localDeviceId: String?,
+        // Hostname dirs holding entries the planner cannot account for (regular
+        // files, or directories it will not treat as device ids).
+        // applyFolderMigration refuses to delete a non-empty hostname dir, so
+        // planning a delete for one of these would be rejected, counted as
+        // failed, and retried on every sync forever.
+        hostnameDirsWithUnmanagedEntries: Set<String> = emptySet(),
     ): List<FolderAction> {
         if (!isSafeDirName(currentHostname)) return emptyList()
         val actions = mutableListOf<FolderAction>()
@@ -81,7 +87,7 @@ object SanitizedHostnameMigration {
 
             if (scopedId != null) {
                 if (scopedId !in legacyIds) {
-                    if (legacyIds.isEmpty()) {
+                    if (legacyIds.isEmpty() && legacy !in hostnameDirsWithUnmanagedEntries) {
                         actions.add(FolderAction.DeleteHostnameDir(legacy))
                     }
                     continue
@@ -105,7 +111,9 @@ object SanitizedHostnameMigration {
                     }
                     else -> {
                         actions.add(FolderAction.DeleteStaleDeviceDir(legacy, scopedId))
-                        if (legacyIds == setOf(scopedId)) {
+                        if (legacyIds == setOf(scopedId) &&
+                            legacy !in hostnameDirsWithUnmanagedEntries
+                        ) {
                             actions.add(FolderAction.DeleteHostnameDir(legacy))
                         }
                     }
@@ -131,7 +139,9 @@ object SanitizedHostnameMigration {
                     // applyFolderMigration will reject: a rejected delete counts as
                     // "failed" and prevents ensureLegacyFoldersMigrated from marking
                     // the per-instance migration done, causing it to retry every sync.
-                    newExists && legacyDeviceIds.isEmpty() ->
+                    newExists &&
+                        legacyDeviceIds.isEmpty() &&
+                        legacy !in hostnameDirsWithUnmanagedEntries ->
                         actions.add(FolderAction.DeleteHostnameDir(legacy))
                     else ->
                         info(
@@ -206,17 +216,25 @@ object SanitizedHostnameMigration {
         if (!syncDir.isDirectory) return MigrationResult(0, 0)
         val deviceIdsByHostname = linkedMapOf<String, Set<String>>()
         val hostnameDirs = mutableSetOf<String>()
+        val unmanagedEntryDirs = mutableSetOf<String>()
         val children = syncDir.listFiles() ?: return MigrationResult(0, 0)
         for (child in children) {
             if (!child.isDirectory || !isSafeDirName(child.name)) continue
             hostnameDirs.add(child.name)
+            val kids = child.listFiles()
             val ids =
-                child.listFiles()
+                kids
                     ?.filter { it.isDirectory && isSafeDirName(it.name) }
                     ?.map { it.name }
                     ?.toSet()
                     .orEmpty()
             deviceIdsByHostname[child.name] = ids
+            // A failed listing (kids == null) means we cannot tell whether the dir
+            // is empty; treat it as holding unmanaged entries rather than planning
+            // a delete the applier would reject.
+            if (kids == null || kids.any { !(it.isDirectory && isSafeDirName(it.name)) }) {
+                unmanagedEntryDirs.add(child.name)
+            }
         }
         val actions =
             planFolderMigration(
@@ -225,6 +243,7 @@ object SanitizedHostnameMigration {
                 currentHostname = currentHostname,
                 legacyHostnames = legacyHostnames,
                 localDeviceId = localDeviceId,
+                hostnameDirsWithUnmanagedEntries = unmanagedEntryDirs,
             )
         if (actions.isEmpty()) return MigrationResult(0, 0)
         info("Applying ${actions.size} sync-folder migration action(s) under ${syncDir.path}")

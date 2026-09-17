@@ -108,6 +108,13 @@ class BackgroundService : Service() {
     // commands; queueing them twice doubled the startup stall in aw-android#261.
     private var migrationsQueued = false
 
+    // Set in onDestroy. The server start runs on an IO coroutine that can outlive
+    // the call to onStartCommand, so it re-checks this before opening the
+    // datastore: a service torn down while the start was waiting must not leave a
+    // running server behind. `Service` has no `isDestroyed` before API 35.
+    @Volatile
+    private var serviceDestroyed = false
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "BackgroundService created")
@@ -176,6 +183,18 @@ class BackgroundService : Service() {
         // database before the rewrite has completed or explicitly deferred.
         CoroutineScope(Dispatchers.IO).launch {
             synchronized(sanitizedMigrationLock) {
+                // onDestroy can run on the main thread as soon as onStartCommand
+                // returns, so the service may already be gone by the time this
+                // coroutine acquires the lock. Starting the server then would
+                // leave a running datastore with no service to stop it. This
+                // check cannot cover a destroy that lands after
+                // startServerTask() has begun (blocking JNI, not interruptible);
+                // it closes the window that is actually reachable — the wait for
+                // the lock and the migration.
+                if (serviceDestroyed) {
+                    Log.i(TAG, "Service destroyed while the server start was waiting; skipping")
+                    return@launch
+                }
                 migrateSanitizedHostnameIdentity(prefs)
                 // Under the same lock as the migration so overlapping
                 // onStartCommand invocations and the deferred rewrite thread
@@ -430,6 +449,7 @@ class BackgroundService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "BackgroundService destroyed")
+        serviceDestroyed = true
         cancelQueuedHostnameRewrite()
         if (::syncScheduler.isInitialized) syncScheduler.stop()
         super.onDestroy()

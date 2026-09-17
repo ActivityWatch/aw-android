@@ -269,4 +269,59 @@ class SanitizedHostnameMigrationTest {
             actions,
         )
     }
+
+    @Test
+    fun plan_withoutDeviceId_andSanitizedDirExists_leavesLegacyDirHoldingOnlyFilesAlone() {
+        // A legacy dir whose only entries are regular files looks empty to the
+        // device-id map, but applyFolderMigration refuses to delete a dir with any
+        // entries. Planning that delete would make the pass report failed=1 and
+        // retry on every sync forever.
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra", "poco_f8_ultra"),
+                deviceIdsByHostname =
+                    mapOf(
+                        "POCO F8 Ultra" to emptySet(),
+                        "poco_f8_ultra" to setOf("dev-1"),
+                    ),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra"),
+                localDeviceId = null,
+                hostnameDirsWithUnmanagedEntries = setOf("POCO F8 Ultra"),
+            )
+        assertEquals(emptyList<SanitizedHostnameMigration.FolderAction>(), actions)
+    }
+
+    @Test
+    fun apply_doesNotFailOnLegacyDirWithStrayFileAlongsideStaleDeviceDir() {
+        val root = File.createTempFile("aw-sync-stray", null)
+        assertTrue(root.delete())
+        assertTrue(root.mkdirs())
+        try {
+            val deviceId = "41662faa-7dc4-4e50-970b-f986d59a1819"
+            val legacyDeviceDir = File(root, "POCO F8 Ultra/$deviceId")
+            val newDeviceDir = File(root, "poco_f8_ultra/$deviceId")
+            assertTrue(legacyDeviceDir.mkdirs())
+            assertTrue(newDeviceDir.mkdirs())
+            File(root, "POCO F8 Ultra/.nomedia").writeText("")
+            File(legacyDeviceDir, "test.db").writeText("old")
+
+            val applied =
+                SanitizedHostnameMigration.migrateSyncFolders(
+                    syncDir = root,
+                    currentHostname = "poco_f8_ultra",
+                    legacyHostnames = listOf("POCO F8 Ultra"),
+                    localDeviceId = deviceId,
+                )
+            // The stale device dir goes; the hostname dir cannot be deleted while
+            // the stray file is in it, and that must not count as a failure —
+            // otherwise the migration never marks itself done and retries forever.
+            assertEquals(1, applied.moved)
+            assertEquals(0, applied.failed)
+            assertFalse(legacyDeviceDir.exists())
+            assertTrue(File(root, "POCO F8 Ultra/.nomedia").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }
