@@ -264,21 +264,22 @@ class SyncInterface(context: Context) {
                 // through here, and this is the only place that holds the SyncReport
                 // returned across the JNI boundary. Persisting per-caller (as the full-sync
                 // path used to) is what left pull/push runs unrecorded.
-                AWPreferences(appContext).setLastSyncStatus(status)
-
-                // Keep completion feedback honest: a configured SAF directory is part of a
-                // successful Android sync, so mirror failures must reach the user instead of
-                // being logged as a non-fatal success. Full-sync callers wait for mirroring.
+                //
+                // A configured SAF directory is part of a successful Android sync, so for
+                // full syncs the persist happens only AFTER mirroring completes: the
+                // settings UI must never show a completed sync while the mirror is still
+                // running. Non-mirroring operations persist immediately as before.
                 Log.i(TAG, "$operation completed: success=$success, message=$message")
                 if (success && mirrorBeforeCallback) {
                     mirrorSyncFilesToSafDir()
                 }
+                AWPreferences(appContext).setLastSyncStatus(status)
                 handler.post { callback(success, message) }
             } catch (e: Exception) {
                 val native = nativeStatus
                 val status = if (native != null && native.success) {
-                    // The native sync already completed (and was persisted); this
-                    // failure came from the post-sync step, so keep its report.
+                    // The native sync itself completed; this failure came from the
+                    // post-sync step (mirroring or callback), so keep its report.
                     val step = if (mirrorBeforeCallback) "SAF mirroring failed" else "post-sync step failed"
                     native.copy(
                         completedAt = System.currentTimeMillis(),
