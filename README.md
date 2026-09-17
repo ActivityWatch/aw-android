@@ -77,6 +77,34 @@ This will trigger a GitHub Actions workflow which will build the app and upload 
 > the tag push from the Release workflow triggers the Build workflow. Without it,
 > the Build workflow must be triggered manually after the tag is pushed.
 
+### Research builds
+
+A tag with a `-research` suffix (e.g. `v0.14.2b1-research`) is a study build:
+it builds and publishes to **GitHub releases only** and is never pushed to the
+Play Store. `scripts/assert-play-track.sh` resolves any `-research` tag to the
+`none` track and the `release-fastlane` job skips it (fail-closed, so a
+case-variant like `-Research` is also refused).
+
+- **versionName**: the `-research` suffix is a distribution-channel marker, not
+  a version component, so the Build workflow's versionName assertion strips it
+  from both the tag and the committed `versionName` before comparing
+  (`scripts/strip-research-suffix.sh`). A research tag `v0.14.2b1-research` is
+  verified against the committed `0.14.2b1` — and a Release-workflow run with a
+  `-research` input (which commits the suffixed `versionName`) also passes.
+  The reverse is refused: a **plain** tag whose committed `versionName` carries
+  `-research` fails the assertion, so a research-marked build can never reach
+  Play production from a plain tag. Self-test:
+  `scripts/strip-research-suffix.sh --self-test`.
+- **F-Droid**: aw-android is not currently in F-Droid's `fdroiddata`, so there
+  is no F-Droid version regex that could attempt to build a `-research` tag. If
+  the app is ever added to F-Droid, the maintainer must ensure its version regex
+  ignores `-research` tags (F-Droid builds from tagged source).
+- **Signing**: a study needs one stable signing key for its duration so
+  participants can install updates over the top of a sideloaded APK. Note that
+  a future Play release may be re-signed by Play App Signing, which would break
+  in-place upgrades for sideloaded installs — acceptable for a pilot that ends,
+  but it should be planned for before any long-lived sideloaded distribution.
+
 ## More info
 
 For more info, check out the main [ActivityWatch repo](https://github.com/ActivityWatch/activitywatch).
