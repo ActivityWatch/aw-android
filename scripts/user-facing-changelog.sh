@@ -12,7 +12,7 @@
 #   - conventional-commit types that never reach users: chore, build, ci,
 #     test(s), style, docs, refactor, deps, release, lint
 #   - any commit scoped to infrastructure (ci, build, test, deps, gradle,
-#     fastlane, signing, workflow, actions), regardless of type
+#     fastlane, signing, workflow, actions, check-jnilibs), regardless of type
 #   - research-edition-only work (subjects mentioning "research")
 #   - merge commits
 #
@@ -36,7 +36,7 @@ EOF
 }
 
 NON_USER_TYPES='chore|build|ci|test|tests|style|docs|refactor|deps|release|lint'
-INFRA_SCOPES='ci|build|test|tests|deps|gradle|fastlane|signing|release|workflow|actions|lint'
+INFRA_SCOPES='check-jnilibs|ci|build|test|tests|deps|gradle|fastlane|signing|release|workflow|actions|lint'
 
 is_user_facing() {
   local subject="$1" type scope
@@ -106,6 +106,7 @@ self_test() {
   expect drop 'test(e2e): wait for the rotated layout before post-rotation inset assertion (#282)'
   expect drop 'tests: add a unit test for the migration'
   expect drop 'docs: add CITATION.cff pointing to ActivityWatch DOI (#279)'
+  expect drop 'fix(check-jnilibs): also validate libaw_sync.so, bound program-header reads'
   expect drop 'style: reformat'
   expect drop 'refactor: extract hostname helpers'
   expect drop 'build(deps): bump actions/download-artifact from 3 to 4.1.7'
