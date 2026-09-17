@@ -91,7 +91,10 @@ case-variant like `-Research` is also refused).
   (`scripts/strip-research-suffix.sh`). A research tag `v0.14.2b1-research` is
   verified against the committed `0.14.2b1` — and a Release-workflow run with a
   `-research` input (which commits the suffixed `versionName`) also passes.
-  Self-test: `scripts/strip-research-suffix.sh --self-test`.
+  The reverse is refused: a **plain** tag whose committed `versionName` carries
+  `-research` fails the assertion, so a research-marked build can never reach
+  Play production from a plain tag. Self-test:
+  `scripts/strip-research-suffix.sh --self-test`.
 - **F-Droid**: aw-android is not currently in F-Droid's `fdroiddata`, so there
   is no F-Droid version regex that could attempt to build a `-research` tag. If
   the app is ever added to F-Droid, the maintainer must ensure its version regex

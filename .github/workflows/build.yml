@@ -191,15 +191,35 @@ jobs:
         # release-fastlane job separately fail-closes on any -research variant,
         # so a stripped match here can never reach Play. Strip logic and
         # coverage: scripts/strip-research-suffix.sh --self-test.
+        #
+        # The one exception that must NOT match: a committed versionName that
+        # itself carries -research while the tag is plain. That combination
+        # means the tree is a research-marked build (e.g. a plain tag created
+        # on the Release workflow's research commit) and the resulting AAB
+        # would reach Play production with a research-marked versionName —
+        # so it fails closed here instead.
         bash scripts/strip-research-suffix.sh --self-test
         SHORT_VERSION="${GITHUB_REF_NAME#v}"
+        SHORT_VERSION_RAW="$SHORT_VERSION"
         SHORT_VERSION=$(bash scripts/strip-research-suffix.sh "$SHORT_VERSION")
         COMMITTED_VERSION=$(sed -n -E "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\\1/p" mobile/build.gradle)
-        COMMITTED_VERSION=$(bash scripts/strip-research-suffix.sh "$COMMITTED_VERSION")
         if [ -z "$COMMITTED_VERSION" ]; then
           echo "Failed to parse versionName from mobile/build.gradle."
           exit 1
         fi
+        case "$COMMITTED_VERSION" in
+          *-[rR][eE][sS][eE][aA][rR][cC][hH])
+            case "$SHORT_VERSION_RAW" in
+              *-[rR][eE][sS][eE][aA][rR][cC][hH]) : ;; # research tag on research-marked tree: fine
+              *)
+                echo "Refusing to build: committed versionName '$COMMITTED_VERSION' carries a -research suffix but the tag is a plain (non-research) tag."
+                echo "A research-marked build must never be published from a plain tag (Play production upload)."
+                exit 1
+                ;;
+            esac
+            ;;
+        esac
+        COMMITTED_VERSION=$(bash scripts/strip-research-suffix.sh "$COMMITTED_VERSION")
         if [ "$COMMITTED_VERSION" != "$SHORT_VERSION" ]; then
           echo "mobile/build.gradle versionName must match the release tag."
           echo "tag=$SHORT_VERSION committed=$COMMITTED_VERSION"
