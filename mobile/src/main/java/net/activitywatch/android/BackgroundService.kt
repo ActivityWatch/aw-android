@@ -46,6 +46,11 @@ class BackgroundService : Service() {
         // before giving up (the next service start retries).
         private const val SERVER_EXIT_POLL_MS = 1_000L
 
+        // How long cancelQueuedHostnameRewrite() waits for the interrupted rewrite
+        // thread to finish. Must exceed SERVER_EXIT_POLL_MS so a thread interrupted
+        // mid-poll always gets through its finally block before the join gives up.
+        private const val CANCEL_JOIN_MS = 3_000L
+
         // Only one deferred bucket-hostname rewrite may be queued per process. The
         // guard is static because Android recreates the service instance on every
         // full start; an instance-level flag would let each recreation stack
@@ -63,7 +68,23 @@ class BackgroundService : Service() {
         val sanitizedMigrationLock = Any()
 
         fun cancelQueuedHostnameRewrite() {
-            hostnameRewriteThread?.interrupt()
+            val thread = hostnameRewriteThread ?: return
+            thread.interrupt()
+            // Bounded join: Android can recreate the service and run
+            // migrateSanitizedHostnameIdentity() before the interrupted thread's
+            // finally block clears hostnameRewriteQueued. The guard is shared via
+            // the companion object, so the recreated start would see it set, skip
+            // queueing, and miss the rewrite until another full start (which
+            // Android does not guarantee). Joining here ensures the flag is
+            // settled before a recreated instance runs the migration. If the
+            // timeout lapses the thread is mid-rewrite (it will complete and set
+            // the preference itself), never wedged in its poll loop — the poll
+            // wakes on interrupt immediately.
+            try {
+                thread.join(CANCEL_JOIN_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
     }
 
@@ -259,8 +280,17 @@ class BackgroundService : Service() {
         legacy: List<String>,
     ) {
         if (hostnameRewriteQueued) {
-            Log.i(TAG, "Hostname rewrite already queued; not queueing another")
-            return
+            val existing = hostnameRewriteThread
+            if (existing?.isAlive == true) {
+                Log.i(TAG, "Hostname rewrite already queued; not queueing another")
+                return
+            }
+            // Stale guard: the owning thread is gone without having cleared the
+            // flag (defensive — the finally block clears it, but a lapsed cancel
+            // join must not leave the rewrite permanently blocked). Reset and
+            // queue a fresh rewrite.
+            Log.w(TAG, "Hostname rewrite guard stale (owner thread not alive); re-queueing")
+            hostnameRewriteQueued = false
         }
         hostnameRewriteQueued = true
         hostnameRewriteThread = Thread {
