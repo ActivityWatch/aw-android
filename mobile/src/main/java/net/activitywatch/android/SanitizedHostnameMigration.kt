@@ -182,6 +182,22 @@ object SanitizedHostnameMigration {
         legacyHostnames: Collection<String>,
         localDeviceId: String?,
     ): MigrationResult {
+        // Serialize folder migration process-wide: BackgroundService (service
+        // start) and SyncInterface (first sync) can run this concurrently, and
+        // both would plan from and mutate the same on-disk directories.
+        synchronized(folderMigrationLock) {
+            return migrateSyncFoldersLocked(syncDir, currentHostname, legacyHostnames, localDeviceId)
+        }
+    }
+
+    private val folderMigrationLock = Any()
+
+    private fun migrateSyncFoldersLocked(
+        syncDir: File,
+        currentHostname: String,
+        legacyHostnames: Collection<String>,
+        localDeviceId: String?,
+    ): MigrationResult {
         if (!syncDir.isDirectory) return MigrationResult(0, 0)
         val deviceIdsByHostname = linkedMapOf<String, Set<String>>()
         val hostnameDirs = mutableSetOf<String>()
