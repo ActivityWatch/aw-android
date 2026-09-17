@@ -1,6 +1,8 @@
 package net.activitywatch.android.widget
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.threeten.bp.LocalTime
 
@@ -116,5 +118,58 @@ class CategoryTimeWidgetUpdaterTest {
     @Test
     fun parseCategories_returnsEmptyForEmptyResult() {
         assertEquals(emptyList<Pair<String, Long>>(), CategoryTimeWidgetUpdater.parseCategories("[]"))
+    }
+
+    // ── parseCategoryColors ────────────────────────────────────────────────────
+
+    private fun classesJson(vararg entries: Pair<List<String>, String?>): String {
+        val objs = entries.joinToString(",") { (name, color) ->
+            val nameArr = name.joinToString(",") { "\"$it\"" }
+            val dataBlock = if (color != null) ""","data":{"color":"$color"}""" else ""
+            """{"name":[$nameArr],"rule":{"type":"none"}$dataBlock}"""
+        }
+        return "[$objs]"
+    }
+
+    @Test
+    fun parseCategoryColors_extractsTopLevelColors() {
+        val json = classesJson(
+            listOf("Work") to "#00BFA5",
+            listOf("Media") to "#FF0000",
+            listOf("Work", "Programming") to "#123456"  // subcategory — excluded
+        )
+        val result = CategoryTimeWidgetUpdater.parseCategoryColors(json)
+        assertEquals("#00BFA5", result["Work"])
+        assertEquals("#FF0000", result["Media"])
+        assertFalse("subcategory keys must not appear", result.containsKey("Work>Programming"))
+        assertEquals(2, result.size)
+    }
+
+    @Test
+    fun parseCategoryColors_returnsEmptyForNullSetting() {
+        assertTrue(CategoryTimeWidgetUpdater.parseCategoryColors("null").isEmpty())
+    }
+
+    @Test
+    fun parseCategoryColors_skipsEntriesWithNoColor() {
+        val json = classesJson(
+            listOf("Work") to "#00BFA5",
+            listOf("Media") to null
+        )
+        val result = CategoryTimeWidgetUpdater.parseCategoryColors(json)
+        assertEquals(1, result.size)
+        assertEquals("#00BFA5", result["Work"])
+    }
+
+    @Test
+    fun parseCategoryColors_handlesShortHexColors() {
+        val json = classesJson(listOf("Work") to "#0F0")
+        val result = CategoryTimeWidgetUpdater.parseCategoryColors(json)
+        assertEquals("#0F0", result["Work"])
+    }
+
+    @Test
+    fun parseCategoryColors_returnsEmptyForMalformedJson() {
+        assertTrue(CategoryTimeWidgetUpdater.parseCategoryColors("not-json").isEmpty())
     }
 }
