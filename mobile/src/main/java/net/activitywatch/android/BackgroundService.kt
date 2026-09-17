@@ -141,8 +141,11 @@ class BackgroundService : Service() {
         CoroutineScope(Dispatchers.IO).launch {
             synchronized(sanitizedMigrationLock) {
                 migrateSanitizedHostnameIdentity(prefs)
+                // Under the same lock as the migration so overlapping
+                // onStartCommand invocations and the deferred rewrite thread
+                // can never interleave with the server opening the database.
+                rustInterface.startServerTask()
             }
-            rustInterface.startServerTask()
         }
 
         // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
@@ -258,10 +261,23 @@ class BackgroundService : Service() {
                     Log.i(TAG, "Server task still running; hostname rewrite stays deferred to the next start")
                     return@Thread
                 }
-                val updated =
-                    SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
-                if (updated >= 0) {
-                    prefs.setSanitizedHostnameMigratedTo(current)
+                synchronized(sanitizedMigrationLock) {
+                    // Re-check under the lock: the server start is serialized on
+                    // the same monitor, so a start that raced past the poll loop
+                    // cannot open the database while the rewrite runs.
+                    if (RustInterface.serverStarted) {
+                        Log.i(TAG, "Server started while rewrite was queued; deferring to the next start")
+                        return@Thread
+                    }
+                    val updated =
+                        SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(
+                            dbFile,
+                            current,
+                            legacy,
+                        )
+                    if (updated >= 0) {
+                        prefs.setSanitizedHostnameMigratedTo(current)
+                    }
                 }
             } finally {
                 // Clear the guard whether the rewrite ran, failed (a later start
