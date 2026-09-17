@@ -69,8 +69,11 @@ data class SyncStatus(
 
             val success = json.optBoolean("success", false)
             val warnings = json.optJSONArray("warnings")?.let { arr ->
-                (0 until minOf(arr.length(), MAX_WARNINGS))
+                (0 until arr.length())
                     .mapNotNull { i -> normalizeError(arr.optString(i, "")) }
+                    // Cap after blank-filtering: capping first would drop a
+                    // meaningful warning trailing five blank entries.
+                    .take(MAX_WARNINGS)
             } ?: emptyList()
 
             return SyncStatus(
