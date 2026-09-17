@@ -93,6 +93,21 @@ class AWPreferences(context: Context) {
             success = sharedPreferences.getBoolean("lastSyncSucceeded", false),
             error = sharedPreferences.getString("lastSyncError", null)
                 ?.takeIf { it.isNotEmpty() },
+            summary = sharedPreferences.getString("lastSyncSummary", null)
+                ?.takeIf { it.isNotEmpty() },
+            hasReport = sharedPreferences.getBoolean("lastSyncHasReport", false),
+            eventsPulled = sharedPreferences.getInt("lastSyncEventsPulled", 0),
+            eventsPushed = sharedPreferences.getInt("lastSyncEventsPushed", 0),
+            peersImported = sharedPreferences.getInt("lastSyncPeersImported", 0),
+            peersSkipped = sharedPreferences.getInt("lastSyncPeersSkipped", 0),
+            peersFailed = sharedPreferences.getInt("lastSyncPeersFailed", 0),
+            // Warnings are normalized to single lines before they get here, so a
+            // newline join round-trips exactly and unlike a JSON array it cannot
+            // fail to parse.
+            warnings = sharedPreferences.getString("lastSyncWarnings", null)
+                ?.split("\n")
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList(),
         )
     }
 
@@ -100,11 +115,28 @@ class AWPreferences(context: Context) {
         val editor = sharedPreferences.edit()
             .putLong("lastSyncCompletedAt", status.completedAt)
             .putBoolean("lastSyncSucceeded", status.success)
+            .putBoolean("lastSyncHasReport", status.hasReport)
+            .putInt("lastSyncEventsPulled", status.eventsPulled)
+            .putInt("lastSyncEventsPushed", status.eventsPushed)
+            .putInt("lastSyncPeersImported", status.peersImported)
+            .putInt("lastSyncPeersSkipped", status.peersSkipped)
+            .putInt("lastSyncPeersFailed", status.peersFailed)
         val error = status.error?.takeIf { it.isNotEmpty() }
         if (error == null) {
             editor.remove("lastSyncError")
         } else {
             editor.putString("lastSyncError", error)
+        }
+        val summary = status.summary?.takeIf { it.isNotEmpty() }
+        if (summary == null) {
+            editor.remove("lastSyncSummary")
+        } else {
+            editor.putString("lastSyncSummary", summary)
+        }
+        if (status.warnings.isEmpty()) {
+            editor.remove("lastSyncWarnings")
+        } else {
+            editor.putString("lastSyncWarnings", status.warnings.joinToString("\n"))
         }
         editor.apply()
         appContext.sendBroadcast(
