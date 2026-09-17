@@ -164,22 +164,6 @@ jobs:
         run: |
           VERSION_CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' mobile/build.gradle | head -1)
           CHANGELOG="fastlane/metadata/android/en-US/changelogs/${VERSION_CODE}.txt"
-          if [ -f "$CHANGELOG" ]; then
-            echo "Using existing changelog: $CHANGELOG"
-          else
-            # Same baseline as the release summary: stable → previous production
-            # tag, prerelease → nearest tag. Skip chore commits.
-            PREV_TAG="$(bash scripts/previous-release-tag.sh "${{ inputs.version }}")"
-            if [ -n "$PREV_TAG" ]; then
-              git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
-                | grep -v "^- chore:" \
-                > "$CHANGELOG" || true
-            fi
-            if [ ! -s "$CHANGELOG" ]; then
-              echo "- Bug fixes and stability improvements" > "$CHANGELOG"
-            fi
-            echo "Generated $CHANGELOG"
-          fi
 
           # Google Play rejects release notes longer than 500 characters per
           # language, and fastlane only surfaces this at upload time — after the
@@ -187,25 +171,64 @@ jobs:
           # a release is never blocked by a long changelog.
           # Byte length is used as the bound: for UTF-8 it is >= the character
           # count Google measures, so this can only ever be conservative.
-          # When entries are dropped, point at the GitHub release for the full
-          # list. Play Store "What's new" is plain text — the URL is readable
-          # but not clickable — so keep it short and recognisable.
+          # Play Store "What's new" is plain text — the URL is readable but not
+          # clickable — so keep the full-changelog pointer short and
+          # recognisable. Generated entries always carry it: the entry list is
+          # filtered to user-facing changes, so the GitHub release is the only
+          # route to the complete history.
           MAX_BYTES=500
           MORE_LINE="Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v${{ inputs.version }}"
-          if [ "$(wc -c < "$CHANGELOG")" -gt "$MAX_BYTES" ]; then
-            echo "::warning::$CHANGELOG is $(wc -c < "$CHANGELOG") bytes; trimming to Google Play's ${MAX_BYTES}-character limit"
-            BUDGET=$(( MAX_BYTES - ${#MORE_LINE} - 2 ))
-            awk -v budget="$BUDGET" '
+          BUDGET=$(( MAX_BYTES - ${#MORE_LINE} - 2 ))
+
+          # Trim the entry list to the budget, then append the pointer.
+          # LC_ALL=C makes length() count bytes in any awk (locale-aware
+          # awks would otherwise count characters). Whole-line trimming
+          # means no multibyte character is ever split; UTF-8 bytes are
+          # >= characters, so a byte budget is conservative for Play's
+          # 500-character limit.
+          write_changelog() {
+            LC_ALL=C awk -v budget="$BUDGET" '
               { need = length($0) + 1 }
               used + need > budget { exit }
               { print; used += need }
-            ' "$CHANGELOG" > "${CHANGELOG}.tmp"
+            ' "$1" > "${CHANGELOG}.tmp"
             if [ ! -s "${CHANGELOG}.tmp" ]; then
               # Not even the first entry fits — fall back to a generic note.
               printf '%s\n' "- Bug fixes and stability improvements" > "${CHANGELOG}.tmp"
             fi
             printf '\n%s\n' "$MORE_LINE" >> "${CHANGELOG}.tmp"
             mv "${CHANGELOG}.tmp" "$CHANGELOG"
+          }
+
+          if [ -f "$CHANGELOG" ]; then
+            echo "Using existing changelog: $CHANGELOG"
+            if [ "$(wc -c < "$CHANGELOG")" -gt "$MAX_BYTES" ]; then
+              echo "::warning::$CHANGELOG is $(wc -c < "$CHANGELOG") bytes; trimming to Google Play's ${MAX_BYTES}-character limit"
+              ENTRIES="$(mktemp)"
+              cp "$CHANGELOG" "$ENTRIES"
+              write_changelog "$ENTRIES"
+              rm -f "$ENTRIES"
+            fi
+          else
+            # Same baseline as the release summary: stable → previous production
+            # tag, prerelease → nearest tag.
+            PREV_TAG="$(bash scripts/previous-release-tag.sh "${{ inputs.version }}")"
+            ENTRIES="$(mktemp)"
+            if [ -n "$PREV_TAG" ]; then
+              # Only user-facing changes belong in "What's new": the filter drops
+              # chore/build/ci/test/docs commits, infra-scoped ones, and
+              # research-edition work, so the salient changes fit the 500-byte
+              # budget instead of being truncated behind CI noise.
+              git log "${PREV_TAG}..HEAD" --pretty=format:"%s" \
+                | python3 scripts/user-facing-changelog.py \
+                > "$ENTRIES" || true
+            fi
+            if [ ! -s "$ENTRIES" ]; then
+              printf '%s\n' "- Bug fixes and stability improvements" > "$ENTRIES"
+            fi
+            write_changelog "$ENTRIES"
+            rm -f "$ENTRIES"
+            echo "Generated $CHANGELOG"
           fi
 
           echo "Final changelog ($(wc -c < "$CHANGELOG") bytes):"

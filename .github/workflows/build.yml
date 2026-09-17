@@ -302,11 +302,16 @@ jobs:
     # versionName assertion, but that step only runs on tag builds — so a
     # regression in the helper would merge unnoticed and first surface on a
     # release tag. Exercise it here too, on every PR.
+    #
+    # user-facing-changelog.py only runs inside the tag-gated Release workflow,
+    # so its filter needs the same every-PR coverage: a regression there would
+    # first surface as a bad Play Store changelog on a release.
     - name: Assert Play-track resolver
       run: |
         bash scripts/assert-play-track.sh --self-test
         bash scripts/previous-release-tag.sh --self-test
         bash scripts/strip-research-suffix.sh --self-test
+        python3 scripts/user-facing-changelog.py --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4
