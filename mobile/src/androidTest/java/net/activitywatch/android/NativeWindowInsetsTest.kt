@@ -38,6 +38,7 @@ class NativeWindowInsetsTest {
     private companion object {
         /** Upper bound for one idle drain, so `awaitRotatedLayout`'s timeout actually holds. */
         const val DRAIN_TIMEOUT_MS = 250L
+        const val STABLE_ROTATED_SAMPLES = 3
     }
 
     private fun shell(command: String): String =
@@ -116,15 +117,16 @@ class NativeWindowInsetsTest {
      * portrait, so a post-rotation inset assertion can read stale geometry and fail on a
      * healthy app (CI runs 35171459452 / 35171939211 / 35174360915, 2026-09-17). Poll
      * (bounded) until the view tree has actually rotated — the activity's configuration
-     * reports landscape and its dimensions are stable — so the assertion runs against
-     * settled layout.
+     * reports landscape and the complete rotated geometry stays stable across three
+     * samples — so the assertion runs against settled layout.
      *
      * This waits for the re-dispatch — it does not retry the assertion until it passes,
      * and the assertion below stays strict. On timeout it fails with its own message.
      */
     private fun <A : Activity> awaitRotatedLayout(scenario: ActivityScenario<A>, timeoutMs: Long = 3000) {
         val deadline = SystemClock.uptimeMillis() + timeoutMs
-        var previous = Long.MIN_VALUE
+        var previous: List<Any>? = null
+        var consecutiveStableSamples = 0
         var sawRotated = false
         while (true) {
             // Bound each drain: `waitForIdle()` blocks up to 10s while System UI is busy
@@ -142,19 +144,22 @@ class NativeWindowInsetsTest {
                 landscapeConfiguration = activity.resources.configuration.orientation ==
                     Configuration.ORIENTATION_LANDSCAPE
             }
-            val current = (width.toLong() shl 32) or (height.toLong() and 0xffffffffL)
+            val displayWidth = device.displayWidth
+            val displayHeight = device.displayHeight
             val rotated = width > 0 && height > 0 && width > height &&
-                landscapeConfiguration && device.displayWidth > device.displayHeight
-            // Track stability across *rotated* samples only: an unrotated sample (root
-            // measures landscape but the configuration hasn't landed yet, or vice versa)
-            // must not seed `previous`, or a single settled sample could satisfy the
-            // stability check immediately.
+                landscapeConfiguration && displayWidth > displayHeight
+            // Require the complete rotated state to match across three consecutive samples.
+            // Keeping configuration and display geometry in the sample guards against
+            // returning while either side of the rotation is still transitioning.
             if (rotated) {
                 sawRotated = true
-                if (current == previous) return
+                val current = listOf(width, height, landscapeConfiguration, displayWidth, displayHeight)
+                consecutiveStableSamples = if (current == previous) consecutiveStableSamples + 1 else 1
+                if (consecutiveStableSamples >= STABLE_ROTATED_SAMPLES) return
                 previous = current
             } else {
-                previous = Long.MIN_VALUE
+                previous = null
+                consecutiveStableSamples = 0
             }
             if (SystemClock.uptimeMillis() >= deadline) {
                 // Fail loudly rather than asserting against mid-rotation geometry: a
