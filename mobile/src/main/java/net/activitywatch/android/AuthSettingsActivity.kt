@@ -27,6 +27,7 @@ class AuthSettingsActivity : AppCompatActivity() {
 
     private lateinit var tvApiKey: TextView
     private lateinit var tvStatus: TextView
+    private lateinit var tvHelp: TextView
     private lateinit var btnCopy: Button
     private lateinit var btnRegenerate: Button
     private lateinit var switchAuthEnabled: SwitchCompat
@@ -51,6 +52,13 @@ class AuthSettingsActivity : AppCompatActivity() {
 
         tvApiKey = findViewById(R.id.tv_api_key)
         tvStatus = findViewById(R.id.tv_status)
+        tvHelp = findViewById(R.id.tv_help)
+        tvHelp.text = (
+            "When enabled, ActivityWatch clients (browser, desktop app) must include " +
+            "this key to access data. Use the key in the URL:\n\n" +
+            "http://localhost:${BuildConfig.SERVER_PORT}/?token=YOUR_KEY\n\n" +
+            "Changes take effect after restarting the app."
+        )
         btnCopy = findViewById(R.id.btn_copy_key)
         btnRegenerate = findViewById(R.id.btn_regenerate_key)
         switchAuthEnabled = findViewById(R.id.switch_auth_enabled)

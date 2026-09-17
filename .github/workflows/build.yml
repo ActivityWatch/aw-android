@@ -239,7 +239,8 @@ jobs:
     - name: Collect R8 mapping
       if: env.RELEASE == 'true'
       run: |
-        cp mobile/build/outputs/mapping/release/mapping.txt \
+        # Flavors move the mapping dir to per-variant `standardRelease`.
+        cp mobile/build/outputs/mapping/standardRelease/mapping.txt \
            dist/aw-android-mapping-${{ matrix.type }}.txt
 
     - name: Upload R8 mapping
@@ -309,8 +310,9 @@ jobs:
     # the tag build still runs it, and it is not what this step is checking.
     - name: Build release variant (exercises R8)
       run: |
-        ./gradlew :mobile:assembleRelease -x lintVitalRelease
-        test -s mobile/build/outputs/mapping/release/mapping.txt
+        # Pin the standard flavor explicitly (flavor task names are variant-suffixed).
+        ./gradlew :mobile:assembleStandardRelease -x lintVitalStandardRelease
+        test -s mobile/build/outputs/mapping/standardRelease/mapping.txt
 
 
   test-e2e:
@@ -375,8 +377,8 @@ jobs:
         disable-animations: true
         script: >-
           bash -o pipefail -c 'set +e; make test-e2e; test_status=$?;
-          if [ -f mobile/build/outputs/apk/debug/mobile-debug.apk ]; then
-          adb install -r mobile/build/outputs/apk/debug/mobile-debug.apk || true;
+          if [ -f mobile/build/outputs/apk/standard/debug/mobile-standard-debug.apk ]; then
+          adb install -r mobile/build/outputs/apk/standard/debug/mobile-standard-debug.apk || true;
           adb shell monkey -p net.activitywatch.android.debug -c android.intent.category.LAUNCHER 1 || true;
           sleep 3; fi;
           adb shell screencap -p /sdcard/screenshot.png || true;
