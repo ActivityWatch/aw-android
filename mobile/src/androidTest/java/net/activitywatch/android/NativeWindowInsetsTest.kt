@@ -122,8 +122,16 @@ class NativeWindowInsetsTest {
      *
      * This waits for the re-dispatch — it does not retry the assertion until it passes,
      * and the assertion below stays strict. On timeout it fails with its own message.
+     *
+     * The timeout is a failure budget, not a latency target: the helper returns as soon
+     * as three stable rotated samples land, so a generous bound costs nothing on the
+     * happy path. 3s was too tight on a loaded CI emulator — runs 35185908412 and
+     * 35187675397 both failed with "did not stabilise within 3000ms (width=640
+     * height=320)" even though the tree had already reached landscape, because rotation
+     * plus the inset re-dispatch finished too close to the deadline to record three
+     * consecutive samples. The bound still fails loudly if the layout never settles.
      */
-    private fun <A : Activity> awaitRotatedLayout(scenario: ActivityScenario<A>, timeoutMs: Long = 3000) {
+    private fun <A : Activity> awaitRotatedLayout(scenario: ActivityScenario<A>, timeoutMs: Long = 10_000) {
         val deadline = SystemClock.uptimeMillis() + timeoutMs
         var previous: List<Any>? = null
         var consecutiveStableSamples = 0
