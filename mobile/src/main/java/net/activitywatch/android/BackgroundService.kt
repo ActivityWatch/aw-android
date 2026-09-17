@@ -48,6 +48,17 @@ class BackgroundService : Service() {
         private const val SERVER_EXIT_POLL_MS = 1_000L
     }
 
+    // Serializes the sanitized-hostname migration across overlapping onStartCommand
+    // invocations now that it runs off the main thread.
+    private val sanitizedMigrationLock = Any()
+
+    // Only one deferred bucket-hostname rewrite may be queued per process. Repeated
+    // full starts while the server is running and the preference is unset would
+    // otherwise stack independent polling threads that later race to rewrite the
+    // same database.
+    @Volatile
+    private var hostnameRewriteQueued = false
+
     private lateinit var syncScheduler: SyncScheduler
     private lateinit var rustInterface: RustInterface
 
@@ -121,10 +132,18 @@ class BackgroundService : Service() {
         ensureDashboardApiKey(this)
 
         val prefs = AWPreferences(this)
-        migrateSanitizedHostnameIdentity(prefs)
-
-        // Start the server
-        rustInterface.startServerTask()
+        // The sanitized-hostname migration traverses the sync tree and opens
+        // sqlite.db for a write transaction — doing that synchronously on the
+        // service main thread can ANR startup on a large sync tree or a busy
+        // database (same class as the #262 startup hang). Run it on IO and
+        // sequence the server start after it so the server never opens the
+        // database before the rewrite has completed or explicitly deferred.
+        CoroutineScope(Dispatchers.IO).launch {
+            synchronized(sanitizedMigrationLock) {
+                migrateSanitizedHostnameIdentity(prefs)
+            }
+            rustInterface.startServerTask()
+        }
 
         // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
@@ -219,24 +238,35 @@ class BackgroundService : Service() {
         current: String,
         legacy: List<String>,
     ) {
+        if (hostnameRewriteQueued) {
+            Log.i(TAG, "Hostname rewrite already queued; not queueing another")
+            return
+        }
+        hostnameRewriteQueued = true
         Thread {
             try {
-                var waitedMs = 0L
-                while (RustInterface.serverStarted && waitedMs < SERVER_EXIT_WAIT_MS) {
-                    Thread.sleep(SERVER_EXIT_POLL_MS)
-                    waitedMs += SERVER_EXIT_POLL_MS
+                try {
+                    var waitedMs = 0L
+                    while (RustInterface.serverStarted && waitedMs < SERVER_EXIT_WAIT_MS) {
+                        Thread.sleep(SERVER_EXIT_POLL_MS)
+                        waitedMs += SERVER_EXIT_POLL_MS
+                    }
+                } catch (_: InterruptedException) {
+                    return@Thread
                 }
-            } catch (_: InterruptedException) {
-                return@Thread
-            }
-            if (RustInterface.serverStarted) {
-                Log.i(TAG, "Server task still running; hostname rewrite stays deferred to the next start")
-                return@Thread
-            }
-            val updated =
-                SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
-            if (updated >= 0) {
-                prefs.setSanitizedHostnameMigratedTo(current)
+                if (RustInterface.serverStarted) {
+                    Log.i(TAG, "Server task still running; hostname rewrite stays deferred to the next start")
+                    return@Thread
+                }
+                val updated =
+                    SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
+                if (updated >= 0) {
+                    prefs.setSanitizedHostnameMigratedTo(current)
+                }
+            } finally {
+                // Clear the guard whether the rewrite ran, failed (a later start
+                // retries), or timed out (the next start queues a fresh one).
+                hostnameRewriteQueued = false
             }
         }.apply {
             name = "sanitized-hostname-rewrite"

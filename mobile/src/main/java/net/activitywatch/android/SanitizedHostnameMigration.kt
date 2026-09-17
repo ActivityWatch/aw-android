@@ -224,7 +224,18 @@ object SanitizedHostnameMigration {
             try {
                 var updated = 0
                 for (legacy in from) {
-                    val stmt = db.compileStatement("UPDATE buckets SET hostname = ? WHERE hostname = ?")
+                    // Only locally-owned buckets may be relabeled: this device's
+                    // legacy hostname candidates (device name, model, "Unknown")
+                    // can collide with a synced peer's hostname, and rewriting a
+                    // peer's bucket rows would corrupt its identity on the next
+                    // sync. `-synced-from-` is a reserved token in aw-sync's ID
+                    // grammar and marks remote-origin buckets (aw-server-rust
+                    // aw-sync `is_synced_bucket` / `get_or_create_sync_bucket`).
+                    val stmt =
+                        db.compileStatement(
+                            "UPDATE buckets SET hostname = ? " +
+                                "WHERE hostname = ? AND id NOT LIKE '%-synced-from-%'"
+                        )
                     try {
                         stmt.bindString(1, currentHostname)
                         stmt.bindString(2, legacy)
