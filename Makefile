@@ -105,7 +105,7 @@ $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE_UNSIGNED).apk:
 	tree $(APKDIR)
 
 $(APKDIR)/androidTest/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE)-androidTest.apk:
-	TERM=xterm ./gradlew assembleStandardAndroidTest
+	TERM=xterm ./gradlew assembleStandard$(RELEASE_TYPE_CAPS)AndroidTest
 	tree $(APKDIR)
 
 # App bundle targets
