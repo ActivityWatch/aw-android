@@ -286,13 +286,14 @@ class SyncInterface(context: Context) {
                 if (success && mirrorBeforeCallback) {
                     mirrorSyncFilesToSafDir()
                 }
-                AWPreferences(appContext).setLastSyncStatus(status)
+                persistSyncStatus(status)
                 handler.post { callback(success, message) }
             } catch (e: Exception) {
                 val native = nativeStatus
                 val status = if (native != null && native.success) {
                     // The native sync itself completed; this failure came from the
-                    // post-sync step (mirroring or callback), so keep its report.
+                    // post-sync step (mirroring, or delivering the callback), so keep
+                    // its report.
                     val step = if (mirrorBeforeCallback) "SAF mirroring failed" else "post-sync step failed"
                     native.copy(
                         completedAt = System.currentTimeMillis(),
@@ -306,7 +307,7 @@ class SyncInterface(context: Context) {
                         error = SyncStatus.normalizeError("Exception: ${e.message}"),
                     )
                 }
-                AWPreferences(appContext).setLastSyncStatus(status)
+                persistSyncStatus(status)
                 handler.post {
                     Log.e(TAG, "$operation failed", e)
                     callback(false, status.error ?: "sync failed")
@@ -314,6 +315,25 @@ class SyncInterface(context: Context) {
             } finally {
                 executor.shutdown()
             }
+        }
+    }
+
+    /**
+     * Persist the terminal status without letting a storage/broadcast failure
+     * escape.
+     *
+     * The completion callback is the caller's only signal that a pass ended — it
+     * is what clears [syncInFlight] in [syncBothAsync] and stops the UI waiting.
+     * If persistence threw inside [performSyncAsync]'s try (or, worse, inside its
+     * catch), the callback would never be posted and every later sync would be
+     * rejected as "already in flight". Persistence failing is not the sync
+     * failing, so it is logged and the callback still fires.
+     */
+    private fun persistSyncStatus(status: SyncStatus) {
+        try {
+            AWPreferences(appContext).setLastSyncStatus(status)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist sync status", e)
         }
     }
 
