@@ -62,8 +62,19 @@ class SyncInterface(context: Context) {
         if (legacyFoldersMigrated) return
         synchronized(migrationLock) {
             if (legacyFoldersMigrated) return
-            migrateLegacySyncFolders()
-            legacyFoldersMigrated = true
+            // Only record completion when every planned action applied. A failed
+            // rename or deletion leaves the flag unset so the next sync re-runs
+            // the migration instead of skipping it with the fork still in place.
+            val result = migrateLegacySyncFolders()
+            if (result.failed == 0) {
+                legacyFoldersMigrated = true
+            } else {
+                Log.w(
+                    TAG,
+                    "${result.failed} legacy-folder migration action(s) failed; " +
+                        "retrying on the next sync",
+                )
+            }
         }
     }
 
@@ -355,13 +366,13 @@ class SyncInterface(context: Context) {
 
     fun getSyncDirectory(): String = syncDir
 
-    private fun migrateLegacySyncFolders() {
+    private fun migrateLegacySyncFolders(): SanitizedHostnameMigration.MigrationResult {
         val current = getDeviceName()
         val deviceId =
             File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
                 it.isNotEmpty()
             }
-        val moved =
+        val result =
             SanitizedHostnameMigration.migrateSyncFolders(
                 File(syncDir),
                 current,
@@ -372,9 +383,10 @@ class SyncInterface(context: Context) {
                 ),
                 deviceId,
             )
-        if (moved > 0) {
-            Log.i(TAG, "Migrated $moved leftover sync-folder entries to '$current'")
+        if (result.moved > 0) {
+            Log.i(TAG, "Migrated ${result.moved} leftover sync-folder entries to '$current'")
         }
+        return result
     }
 
     private fun deleteStaleSafHostnameDirs(safDir: DocumentFile) {

@@ -181,11 +181,11 @@ object SanitizedHostnameMigration {
         currentHostname: String,
         legacyHostnames: Collection<String>,
         localDeviceId: String?,
-    ): Int {
-        if (!syncDir.isDirectory) return 0
+    ): MigrationResult {
+        if (!syncDir.isDirectory) return MigrationResult(0, 0)
         val deviceIdsByHostname = linkedMapOf<String, Set<String>>()
         val hostnameDirs = mutableSetOf<String>()
-        val children = syncDir.listFiles() ?: return 0
+        val children = syncDir.listFiles() ?: return MigrationResult(0, 0)
         for (child in children) {
             if (!child.isDirectory || !isSafeDirName(child.name)) continue
             hostnameDirs.add(child.name)
@@ -205,10 +205,19 @@ object SanitizedHostnameMigration {
                 legacyHostnames = legacyHostnames,
                 localDeviceId = localDeviceId,
             )
-        if (actions.isEmpty()) return 0
+        if (actions.isEmpty()) return MigrationResult(0, 0)
         info("Applying ${actions.size} sync-folder migration action(s) under ${syncDir.path}")
-        return applyFolderMigration(syncDir, actions)
+        val applied = applyFolderMigration(syncDir, actions)
+        return MigrationResult(applied, actions.size - applied)
     }
+
+    /**
+     * Outcome of one [migrateSyncFolders] pass. [failed] counts planned actions
+     * that could not be applied (rename/delete rejected by the filesystem);
+     * callers that record "migration complete" must treat [failed] > 0 as
+     * not-done so the pass is retried on the next sync.
+     */
+    data class MigrationResult(val moved: Int, val failed: Int)
 
     fun rewriteBucketHostnamesInDatabase(
         dbFile: File,

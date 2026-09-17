@@ -137,7 +137,7 @@ class SanitizedHostnameMigrationTest {
                     legacyHostnames = listOf("POCO F8 Ultra"),
                     localDeviceId = deviceId,
                 )
-            assertEquals(1, applied)
+            assertEquals(1, applied.moved)
             assertFalse(File(root, "POCO F8 Ultra").exists())
             assertEquals("legacy", File(root, "poco_f8_ultra/$deviceId/test.db").readText())
         } finally {
@@ -166,7 +166,7 @@ class SanitizedHostnameMigrationTest {
                     legacyHostnames = listOf("POCO F8 Ultra"),
                     localDeviceId = deviceId,
                 )
-            assertEquals(2, applied)
+            assertEquals(2, applied.moved)
             assertFalse(File(root, "POCO F8 Ultra").exists())
             assertEquals("new", newDb.readText())
         } finally {

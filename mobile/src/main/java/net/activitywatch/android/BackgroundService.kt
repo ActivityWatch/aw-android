@@ -45,18 +45,25 @@ class BackgroundService : Service() {
         // How long the queued hostname rewrite waits for the server task to exit
         // before giving up (the next service start retries).
         private const val SERVER_EXIT_POLL_MS = 1_000L
+
+        // Only one deferred bucket-hostname rewrite may be queued per process. The
+        // guard is static because Android recreates the service instance on every
+        // full start; an instance-level flag would let each recreation stack
+        // another polling thread that later races to rewrite the same database.
+        @Volatile
+        private var hostnameRewriteQueued = false
+
+        @Volatile
+        private var hostnameRewriteThread: Thread? = null
+
+        fun cancelQueuedHostnameRewrite() {
+            hostnameRewriteThread?.interrupt()
+        }
     }
 
     // Serializes the sanitized-hostname migration across overlapping onStartCommand
     // invocations now that it runs off the main thread.
     private val sanitizedMigrationLock = Any()
-
-    // Only one deferred bucket-hostname rewrite may be queued per process. Repeated
-    // full starts while the server is running and the preference is unset would
-    // otherwise stack independent polling threads that later race to rewrite the
-    // same database.
-    @Volatile
-    private var hostnameRewriteQueued = false
 
     private lateinit var syncScheduler: SyncScheduler
     private lateinit var rustInterface: RustInterface
@@ -204,10 +211,17 @@ class BackgroundService : Service() {
                 File(filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
                     it.isNotEmpty()
                 }
-            val moved =
+            val result =
                 SanitizedHostnameMigration.migrateSyncFolders(syncDir, current, legacy, deviceId)
-            if (moved > 0) {
-                Log.i(TAG, "Migrated $moved leftover sync-folder entries to '$current'")
+            if (result.moved > 0) {
+                Log.i(TAG, "Migrated ${result.moved} leftover sync-folder entries to '$current'")
+            }
+            if (result.failed > 0) {
+                Log.w(
+                    TAG,
+                    "${result.failed} sync-folder migration action(s) failed; " +
+                        "the next start retries",
+                )
             }
         }
 
@@ -251,9 +265,9 @@ class BackgroundService : Service() {
                 // server task alive for days, and a bounded poll would time out
                 // with the rewrite permanently deferred (every later start sees
                 // serverStarted true again). The server task exits when the
-                // service is destroyed (or the process dies, which makes this
-                // daemon thread moot), so polling until it exits converges at
-                // teardown at the latest.
+                // service is destroyed (or the process dies); onDestroy
+                // interrupts this thread so teardown does not leave it polling,
+                // and the unset preference makes the next start re-queue it.
                 try {
                     while (RustInterface.serverStarted) {
                         Thread.sleep(SERVER_EXIT_POLL_MS)
