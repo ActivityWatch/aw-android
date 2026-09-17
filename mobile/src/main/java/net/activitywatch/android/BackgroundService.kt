@@ -56,14 +56,18 @@ class BackgroundService : Service() {
         @Volatile
         private var hostnameRewriteThread: Thread? = null
 
+        // Static so the deferred rewrite thread — which outlives the service
+        // instance that queued it — and a recreated instance's server start are
+        // serialized on the same monitor. An instance-level lock would let a new
+        // instance open the database while the old thread is still rewriting it.
+        val sanitizedMigrationLock = Any()
+
         fun cancelQueuedHostnameRewrite() {
             hostnameRewriteThread?.interrupt()
         }
     }
 
-    // Serializes the sanitized-hostname migration across overlapping onStartCommand
-    // invocations now that it runs off the main thread.
-    private val sanitizedMigrationLock = Any()
+
 
     private lateinit var syncScheduler: SyncScheduler
     private lateinit var rustInterface: RustInterface
