@@ -42,13 +42,16 @@ data class SyncStatus(
     companion object {
         const val MAX_ERROR_CHARS = 500
         const val MAX_WARNINGS = 5
+        // Count keys only. `warnings` is deliberately excluded: it is not a
+        // count, so a payload carrying warnings but no counts would mark
+        // hasReport and render an invented "pulled 0, pushed 0" line for a
+        // pass that never reported its numbers.
         private val REPORT_KEYS = listOf(
             "events_pulled",
             "events_pushed",
             "peers_imported",
             "peers_skipped",
             "peers_failed",
-            "warnings",
         )
         private val WHITESPACE = Regex("\\s+")
 
