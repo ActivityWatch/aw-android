@@ -108,7 +108,7 @@ class SyncInterface(context: Context) {
     fun syncPullAllAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
         performSyncAsync("Pull All", callback) {
-            syncPullAll(5600, hostname)
+            syncPullAll(BuildConfig.SERVER_PORT, hostname)
         }
     }
     
@@ -116,7 +116,7 @@ class SyncInterface(context: Context) {
     fun syncPushAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
         performSyncAsync("Push", callback) {
-            syncPush(5600, hostname)
+            syncPush(BuildConfig.SERVER_PORT, hostname)
         }
     }
     
@@ -155,7 +155,7 @@ class SyncInterface(context: Context) {
             },
             mirrorBeforeCallback
         ) {
-            syncBoth(5600, hostname)
+            syncBoth(BuildConfig.SERVER_PORT, hostname)
         }
     }
     

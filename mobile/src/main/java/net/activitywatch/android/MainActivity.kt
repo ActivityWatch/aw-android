@@ -33,7 +33,7 @@ import net.activitywatch.android.watcher.UsageStatsWatcher
 
 private const val TAG = "MainActivity"
 
-const val baseURL = "http://127.0.0.1:5600"
+val baseURL = "http://127.0.0.1:${BuildConfig.SERVER_PORT}"
 
 // Same destination as the drawer "Activity" item. Notification taps set
 // EXTRA_OPEN_ACTIVITY_VIEW so we land here instead of dashboard home.
