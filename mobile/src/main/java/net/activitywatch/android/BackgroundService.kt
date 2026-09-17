@@ -47,9 +47,14 @@ class BackgroundService : Service() {
         private const val SERVER_EXIT_POLL_MS = 1_000L
 
         // How long cancelQueuedHostnameRewrite() waits for the interrupted rewrite
-        // thread to finish. Must exceed SERVER_EXIT_POLL_MS so a thread interrupted
-        // mid-poll always gets through its finally block before the join gives up.
-        private const val CANCEL_JOIN_MS = 3_000L
+        // thread to finish. The interrupt wakes the poll sleep immediately, so this
+        // only needs to cover the poll-wake plus the thread's finally block —
+        // milliseconds. It must NOT be long: onDestroy runs on the main thread, and
+        // the only case where the join would wait longer is the thread being
+        // mid-SQLite-rewrite — there interrupt() cannot cancel the transaction, and
+        // the right outcome is to let it finish in the background (it completes the
+        // rewrite and sets the preference itself), not to stall teardown for it.
+        private const val CANCEL_JOIN_MS = 500L
 
         // Only one deferred bucket-hostname rewrite may be queued per process. The
         // guard is static because Android recreates the service instance on every
