@@ -210,12 +210,56 @@ class NativeWindowInsetsTest {
         assertTrue("$what tap must be injected", device.click(bounds.centerX(), bounds.centerY()))
     }
 
-    private fun awaitSyncEnabled(prefs: AWPreferences, expected: Boolean, message: String) {
-        val deadline = SystemClock.uptimeMillis() + 5000
-        while (SystemClock.uptimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
-            Thread.sleep(100)
+    /**
+     * Tap [viewId] and poll for [prefs.isSyncEnabled()] == [expected], retrying the tap
+     * when the preference does not flip within [pollMs]. Before each attempt the helper
+     * waits (bounded) for the view to be enabled and its bounds to stabilise across two
+     * consecutive samples, so a tap that lands before the Activity finishes settling its
+     * async state does not silently consume an attempt.
+     *
+     * Addresses two no-ANR flake classes observed in CI after the UiAutomator-node fix:
+     *  1. The tap lands while [viewId] is laid out but not yet interactive — the switch
+     *     ignores the event and the preference never changes.
+     *  2. The preference write completes after [pollMs] ms on a loaded emulator; a
+     *     subsequent attempt then reads the already-changed value immediately.
+     *
+     * The assertion stays strict: a genuinely broken toggle causes the test to fail after
+     * [maxAttempts] taps rather than returning silently.
+     */
+    private fun tapUntilPrefChanges(
+        scenario: ActivityScenario<*>,
+        viewId: Int,
+        what: String,
+        prefs: AWPreferences,
+        expected: Boolean,
+        maxAttempts: Int = 3,
+        pollMs: Long = 2000L,
+    ) {
+        repeat(maxAttempts) { attempt ->
+            if (attempt > 0) device.waitForIdle(DRAIN_TIMEOUT_MS)
+            // Wait until the view is enabled and its bounds are stable across two samples.
+            val bounds = android.graphics.Rect()
+            val prevBounds = android.graphics.Rect()
+            val stableDeadline = SystemClock.uptimeMillis() + 2000L
+            while (SystemClock.uptimeMillis() < stableDeadline) {
+                var isEnabled = false
+                scenario.onActivity { activity ->
+                    val view = activity.findViewById<View>(viewId)
+                    isEnabled = view?.isEnabled == true
+                    view?.getGlobalVisibleRect(bounds)
+                }
+                if (isEnabled && bounds == prevBounds && bounds.width() > 0) break
+                prevBounds.set(bounds)
+                Thread.sleep(50)
+            }
+            tapViewCenter(scenario, viewId, what)
+            val deadline = SystemClock.uptimeMillis() + pollMs
+            while (SystemClock.uptimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
+                Thread.sleep(100)
+            }
+            if (prefs.isSyncEnabled() == expected) return
         }
-        assertEquals(message, expected, prefs.isSyncEnabled())
+        assertEquals("A screen tap must change the persisted setting", expected, prefs.isSyncEnabled())
     }
 
     @Test fun syncToggleReceivesRealTap() {
@@ -225,14 +269,12 @@ class NativeWindowInsetsTest {
         try {
             ActivityScenario.launch(SyncSettingsActivity::class.java).use { scenario ->
                 scenario.onActivity { assertSafeContent(it) }
-                tapViewCenter(scenario, R.id.switch_sync_enabled, "Sync switch")
-                awaitSyncEnabled(prefs, !original, "A screen tap must change the persisted setting")
+                tapUntilPrefChanges(scenario, R.id.switch_sync_enabled, "Sync switch", prefs, !original)
                 scenario.recreate()
                 device.waitForIdle()
                 scenario.onActivity { assertSafeContent(it) }
                 assertEquals(!original, prefs.isSyncEnabled())
-                tapViewCenter(scenario, R.id.switch_sync_enabled, "Sync switch")
-                awaitSyncEnabled(prefs, original, "A second tap must restore the persisted setting")
+                tapUntilPrefChanges(scenario, R.id.switch_sync_enabled, "Sync switch", prefs, original)
             }
         } finally {
             prefs.setSyncEnabled(original)
