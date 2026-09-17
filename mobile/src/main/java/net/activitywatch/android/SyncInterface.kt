@@ -42,6 +42,14 @@ data class SyncStatus(
     companion object {
         const val MAX_ERROR_CHARS = 500
         const val MAX_WARNINGS = 5
+        private val REPORT_KEYS = listOf(
+            "events_pulled",
+            "events_pushed",
+            "peers_imported",
+            "peers_skipped",
+            "peers_failed",
+            "warnings",
+        )
         private val WHITESPACE = Regex("\\s+")
 
         fun normalizeError(raw: String?): String? =
@@ -85,7 +93,9 @@ data class SyncStatus(
                     normalizeError(json.optString("error", "")) ?: "sync failed"
                 },
                 summary = normalizeError(json.optString("message", "")),
-                hasReport = json.has("events_pulled"),
+                // Any report field counts: a push-only pass carries events_pushed
+                // and peer counts but may omit events_pulled.
+                hasReport = REPORT_KEYS.any { json.has(it) },
                 eventsPulled = json.optInt("events_pulled", 0).coerceAtLeast(0),
                 eventsPushed = json.optInt("events_pushed", 0).coerceAtLeast(0),
                 peersImported = json.optInt("peers_imported", 0).coerceAtLeast(0),
