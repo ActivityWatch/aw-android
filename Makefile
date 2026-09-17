@@ -109,12 +109,15 @@ $(APKDIR)/androidTest/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE)-a
 	tree $(APKDIR)
 
 # App bundle targets
-$(AABDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE).aab:
+# NOTE: unlike APKs (`outputs/apk/<flavor>/<buildType>/`), AGP writes bundles to
+# `outputs/bundle/<variantName>/` — flavor+buildType camel-cased, e.g.
+# `standardDebug`. Verified against the actual tree in CI (job "Build aab").
+$(AABDIR)/standard$(RELEASE_TYPE_CAPS)/mobile-standard-$(RELEASE_TYPE).aab:
 	TERM=xterm ./gradlew bundleStandard$(RELEASE_TYPE_CAPS)
 	tree $(AABDIR)
 
 # Signed release bundle
-dist/aw-android.aab: $(AABDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE).aab
+dist/aw-android.aab: $(AABDIR)/standard$(RELEASE_TYPE_CAPS)/mobile-standard-$(RELEASE_TYPE).aab
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
