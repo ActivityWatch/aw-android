@@ -8,6 +8,7 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.graphics.Insets
 import androidx.core.view.GravityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -116,9 +117,9 @@ class NativeWindowInsetsTest {
      * display metrics can already be landscape while this activity's view tree is still
      * portrait, so a post-rotation inset assertion can read stale geometry and fail on a
      * healthy app (CI runs 35171459452 / 35171939211 / 35174360915, 2026-09-17). Poll
-     * (bounded) until the view tree has actually rotated — the activity's configuration
-     * reports landscape and the complete rotated geometry stays stable across three
-     * samples — so the assertion runs against settled layout.
+     * (bounded) until the view tree has actually rotated — the activity's configuration,
+     * root/display geometry, and root window insets stay stable across three samples — so
+     * the assertion runs against settled layout.
      *
      * This waits for the re-dispatch — it does not retry the assertion until it passes,
      * and the assertion below stays strict. On timeout it fails with its own message.
@@ -128,6 +129,7 @@ class NativeWindowInsetsTest {
         var previous: List<Any>? = null
         var consecutiveStableSamples = 0
         var sawRotated = false
+        var insets = Insets.NONE
         while (true) {
             // Bound each drain: `waitForIdle()` blocks up to 10s while System UI is busy
             // (e.g. mid-rotation), which would overshoot the timeout instead of enforcing it.
@@ -143,17 +145,30 @@ class NativeWindowInsetsTest {
                 // root can already measure landscape one frame before it lands.
                 landscapeConfiguration = activity.resources.configuration.orientation ==
                     Configuration.ORIENTATION_LANDSCAPE
+                insets = ViewCompat.getRootWindowInsets(root)?.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+                ) ?: Insets.NONE
             }
             val displayWidth = device.displayWidth
             val displayHeight = device.displayHeight
             val rotated = width > 0 && height > 0 && width > height &&
                 landscapeConfiguration && displayWidth > displayHeight
             // Require the complete rotated state to match across three consecutive samples.
-            // Keeping configuration and display geometry in the sample guards against
-            // returning while either side of the rotation is still transitioning.
+            // Keeping configuration, display geometry, and root insets in the sample guards
+            // against returning while either side of the rotation is still transitioning.
             if (rotated) {
                 sawRotated = true
-                val current = listOf(width, height, landscapeConfiguration, displayWidth, displayHeight)
+                val current = listOf(
+                    width,
+                    height,
+                    landscapeConfiguration,
+                    displayWidth,
+                    displayHeight,
+                    insets.left,
+                    insets.top,
+                    insets.right,
+                    insets.bottom,
+                )
                 consecutiveStableSamples = if (current == previous) consecutiveStableSamples + 1 else 1
                 if (consecutiveStableSamples >= STABLE_ROTATED_SAMPLES) return
                 previous = current
