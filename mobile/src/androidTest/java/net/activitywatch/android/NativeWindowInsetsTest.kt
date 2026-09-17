@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.Manifest
 import android.app.Activity
+import android.content.res.Configuration
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
@@ -33,6 +34,12 @@ class NativeWindowInsetsTest {
     private val packageName = instrumentation.targetContext.packageName
     private var originalUsageAccessMode: String? = null
     private var notificationPermissionWasGranted = false
+
+    private companion object {
+        /** Upper bound for one idle drain, so `awaitRotatedLayout`'s timeout actually holds. */
+        const val DRAIN_TIMEOUT_MS = 250L
+        const val STABLE_ROTATED_SAMPLES = 3
+    }
 
     private fun shell(command: String): String =
         ParcelFileDescriptor.AutoCloseInputStream(
@@ -77,7 +84,11 @@ class NativeWindowInsetsTest {
         root.getLocationOnScreen(position)
         assertTrue("Content top must clear status bar/cutout", position[1] + root.paddingTop >= safe.top)
         assertTrue("Content left must clear cutout", position[0] + root.paddingLeft >= safe.left)
-        assertTrue("Content bottom must clear navigation", position[1] + root.height - root.paddingBottom <= device.displayHeight - safe.bottom)
+        assertTrue(
+            "Content bottom must clear navigation: positionY=${position[1]} height=${root.height} " +
+                "paddingBottom=${root.paddingBottom} displayHeight=${device.displayHeight} safeBottom=${safe.bottom}",
+            position[1] + root.height - root.paddingBottom <= device.displayHeight - safe.bottom,
+        )
         assertTrue("Content right must clear cutout", position[0] + root.width - root.paddingRight <= device.displayWidth - safe.right)
         if (requireLightStatusIcons) {
             assertTrue("Light native surface needs dark status icons",
@@ -97,6 +108,82 @@ class NativeWindowInsetsTest {
             scenario.recreate()
             device.waitForIdle()
             scenario.onActivity { assertSafeContent(it) }
+        }
+    }
+
+    /**
+     * After `requestedOrientation`, `device.waitForIdle()` only drains the looper: the
+     * display metrics can already be landscape while this activity's view tree is still
+     * portrait, so a post-rotation inset assertion can read stale geometry and fail on a
+     * healthy app (CI runs 35171459452 / 35171939211 / 35174360915, 2026-09-17). Poll
+     * (bounded) until the view tree has actually rotated — the activity's configuration
+     * reports landscape and the complete rotated geometry stays stable across three
+     * samples — so the assertion runs against settled layout.
+     *
+     * This waits for the re-dispatch — it does not retry the assertion until it passes,
+     * and the assertion below stays strict. On timeout it fails with its own message.
+     *
+     * The timeout is a failure budget, not a latency target: the helper returns as soon
+     * as three stable rotated samples land, so a generous bound costs nothing on the
+     * happy path. 3s was too tight on a loaded CI emulator — runs 35185908412 and
+     * 35187675397 both failed with "did not stabilise within 3000ms (width=640
+     * height=320)" even though the tree had already reached landscape, because rotation
+     * plus the inset re-dispatch finished too close to the deadline to record three
+     * consecutive samples. The bound still fails loudly if the layout never settles.
+     */
+    private fun <A : Activity> awaitRotatedLayout(scenario: ActivityScenario<A>, timeoutMs: Long = 10_000) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        var previous: List<Any>? = null
+        var consecutiveStableSamples = 0
+        var sawRotated = false
+        while (true) {
+            // Bound each drain: `waitForIdle()` blocks up to 10s while System UI is busy
+            // (e.g. mid-rotation), which would overshoot the timeout instead of enforcing it.
+            device.waitForIdle(DRAIN_TIMEOUT_MS)
+            var width = 0
+            var height = 0
+            var landscapeConfiguration = false
+            scenario.onActivity { activity ->
+                val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+                width = root.width
+                height = root.height
+                // The configuration change is what triggers the insets re-dispatch; the
+                // root can already measure landscape one frame before it lands.
+                landscapeConfiguration = activity.resources.configuration.orientation ==
+                    Configuration.ORIENTATION_LANDSCAPE
+            }
+            val displayWidth = device.displayWidth
+            val displayHeight = device.displayHeight
+            val rotated = width > 0 && height > 0 && width > height &&
+                landscapeConfiguration && displayWidth > displayHeight
+            // Require the complete rotated state to match across three consecutive samples.
+            // Keeping configuration and display geometry in the sample guards against
+            // returning while either side of the rotation is still transitioning.
+            if (rotated) {
+                sawRotated = true
+                val current = listOf(width, height, landscapeConfiguration, displayWidth, displayHeight)
+                consecutiveStableSamples = if (current == previous) consecutiveStableSamples + 1 else 1
+                if (consecutiveStableSamples >= STABLE_ROTATED_SAMPLES) return
+                previous = current
+            } else {
+                previous = null
+                consecutiveStableSamples = 0
+            }
+            if (SystemClock.uptimeMillis() >= deadline) {
+                // Fail loudly rather than asserting against mid-rotation geometry: a
+                // silent return would keep the original flake (or pass on a tree that
+                // never rotated at all).
+                throw AssertionError(
+                    if (sawRotated) {
+                        "Rotated layout did not stabilise within ${timeoutMs}ms (width=$width height=$height)"
+                    } else {
+                        "Timed out after ${timeoutMs}ms waiting for the view tree to rotate to landscape " +
+                            "(width=$width height=$height displayWidth=${device.displayWidth} " +
+                            "displayHeight=${device.displayHeight})"
+                    },
+                )
+            }
+            Thread.sleep(50)
         }
     }
 
@@ -170,7 +257,7 @@ class NativeWindowInsetsTest {
                     activity.requestedOrientation =
                         android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 }
-                device.waitForIdle()
+                awaitRotatedLayout(scenario)
                 scenario.onActivity { activity ->
                     assertEquals(
                         "MainActivity must survive rotation instead of being recreated",
