@@ -181,8 +181,13 @@ jobs:
           BUDGET=$(( MAX_BYTES - ${#MORE_LINE} - 2 ))
 
           # Trim the entry list to the budget, then append the pointer.
+          # LC_ALL=C makes length() count bytes in any awk (locale-aware
+          # awks would otherwise count characters). Whole-line trimming
+          # means no multibyte character is ever split; UTF-8 bytes are
+          # >= characters, so a byte budget is conservative for Play's
+          # 500-character limit.
           write_changelog() {
-            awk -v budget="$BUDGET" '
+            LC_ALL=C awk -v budget="$BUDGET" '
               { need = length($0) + 1 }
               used + need > budget { exit }
               { print; used += need }
