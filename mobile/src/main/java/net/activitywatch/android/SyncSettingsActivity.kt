@@ -27,14 +27,39 @@ internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): Stri
     if (status == null) return "Last sync: never"
 
     val whenText = dateFormat.format(Date(status.completedAt))
-    if (status.success) return "Last sync succeeded at $whenText"
-
-    val error = SyncStatus.normalizeError(status.error)
-    return if (error != null) {
-        "Last sync failed at $whenText: $error"
+    val headline = if (status.success) {
+        "Last sync succeeded at $whenText"
     } else {
-        "Last sync failed at $whenText"
+        val error = SyncStatus.normalizeError(status.error)
+        if (error != null) {
+            "Last sync failed at $whenText: $error"
+        } else {
+            "Last sync failed at $whenText"
+        }
     }
+    // Runs recorded before the SyncReport crossed the JNI boundary carry no
+    // counts; showing "pulled 0, pushed 0" for them would invent an answer.
+    if (!status.hasReport) return headline
+    return "$headline\n${formatSyncDetail(status)}"
+}
+
+/**
+ * The per-run facts line: what moved and which peers it came from. Without
+ * this, a pass that transferred nothing is indistinguishable from one that
+ * transferred everything — the failure mode of a boolean-only status.
+ */
+internal fun formatSyncDetail(status: SyncStatus): String {
+    val peers = status.peersImported + status.peersSkipped + status.peersFailed
+    val parts = mutableListOf("pulled ${status.eventsPulled}, pushed ${status.eventsPushed}")
+    if (peers > 0) {
+        var peerText = "peers ${status.peersImported}/$peers imported"
+        if (status.peersSkipped > 0) peerText += ", ${status.peersSkipped} skipped"
+        if (status.peersFailed > 0) peerText += ", ${status.peersFailed} failed"
+        parts += peerText
+    }
+    val line = parts.joinToString(" · ")
+    if (status.warnings.isEmpty()) return line
+    return (listOf(line) + status.warnings).joinToString("\n")
 }
 
 class SyncSettingsActivity : AppCompatActivity() {

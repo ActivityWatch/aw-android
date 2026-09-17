@@ -80,4 +80,189 @@ class SyncSettingsActivityTest {
         val normalized = SyncStatus.normalizeError(raw)
         assertEquals(SyncStatus.MAX_ERROR_CHARS, normalized!!.length)
     }
+
+    @Test
+    fun formatSyncStatus_omitsCountsWhenPayloadCarriedNoReport() {
+        // Pre-SyncReport payloads must render exactly as they did before.
+        assertEquals(
+            "Last sync succeeded at 2026-09-01 01:30",
+            formatSyncStatus(
+                SyncStatus(completedAt = 1_788_226_200_000L, success = true, hasReport = false),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_showsThatASuccessfulPassMovedNothing() {
+        // The whole point of #274: a no-op success must not read as "succeeded".
+        assertEquals(
+            "Last sync succeeded at 2026-09-01 01:30\npulled 0, pushed 0",
+            formatSyncStatus(
+                SyncStatus(completedAt = 1_788_226_200_000L, success = true, hasReport = true),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_reportsCountsAndPeerOutcomes() {
+        assertEquals(
+            "Last sync succeeded at 2026-09-01 01:30\n" +
+                "pulled 1200, pushed 3 · peers 2/4 imported, 1 skipped, 1 failed",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    eventsPulled = 1200,
+                    eventsPushed = 3,
+                    peersImported = 2,
+                    peersSkipped = 1,
+                    peersFailed = 1,
+                ),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_listsWarningsBelowTheCounts() {
+        assertEquals(
+            "Last sync succeeded at 2026-09-01 01:30\n" +
+                "pulled 0, pushed 0\n" +
+                "no readable peers in sync folder\n" +
+                "push aborted after pull failure",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    warnings = listOf(
+                        "no readable peers in sync folder",
+                        "push aborted after pull failure",
+                    ),
+                ),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_showsCountsBesideAFailure() {
+        assertEquals(
+            "Last sync failed at 2026-09-01 01:30: push failed: no such host\n" +
+                "pulled 12, pushed 0 · peers 1/2 imported, 1 failed",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = false,
+                    error = "push failed: no such host",
+                    hasReport = true,
+                    eventsPulled = 12,
+                    peersImported = 1,
+                    peersFailed = 1,
+                ),
+                dateFormat,
+            ),
+        )
+    }
+
+    @Test
+    fun fromJniResponse_parsesSyncReport() {
+        val status = SyncStatus.fromJniResponse(
+            """
+            {
+              "success": true,
+              "message": "Synced 1200 events in from 2/4 peers (1 skipped, 1 failed)",
+              "events_pulled": 1200,
+              "events_pushed": 3,
+              "peers_imported": 2,
+              "peers_skipped": 1,
+              "peers_failed": 1,
+              "warnings": ["push aborted after pull failure"]
+            }
+            """.trimIndent(),
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(true, status.success)
+        assertEquals(true, status.hasReport)
+        assertEquals(1200, status.eventsPulled)
+        assertEquals(3, status.eventsPushed)
+        assertEquals(2, status.peersImported)
+        assertEquals(1, status.peersSkipped)
+        assertEquals(1, status.peersFailed)
+        assertEquals(listOf("push aborted after pull failure"), status.warnings)
+        assertEquals(null, status.error)
+    }
+
+    @Test
+    fun fromJniResponse_acceptsPayloadWithoutReportFields() {
+        val status = SyncStatus.fromJniResponse(
+            """{"success": true, "message": "Successfully pulled from all hosts"}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(true, status.success)
+        assertEquals(false, status.hasReport)
+        assertEquals(0, status.eventsPulled)
+    }
+
+    @Test
+    fun fromJniResponse_treatsErrorPayloadAsFailure() {
+        val status = SyncStatus.fromJniResponse(
+            """{"success": false, "error": "Sync pull failed: connection refused"}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(false, status.success)
+        assertEquals("Sync pull failed: connection refused", status.error)
+        assertEquals(false, status.hasReport)
+    }
+
+    @Test
+    fun fromJniResponse_neverThrowsOnUnreadableResponse() {
+        val status = SyncStatus.fromJniResponse(
+            "not json at all",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(false, status.success)
+        assertEquals(true, status.error!!.startsWith("Unreadable sync response:"))
+    }
+
+    @Test
+    fun fromJniResponse_fallsBackToGenericErrorWhenReasonMissing() {
+        val status = SyncStatus.fromJniResponse(
+            """{"success": false}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals("sync failed", status.error)
+    }
+
+    @Test
+    fun fromJniResponse_capsAndNormalizesWarnings() {
+        val warnings = "\"first\\n  warning\"," +
+            (2..6).joinToString(",") { "\"warning $it\"" }
+        val status = SyncStatus.fromJniResponse(
+            """{"success": true, "events_pulled": 0, "warnings": [$warnings]}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(SyncStatus.MAX_WARNINGS, status.warnings.size)
+        assertEquals("first warning", status.warnings[0])
+    }
+
+    @Test
+    fun fromJniResponse_ignoresNegativeCounts() {
+        val status = SyncStatus.fromJniResponse(
+            """{"success": true, "events_pulled": -5, "events_pushed": 2}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(0, status.eventsPulled)
+        assertEquals(2, status.eventsPushed)
+    }
 }
