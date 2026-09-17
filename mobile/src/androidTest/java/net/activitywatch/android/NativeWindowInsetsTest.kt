@@ -145,9 +145,17 @@ class NativeWindowInsetsTest {
             val current = (width.toLong() shl 32) or (height.toLong() and 0xffffffffL)
             val rotated = width > 0 && height > 0 && width > height &&
                 landscapeConfiguration && device.displayWidth > device.displayHeight
-            if (rotated) sawRotated = true
-            if (rotated && current == previous) return
-            previous = current
+            // Track stability across *rotated* samples only: an unrotated sample (root
+            // measures landscape but the configuration hasn't landed yet, or vice versa)
+            // must not seed `previous`, or a single settled sample could satisfy the
+            // stability check immediately.
+            if (rotated) {
+                sawRotated = true
+                if (current == previous) return
+                previous = current
+            } else {
+                previous = Long.MIN_VALUE
+            }
             if (SystemClock.uptimeMillis() >= deadline) {
                 // Fail loudly rather than asserting against mid-rotation geometry: a
                 // silent return would keep the original flake (or pass on a tree that
