@@ -183,14 +183,18 @@ jobs:
       run: |
         # The -research suffix is a distribution-channel marker, not a version
         # component: a research build is the same code version, just published
-        # to GitHub releases instead of Play. Strip it (case-insensitively, to
-        # match assert-play-track.sh) so v0.14.2b1-research is verified against
-        # the committed versionName 0.14.2b1. The release-fastlane job
-        # separately fail-closes on any -research variant, so a stripped match
-        # here can never reach Play.
+        # to GitHub releases instead of Play. Normalize BOTH sides
+        # (case-insensitively, matching assert-play-track.sh) so the assertion
+        # passes whether the suffix came from the tag, the committed
+        # versionName (e.g. the Release workflow run with a -research input,
+        # which commits the suffixed versionName), or both. The
+        # release-fastlane job separately fail-closes on any -research variant,
+        # so a stripped match here can never reach Play. Strip logic and
+        # coverage: scripts/strip-research-suffix.sh --self-test.
         SHORT_VERSION="${GITHUB_REF_NAME#v}"
-        SHORT_VERSION="${SHORT_VERSION%-[rR][eE][sS][eE][aA][rR][cC][hH]}"
+        SHORT_VERSION=$(bash scripts/strip-research-suffix.sh "$SHORT_VERSION")
         COMMITTED_VERSION=$(sed -n -E "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\\1/p" mobile/build.gradle)
+        COMMITTED_VERSION=$(bash scripts/strip-research-suffix.sh "$COMMITTED_VERSION")
         if [ -z "$COMMITTED_VERSION" ]; then
           echo "Failed to parse versionName from mobile/build.gradle."
           exit 1
