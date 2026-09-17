@@ -196,7 +196,11 @@ def usage() -> int:
 
 def main(argv: list[str]) -> int:
     if not argv:
-        for line in filter_stream(sys.stdin):
+        # Buffer the full output before printing: a mid-stream crash must
+        # leave stdout empty, not partially written, so the caller's
+        # `[ ! -s "$ENTRIES" ]` fallback (generic note) triggers reliably.
+        output = list(filter_stream(sys.stdin))
+        for line in output:
             print(line)
         return 0
     if argv == ["--self-test"]:
