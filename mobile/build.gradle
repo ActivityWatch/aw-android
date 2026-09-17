@@ -17,6 +17,11 @@ android {
         // Set in CI by `bundle exec fastlane update_version`
         versionCode 43
 
+        // Default server port; overridden per product flavor below. Threaded
+        // through BuildConfig so a "research" build can run side by side with
+        // a normal install without contending for the same port.
+        buildConfigField "int", "SERVER_PORT", "5600"
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // NOTE: This only works for API level 28 and above
         //testInstrumentationRunnerArguments useTestStorageService: 'true'
@@ -25,6 +30,23 @@ android {
         //packagingOptions {
         //    doNotStrip '**/*.so'
         //}
+    }
+    flavorDimensions "distribution"
+    productFlavors {
+        standard {
+            dimension "distribution"
+        }
+        research {
+            dimension "distribution"
+            // Own applicationId + port so a study participant's existing
+            // ActivityWatch install (own bundle id, own data dir, port 5600)
+            // is untouched by the research build (ethics-approval requirement:
+            // ActivityWatch/aw-android research flavor spec).
+            applicationIdSuffix ".research"
+            versionNameSuffix "-research"
+            buildConfigField "int", "SERVER_PORT", "5667"
+            resValue "string", "app_name", "ActivityWatch Research"
+        }
     }
     buildTypes {
         release {
@@ -86,6 +108,7 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
 }
 

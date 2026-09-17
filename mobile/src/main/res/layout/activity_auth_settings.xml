@@ -89,7 +89,10 @@
         </LinearLayout>
 
         <!-- Help text -->
+        <!-- Text is set in AuthSettingsActivity so the URL carries the flavor's
+             actual server port (5600 standard, 5667 research). -->
         <TextView
+            android:id="@+id/tv_help"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAppearance="?android:attr/textAppearanceSmall"

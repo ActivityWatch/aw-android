@@ -52,7 +52,7 @@ unzip-apks: dist/aw-android.apks
 	unzip -o dist/aw-android.apks -d dist/apks
 
 # builds debug and test apks (unsigned)
-build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mobile-debug-androidTest.apk
+build-apk-debug: $(APKDIR)/standard/debug/mobile-standard-debug.apk $(APKDIR)/androidTest/standard/debug/mobile-standard-debug-androidTest.apk
 	mkdir -p dist
 	cp -r $(APKDIR) dist
 
@@ -60,7 +60,7 @@ build-apk-debug: $(APKDIR)/debug/mobile-debug.apk $(APKDIR)/androidTest/debug/mo
 test: test-unit
 
 test-unit:
-	./gradlew test
+	./gradlew testStandardDebugUnitTest
 
 # The upgrade test seeds a large legacy database before the datastore opens, so it
 # needs its own instrumentation process: run it after the rest, in a separate
@@ -68,16 +68,16 @@ test-unit:
 test-e2e: test-e2e-main test-e2e-upgrade
 
 test-e2e-main:
-	./gradlew connectedAndroidTest --stacktrace \
+	./gradlew connectedStandardDebugAndroidTest --stacktrace \
 		-Pandroid.testInstrumentationRunnerArguments.notClass=net.activitywatch.android.UpgradeWithHistoryTest
 
 test-e2e-upgrade:
-	./gradlew connectedAndroidTest --stacktrace \
+	./gradlew connectedStandardDebugAndroidTest --stacktrace \
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.UpgradeWithHistoryTest
 
 test-e2e-screenshot-only:
 	@# To only run screenshot test:
-	./gradlew connectedAndroidTest \
+	./gradlew connectedStandardDebugAndroidTest \
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ScreenshotTest
 
 test-e2e-adb:
@@ -92,26 +92,29 @@ test-e2e-adb:
 		-e class net.activitywatch.android.ScreenshotTest
 		net.activitywatch.android.debug.test/androidx.test.runner.AndroidJUnitRunner
 
-install-apk-debug: $(APKDIR)/debug/mobile-debug.apk
-	adb install $(APKDIR)/debug/mobile-debug.apk
-	adb install $(APKDIR)/debug/mobile-debug-androidTest.apk
+install-apk-debug: $(APKDIR)/standard/debug/mobile-standard-debug.apk
+	adb install $(APKDIR)/standard/debug/mobile-standard-debug.apk
+	adb install $(APKDIR)/androidTest/standard/debug/mobile-standard-debug-androidTest.apk
 
 # APK targets
-$(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE_UNSIGNED).apk:
-	TERM=xterm ./gradlew assemble$(RELEASE_TYPE_CAPS)
+# NOTE: the product flavors (standard / research, see mobile/build.gradle)
+# make AGP emit per-flavor output dirs and variant-suffixed task names.
+# Distribution workflows below pin the *standard* flavor explicitly.
+$(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE_UNSIGNED).apk:
+	TERM=xterm ./gradlew assembleStandard$(RELEASE_TYPE_CAPS)
 	tree $(APKDIR)
 
-$(APKDIR)/androidTest/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE)-androidTest.apk:
-	TERM=xterm ./gradlew assembleAndroidTest
+$(APKDIR)/androidTest/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE)-androidTest.apk:
+	TERM=xterm ./gradlew assembleStandard$(RELEASE_TYPE_CAPS)AndroidTest
 	tree $(APKDIR)
 
 # App bundle targets
-$(AABDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).aab:
-	TERM=xterm ./gradlew bundle$(RELEASE_TYPE_CAPS)
+$(AABDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE).aab:
+	TERM=xterm ./gradlew bundleStandard$(RELEASE_TYPE_CAPS)
 	tree $(AABDIR)
 
 # Signed release bundle
-dist/aw-android.aab: $(AABDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE).aab
+dist/aw-android.aab: $(AABDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE).aab
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
@@ -122,7 +125,7 @@ else
 endif
 
 # Signed release APK
-dist/aw-android.apk: $(APKDIR)/$(RELEASE_TYPE)/mobile-$(RELEASE_TYPE_UNSIGNED).apk
+dist/aw-android.apk: $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE_UNSIGNED).apk
 	mkdir -p dist
 	@# Only sign if we have key secrets set ($JKS_KEYPASS and $JKS_STOREPASS)
 ifneq ($(HAS_SECRETS), true)
@@ -132,8 +135,8 @@ else
 	./scripts/sign_apk.sh $< $@
 endif
 
-# for mobile-debug.apk and mobile-debug-androidTest.apk
-dist/$(RELEASE_TYPE)/%: $(APKDIR)/$(RELEASE_TYPE)/%
+# for mobile-standard-debug.apk and mobile-standard-debug-androidTest.apk
+dist/$(RELEASE_TYPE)/%: $(APKDIR)/standard/$(RELEASE_TYPE)/%
 	mkdir -p dist
 	cp $< $@
 

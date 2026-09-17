@@ -68,7 +68,7 @@ class RustInterface(context: Context? = null) {
 
     private external fun initialize()
     private external fun greeting(pattern: String): String
-    private external fun startServer()
+    private external fun startServer(port: Int)
     private external fun setDataDir(path: String)
     private external fun setVersionOverride(version: String)
     external fun getBuckets(): String
@@ -87,12 +87,15 @@ class RustInterface(context: Context? = null) {
 
     fun startServerTask() {
         if (!serverStarted) {
-            // check if port 5600 is already in use
+            // check if the flavor's port is already in use
             try {
-                val socket = java.net.ServerSocket(5600)
+                val socket = java.net.ServerSocket(BuildConfig.SERVER_PORT)
                 socket.close()
             } catch (e: java.net.BindException) {
-                Log.e(TAG, "Port 5600 is already in use, server probably already started")
+                Log.e(
+                    TAG,
+                    "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
+                )
                 return
             }
 
@@ -103,8 +106,8 @@ class RustInterface(context: Context? = null) {
                 // will not block the UI thread
 
                 // Start server
-                Log.w(TAG, "Starting server...")
-                startServer()
+                Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
+                startServer(BuildConfig.SERVER_PORT)
 
                 handler.post {
                     // will run on UI thread after the task is done
