@@ -19,6 +19,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
+import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
 import net.activitywatch.android.watcher.SessionEventWatcher
@@ -36,9 +37,18 @@ const val bucket_id = SESSION_BUCKET_ID
 const val unlock_bucket_id = UNLOCK_BUCKET_ID
 
 class UsageStatsWatcher constructor(val context: Context) {
-    private val ri = RustInterface(context)
+    // Same off-thread init as WebWatcher/MediaWatcher (aw-android#262): constructing
+    // RustInterface on MainActivity / AlarmReceiver / TestFragment blocked those
+    // callers on loadLibrary + JNI initialize even when they only wanted setupAlarm().
+    // Lazy so setupAlarm() does not start JNI at all; session mode never uses [rust].
+    private val rust by lazy {
+        OffThreadInit(
+            threadName = "UsageStatsWatcher-init",
+            logTag = TAG,
+        ) { RustInterface(context.applicationContext) }
+    }
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
-    private val sessionWatcher = SessionEventWatcher(context)
+    private val sessionWatcher by lazy { SessionEventWatcher(context) }
 
     var lastUpdated: Instant? = null
     var useSessionBasedEvents = true // Toggle between individual events and session-based events
@@ -150,7 +160,10 @@ class UsageStatsWatcher constructor(val context: Context) {
         }
     }
 
+    private fun rustInterface(): RustInterface? = rust.await()
+
     private fun getLastEvent(): JSONObject? {
+        val ri = rustInterface() ?: return null
         val events = ri.getEventsJSON(bucket_id, limit=1)
         return if (events.length() == 1) {
             //Log.d(TAG, "Last event: ${events[0]}")
@@ -184,6 +197,10 @@ class UsageStatsWatcher constructor(val context: Context) {
     private inner class SendHeartbeatsTask : AsyncTask<URL, Instant, Int>() {
         override fun doInBackground(vararg urls: URL): Int? {
             Log.i(TAG, "Sending heartbeats...")
+            val ri = rustInterface() ?: run {
+                Log.w(TAG, "RustInterface not ready; skipping heartbeat send")
+                return 0
+            }
 
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
