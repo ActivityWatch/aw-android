@@ -66,6 +66,12 @@ object CategoryTimeWidgetUpdater {
         R.id.app_time_3
     )
 
+    private val appDotIds = intArrayOf(
+        R.id.app_dot_1,
+        R.id.app_dot_2,
+        R.id.app_dot_3
+    )
+
     /**
      * Update all instances of the widget
      */
@@ -115,12 +121,14 @@ object CategoryTimeWidgetUpdater {
 
                 // Update top 3 apps
                 val topApps = categoryData.take(3)
-                
+                val dotColors = resolveBarColors(context, topApps.map { it.first }, configuredColors)
+
                 for (i in 0 until 3) {
                     if (i < topApps.size) {
                         val (name, duration) = topApps[i]
                         views.setTextViewText(appNameIds[i], name)
                         views.setTextViewText(appTimeIds[i], formatDurationShort(duration))
+                        views.setInt(appDotIds[i], "setColorFilter", dotColors[i])
                         views.setViewVisibility(appRowIds[i], View.VISIBLE)
                     } else {
                         views.setViewVisibility(appRowIds[i], View.GONE)
@@ -202,7 +210,7 @@ object CategoryTimeWidgetUpdater {
          * (from configured settings, falling back to hardcoded defaults) + others color.
          * Silently skips invalid hex strings and uses the fallback.
          */
-        private fun resolveBarColors(
+        internal fun resolveBarColors(
             context: Context,
             categoryNames: List<String>,
             configuredColors: Map<String, String>
