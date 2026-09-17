@@ -215,7 +215,7 @@ jobs:
               # research-edition work, so the salient changes fit the 500-byte
               # budget instead of being truncated behind CI noise.
               git log "${PREV_TAG}..HEAD" --pretty=format:"%s" \
-                | bash scripts/user-facing-changelog.sh \
+                | python3 scripts/user-facing-changelog.py \
                 > "$ENTRIES" || true
             fi
             if [ ! -s "$ENTRIES" ]; then
