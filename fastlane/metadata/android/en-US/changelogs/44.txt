@@ -1,0 +1,7 @@
+- fix(android): migrate unsanitized hostname after sanitizer change (#273)
+- feat(sync): record and show what each sync pass actually did (#285)
+- fix(watcher): construct RustInterface off the calling thread (#277)
+- fix(android): match system bars to webui theme; drop drawer teal gradient (#276)
+- fix(sync): persist JNI error string on last-sync status (#275)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.2b2

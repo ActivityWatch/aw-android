@@ -12,10 +12,10 @@ android {
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
-        versionName '0.14.2b1'
+        versionName '0.14.2b2'
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 43
+        versionCode 44
 
         // Default server port; overridden per product flavor below. Threaded
         // through BuildConfig so a "research" build can run side by side with
