@@ -44,6 +44,27 @@ internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): Stri
 }
 
 /**
+ * "When will it sync next?" — derived from the existing SyncScheduler interval and the
+ * last completed run, with no new persisted state. The scheduler always reschedules
+ * SYNC_INTERVAL_MS after the previous run completes (SyncScheduler.performSync), so
+ * lastCompletedAt + SYNC_INTERVAL_MS is the real next-run time whenever sync is enabled.
+ */
+internal fun formatNextSyncStatus(
+    enabled: Boolean,
+    lastStatus: SyncStatus?,
+    dateFormat: DateFormat,
+    now: Long = System.currentTimeMillis(),
+): String {
+    if (!enabled) return "Next sync: sync is disabled"
+    if (lastStatus == null) {
+        return "Next sync: shortly (first sync runs about a minute after ActivityWatch starts)"
+    }
+    val nextAt = lastStatus.completedAt + SYNC_INTERVAL_MS
+    if (nextAt <= now) return "Next sync: due now"
+    return "Next sync: ${dateFormat.format(Date(nextAt))}"
+}
+
+/**
  * The per-run facts line: what moved and which peers it came from. Without
  * this, a pass that transferred nothing is indistinguishable from one that
  * transferred everything — the failure mode of a boolean-only status.
@@ -69,6 +90,7 @@ class SyncSettingsActivity : AppCompatActivity() {
     private lateinit var switchSyncEnabled: SwitchCompat
     private lateinit var tvSyncDirStatus: TextView
     private lateinit var tvLastSyncStatus: TextView
+    private lateinit var tvNextSyncStatus: TextView
     private lateinit var btnChooseDir: Button
 
     // Guards against the switch listener firing when we set isChecked programmatically
@@ -78,6 +100,7 @@ class SyncSettingsActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION) {
                 updateLastSyncStatus()
+                updateNextSyncStatus()
             }
         }
     }
@@ -147,6 +170,7 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled = findViewById(R.id.switch_sync_enabled)
         tvSyncDirStatus = findViewById(R.id.tv_sync_dir_status)
         tvLastSyncStatus = findViewById(R.id.tv_last_sync_status)
+        tvNextSyncStatus = findViewById(R.id.tv_next_sync_status)
         btnChooseDir = findViewById(R.id.btn_choose_sync_dir)
 
         refreshUI()
@@ -160,6 +184,7 @@ class SyncSettingsActivity : AppCompatActivity() {
                 action = BackgroundService.ACTION_SYNC_ENABLED_CHANGED
                 putExtra(BackgroundService.EXTRA_START_ORIGIN, BackgroundService.START_ORIGIN_SETTINGS)
             })
+            updateNextSyncStatus()
         }
 
         btnChooseDir.setOnClickListener {
@@ -197,10 +222,19 @@ class SyncSettingsActivity : AppCompatActivity() {
         isUpdatingSwitch = false
         updateSyncDirStatus()
         updateLastSyncStatus()
+        updateNextSyncStatus()
     }
 
     private fun updateLastSyncStatus() {
         tvLastSyncStatus.text = formatSyncStatus(
+            prefs.getLastSyncStatus(),
+            combinedDateTimeFormat(),
+        )
+    }
+
+    private fun updateNextSyncStatus() {
+        tvNextSyncStatus.text = formatNextSyncStatus(
+            prefs.isSyncEnabled(),
             prefs.getLastSyncStatus(),
             combinedDateTimeFormat(),
         )

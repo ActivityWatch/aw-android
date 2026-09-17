@@ -12,7 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 private const val TAG = "SyncScheduler"
-private const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
+// internal (not private): SyncSettingsActivity reads this to render "next sync at" without
+// duplicating the interval or requiring a data-model change.
+internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
