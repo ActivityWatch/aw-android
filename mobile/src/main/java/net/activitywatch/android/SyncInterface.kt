@@ -245,9 +245,14 @@ class SyncInterface(context: Context) {
 
         executor.execute {
             Log.i(TAG, "Starting sync operation: $operation")
+            // Native-sync report kept for the catch path: when mirroring fails after
+            // a successful sync, the failure status must still carry the report
+            // (counts/warnings) instead of erasing what the pass actually did.
+            var nativeStatus: SyncStatus? = null
             try {
                 val response = syncFn()
                 val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())
+                nativeStatus = status
                 val success = status.success
                 val message = if (success) {
                     status.summary ?: "sync completed"
@@ -270,11 +275,23 @@ class SyncInterface(context: Context) {
                 }
                 handler.post { callback(success, message) }
             } catch (e: Exception) {
-                val status = SyncStatus(
-                    completedAt = System.currentTimeMillis(),
-                    success = false,
-                    error = SyncStatus.normalizeError("Exception: ${e.message}"),
-                )
+                val native = nativeStatus
+                val status = if (native != null && native.success) {
+                    // The native sync already completed (and was persisted); this
+                    // failure came from the post-sync step, so keep its report.
+                    val step = if (mirrorBeforeCallback) "SAF mirroring failed" else "post-sync step failed"
+                    native.copy(
+                        completedAt = System.currentTimeMillis(),
+                        success = false,
+                        error = SyncStatus.normalizeError("$step: ${e.message}"),
+                    )
+                } else {
+                    SyncStatus(
+                        completedAt = System.currentTimeMillis(),
+                        success = false,
+                        error = SyncStatus.normalizeError("Exception: ${e.message}"),
+                    )
+                }
                 AWPreferences(appContext).setLastSyncStatus(status)
                 handler.post {
                     Log.e(TAG, "$operation failed", e)
