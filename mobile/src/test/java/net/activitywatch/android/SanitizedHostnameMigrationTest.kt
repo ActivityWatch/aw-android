@@ -213,6 +213,22 @@ class SanitizedHostnameMigrationTest {
     }
 
     @Test
+    fun plan_withoutDeviceId_leavesMultiDeviceLegacyDirAlone() {
+        // A legacy dir holding several device ids cannot be attributed to this
+        // device; renaming it wholesale would fold all of them under the current
+        // hostname.
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra"),
+                deviceIdsByHostname = mapOf("POCO F8 Ultra" to setOf("dev-1", "dev-2")),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra"),
+                localDeviceId = null,
+            )
+        assertEquals(emptyList<SanitizedHostnameMigration.FolderAction>(), actions)
+    }
+
+    @Test
     fun plan_withoutDeviceId_andSanitizedDirExistsOnlyPlansEmptyDirDeletes() {
         val actions =
             SanitizedHostnameMigration.planFolderMigration(

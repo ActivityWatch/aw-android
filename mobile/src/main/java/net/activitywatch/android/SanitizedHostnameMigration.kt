@@ -119,10 +119,20 @@ object SanitizedHostnameMigration {
                 // sanitized dir already exists stays safe: applyFolderMigration
                 // only removes a hostname dir that is empty.
                 when {
-                    !newExists && presentLegacy.size == 1 ->
+                    // A wholesale rename is only safe when the legacy dir cannot
+                    // carry other devices' data: at most one device-id subdir.
+                    // A dir holding several device ids could belong to more than
+                    // one device, and renaming it would fold all of them under
+                    // the current hostname.
+                    !newExists && presentLegacy.size == 1 &&
+                        deviceIdsByHostname[legacy].orEmpty().size <= 1 ->
                         actions.add(FolderAction.RenameHostnameDir(legacy, currentHostname))
                     newExists -> actions.add(FolderAction.DeleteHostnameDir(legacy))
-                    else -> info("Leaving legacy dir '$legacy' in place; local device id unavailable")
+                    else ->
+                        info(
+                            "Leaving legacy dir '$legacy' in place; local device id " +
+                                "unavailable or dir holds multiple devices"
+                        )
                 }
             }
         }

@@ -44,7 +44,6 @@ class BackgroundService : Service() {
 
         // How long the queued hostname rewrite waits for the server task to exit
         // before giving up (the next service start retries).
-        private const val SERVER_EXIT_WAIT_MS = 60_000L
         private const val SERVER_EXIT_POLL_MS = 1_000L
     }
 
@@ -248,17 +247,18 @@ class BackgroundService : Service() {
         hostnameRewriteQueued = true
         Thread {
             try {
+                // No wait bound: a long-running background service may keep the
+                // server task alive for days, and a bounded poll would time out
+                // with the rewrite permanently deferred (every later start sees
+                // serverStarted true again). The server task exits when the
+                // service is destroyed (or the process dies, which makes this
+                // daemon thread moot), so polling until it exits converges at
+                // teardown at the latest.
                 try {
-                    var waitedMs = 0L
-                    while (RustInterface.serverStarted && waitedMs < SERVER_EXIT_WAIT_MS) {
+                    while (RustInterface.serverStarted) {
                         Thread.sleep(SERVER_EXIT_POLL_MS)
-                        waitedMs += SERVER_EXIT_POLL_MS
                     }
                 } catch (_: InterruptedException) {
-                    return@Thread
-                }
-                if (RustInterface.serverStarted) {
-                    Log.i(TAG, "Server task still running; hostname rewrite stays deferred to the next start")
                     return@Thread
                 }
                 synchronized(sanitizedMigrationLock) {
@@ -281,7 +281,7 @@ class BackgroundService : Service() {
                 }
             } finally {
                 // Clear the guard whether the rewrite ran, failed (a later start
-                // retries), or timed out (the next start queues a fresh one).
+                // retries), or the thread was interrupted before the server exited.
                 hostnameRewriteQueued = false
             }
         }.apply {

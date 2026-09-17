@@ -46,9 +46,29 @@ class SyncInterface(context: Context) {
      */
     @Volatile private var cancelRequested = false
     
+    /**
+     * Legacy-folder migration is deferred to the first sync operation instead of
+     * running in init: SyncInterface is constructed on the main thread (service
+     * onCreate), and the migration traverses and renames sync directories, which
+     * can ANR on a large or slow-storage sync dir. Sync workers run on background
+     * executors, and performSyncAsync is the single funnel they all pass through,
+     * so the first sync always happens after the migration has completed.
+     */
+    private val migrationLock = Any()
+
+    @Volatile private var legacyFoldersMigrated = false
+
+    private fun ensureLegacyFoldersMigrated() {
+        if (legacyFoldersMigrated) return
+        synchronized(migrationLock) {
+            if (legacyFoldersMigrated) return
+            migrateLegacySyncFolders()
+            legacyFoldersMigrated = true
+        }
+    }
+
     init {
         syncDir = resolveSyncDirectory(context).absolutePath
-        migrateLegacySyncFolders()
         Os.setenv("AW_SYNC_DIR", syncDir, true)
         
         // Set XDG environment variables to app-writable paths
@@ -179,6 +199,7 @@ class SyncInterface(context: Context) {
         executor.execute {
             Log.i(TAG, "Starting sync operation: $operation")
             try {
+                ensureLegacyFoldersMigrated()
                 val response = syncFn()
                 val json = JSONObject(response)
                 val success = json.getBoolean("success")
