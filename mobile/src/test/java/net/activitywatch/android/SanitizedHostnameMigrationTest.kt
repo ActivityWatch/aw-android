@@ -229,13 +229,35 @@ class SanitizedHostnameMigrationTest {
     }
 
     @Test
-    fun plan_withoutDeviceId_andSanitizedDirExistsOnlyPlansEmptyDirDeletes() {
+    fun plan_withoutDeviceId_andSanitizedDirExists_leavesLegacyDirWithDeviceEntries() {
+        // Legacy dir has device-id subdirs that can't be attributed without the local
+        // device id. Previously the planner added DeleteHostnameDir here, which
+        // applyFolderMigration always rejected (dir not empty), making MigrationResult
+        // report failed=1 and causing ensureLegacyFoldersMigrated to retry every sync.
         val actions =
             SanitizedHostnameMigration.planFolderMigration(
                 existingHostnameDirs = setOf("POCO F8 Ultra", "poco_f8_ultra"),
                 deviceIdsByHostname =
                     mapOf(
                         "POCO F8 Ultra" to setOf("other"),
+                        "poco_f8_ultra" to setOf("dev-1"),
+                    ),
+                currentHostname = "poco_f8_ultra",
+                legacyHostnames = listOf("POCO F8 Ultra"),
+                localDeviceId = null,
+            )
+        assertEquals(emptyList<SanitizedHostnameMigration.FolderAction>(), actions)
+    }
+
+    @Test
+    fun plan_withoutDeviceId_andSanitizedDirExists_deletesEmptyLegacyDir() {
+        // Legacy dir has no device-id subdirs (already cleaned up); safe to delete.
+        val actions =
+            SanitizedHostnameMigration.planFolderMigration(
+                existingHostnameDirs = setOf("POCO F8 Ultra", "poco_f8_ultra"),
+                deviceIdsByHostname =
+                    mapOf(
+                        "POCO F8 Ultra" to emptySet(),
                         "poco_f8_ultra" to setOf("dev-1"),
                     ),
                 currentHostname = "poco_f8_ultra",

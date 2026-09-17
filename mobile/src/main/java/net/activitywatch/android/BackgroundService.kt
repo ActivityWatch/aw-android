@@ -263,7 +263,7 @@ class BackgroundService : Service() {
             return
         }
         hostnameRewriteQueued = true
-        Thread {
+        hostnameRewriteThread = Thread {
             try {
                 // No wait bound: a long-running background service may keep the
                 // server task alive for days, and a bounded poll would time out
@@ -300,6 +300,7 @@ class BackgroundService : Service() {
             } finally {
                 // Clear the guard whether the rewrite ran, failed (a later start
                 // retries), or the thread was interrupted before the server exited.
+                hostnameRewriteThread = null
                 hostnameRewriteQueued = false
             }
         }.apply {
@@ -394,6 +395,7 @@ class BackgroundService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "BackgroundService destroyed")
+        cancelQueuedHostnameRewrite()
         if (::syncScheduler.isInitialized) syncScheduler.stop()
         super.onDestroy()
     }

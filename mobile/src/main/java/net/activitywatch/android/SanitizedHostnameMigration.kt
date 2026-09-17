@@ -115,23 +115,28 @@ object SanitizedHostnameMigration {
                 // device, so renaming every candidate could fold another device's
                 // data under the current hostname. Only fold a single unambiguous
                 // candidate (nothing else could claim it); leave the rest for a
-                // start where the device id is available. Deleting when the
-                // sanitized dir already exists stays safe: applyFolderMigration
-                // only removes a hostname dir that is empty.
+                // start where the device id is available.
+                val legacyDeviceIds = deviceIdsByHostname[legacy].orEmpty()
                 when {
                     // A wholesale rename is only safe when the legacy dir cannot
                     // carry other devices' data: at most one device-id subdir.
                     // A dir holding several device ids could belong to more than
                     // one device, and renaming it would fold all of them under
                     // the current hostname.
-                    !newExists && presentLegacy.size == 1 &&
-                        deviceIdsByHostname[legacy].orEmpty().size <= 1 ->
+                    !newExists && presentLegacy.size == 1 && legacyDeviceIds.size <= 1 ->
                         actions.add(FolderAction.RenameHostnameDir(legacy, currentHostname))
-                    newExists -> actions.add(FolderAction.DeleteHostnameDir(legacy))
+                    // Delete only when the dir is empty (no device-id subdirs remain).
+                    // If it has device-id subdirs that can't be attributed without the
+                    // local device id, skip rather than planning a delete that
+                    // applyFolderMigration will reject: a rejected delete counts as
+                    // "failed" and prevents ensureLegacyFoldersMigrated from marking
+                    // the per-instance migration done, causing it to retry every sync.
+                    newExists && legacyDeviceIds.isEmpty() ->
+                        actions.add(FolderAction.DeleteHostnameDir(legacy))
                     else ->
                         info(
                             "Leaving legacy dir '$legacy' in place; local device id " +
-                                "unavailable or dir holds multiple devices"
+                                "unavailable or dir holds unattributable device entries"
                         )
                 }
             }
