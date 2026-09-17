@@ -17,5 +17,6 @@ class DeviceHostnameTest {
         assertEquals("pixel_8", sanitizeDeviceHostname("Pixel 8"))
         assertEquals("my-phone_1", sanitizeDeviceHostname("My-Phone_1"))
         assertEquals("pixel_8", sanitizeDeviceHostname("  Pixel  8  "))
+        assertEquals("poco_f8_ultra", sanitizeDeviceHostname("POCO F8 Ultra"))
     }
 }

@@ -134,6 +134,38 @@ class SyncInterface(context: Context) {
      */
     @Volatile private var cancelRequested = false
     
+    /**
+     * Legacy-folder migration is deferred to the first sync operation instead of
+     * running in init: SyncInterface is constructed on the main thread (service
+     * onCreate), and the migration traverses and renames sync directories, which
+     * can ANR on a large or slow-storage sync dir. Sync workers run on background
+     * executors, and performSyncAsync is the single funnel they all pass through,
+     * so the first sync always happens after the migration has completed.
+     */
+    private val migrationLock = Any()
+
+    @Volatile private var legacyFoldersMigrated = false
+
+    private fun ensureLegacyFoldersMigrated() {
+        if (legacyFoldersMigrated) return
+        synchronized(migrationLock) {
+            if (legacyFoldersMigrated) return
+            // Only record completion when every planned action applied. A failed
+            // rename or deletion leaves the flag unset so the next sync re-runs
+            // the migration instead of skipping it with the fork still in place.
+            val result = migrateLegacySyncFolders()
+            if (result.failed == 0) {
+                legacyFoldersMigrated = true
+            } else {
+                Log.w(
+                    TAG,
+                    "${result.failed} legacy-folder migration action(s) failed; " +
+                        "retrying on the next sync",
+                )
+            }
+        }
+    }
+
     init {
         syncDir = resolveSyncDirectory(context).absolutePath
         Os.setenv("AW_SYNC_DIR", syncDir, true)
@@ -266,6 +298,7 @@ class SyncInterface(context: Context) {
             // (counts/warnings) instead of erasing what the pass actually did.
             var nativeStatus: SyncStatus? = null
             try {
+                ensureLegacyFoldersMigrated()
                 val response = syncFn()
                 val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())
                 nativeStatus = status
@@ -363,6 +396,9 @@ class SyncInterface(context: Context) {
      *
      * Errors propagate to the caller so a configured directory is never reported as successfully
      * synced when the files could not be mirrored there.
+     *
+     * Stale legacy hostname directories in the SAF tree are removed only after the mirror
+     * succeeds, so a leftover local legacy folder can never be re-mirrored after deletion.
      */
     private fun copySyncFilesToSafDir() {
         val uriStr = AWPreferences(appContext).getSyncDirUri() ?: return
@@ -381,6 +417,13 @@ class SyncInterface(context: Context) {
         if (counts[1] > 0) {
             throw IOException("SAF mirror skipped ${counts[1]} item(s)")
         }
+        // Stale-SAF cleanup runs only after a fully successful mirror: deleting
+        // first would let the mirror re-copy a leftover local legacy folder back
+        // into the SAF tree (the fork would persist), and deleting after a
+        // partial mirror could drop data the local copy still holds. If the
+        // local legacy folder could not be renamed, it is deleted here each run
+        // after being mirrored, so the Syncthing-visible fork stays gone.
+        deleteStaleSafHostnameDirs(safDir)
     }
 
     /**
@@ -455,4 +498,82 @@ class SyncInterface(context: Context) {
     }
 
     fun getSyncDirectory(): String = syncDir
+
+    private fun migrateLegacySyncFolders(): SanitizedHostnameMigration.MigrationResult {
+        val current = getDeviceName()
+        val deviceId =
+            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }
+        val result =
+            SanitizedHostnameMigration.migrateSyncFolders(
+                File(syncDir),
+                current,
+                SanitizedHostnameMigration.legacyHostnames(
+                    current,
+                    rawDeviceName(appContext),
+                    android.os.Build.MODEL,
+                ),
+                deviceId,
+            )
+        if (result.moved > 0) {
+            Log.i(TAG, "Migrated ${result.moved} leftover sync-folder entries to '$current'")
+        }
+        return result
+    }
+
+    private fun deleteStaleSafHostnameDirs(safDir: DocumentFile) {
+        val current = getDeviceName()
+        val legacy =
+            SanitizedHostnameMigration.legacyHostnames(
+                current,
+                rawDeviceName(appContext),
+                android.os.Build.MODEL,
+            )
+        val deviceId =
+            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+                it.isNotEmpty()
+            }
+        for (name in legacy) {
+            val stale = safDir.findFile(name) ?: continue
+            if (!stale.isDirectory) continue
+            val removed =
+                if (deviceId != null) {
+                    // Scoped deletion: only remove this device's subdirectory, and
+                    // only drop the hostname dir itself when nothing else remains.
+                    // A dir holding other devices' data is never destroyed.
+                    val deviceDir = stale.findFile(deviceId)
+                    val deviceGone = deviceDir == null || deleteDocumentRecursively(deviceDir)
+                    val empty = stale.listFiles().isEmpty()
+                    deviceGone && (!empty || stale.delete())
+                } else {
+                    // Without the local device id we cannot tell whether a legacy
+                    // hostname dir belongs to this device; deleting it wholesale
+                    // could destroy other devices' synced data. Leave it.
+                    Log.w(TAG, "Leaving stale SAF hostname dir '$name'; local device id unavailable")
+                    false
+                }
+            if (removed) {
+                Log.i(TAG, "Removed stale SAF hostname dir '$name'")
+            } else {
+                Log.w(TAG, "Could not remove stale SAF hostname dir '$name'")
+            }
+        }
+    }
+
+    private fun deleteDocumentRecursively(doc: DocumentFile): Boolean {
+        if (doc.isDirectory) {
+            for (child in doc.listFiles()) {
+                if (!deleteDocumentRecursively(child)) return false
+            }
+        }
+        return doc.delete()
+    }
+}
+
+internal fun existingAwSyncDirectory(context: Context): File? {
+    val preferred = File(context.getExternalFilesDir(null) ?: context.filesDir, "sync")
+    if (preferred.isDirectory) return preferred
+    val fallback = File(context.filesDir, "sync")
+    return fallback.takeIf { it.isDirectory }
 }
