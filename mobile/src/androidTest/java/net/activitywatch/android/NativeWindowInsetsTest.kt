@@ -217,6 +217,10 @@ class NativeWindowInsetsTest {
      * consecutive samples, so a tap that lands before the Activity finishes settling its
      * async state does not silently consume an attempt.
      *
+     * A readiness wait that times out injects no tap for that attempt (a not-yet-interactive
+     * view would only consume the tap), and each retry re-checks the preference first, so a
+     * tap processed just after its poll window closed is not reversed by a blind second tap.
+     *
      * Addresses two no-ANR flake classes observed in CI after the UiAutomator-node fix:
      *  1. The tap lands while [viewId] is laid out but not yet interactive — the switch
      *     ignores the event and the preference never changes.
@@ -235,12 +239,20 @@ class NativeWindowInsetsTest {
         maxAttempts: Int = 3,
         pollMs: Long = 2000L,
     ) {
+        var tapped = false
         repeat(maxAttempts) { attempt ->
-            if (attempt > 0) device.waitForIdle(DRAIN_TIMEOUT_MS)
+            if (attempt > 0) {
+                device.waitForIdle(DRAIN_TIMEOUT_MS)
+                // A previous tap may have been processed just after its poll window closed,
+                // flipping the preference late. Re-check before tapping again: a blind retry
+                // would immediately reverse the successful transition.
+                if (prefs.isSyncEnabled() == expected) return
+            }
             // Wait until the view is enabled and its bounds are stable across two samples.
             val bounds = android.graphics.Rect()
             val prevBounds = android.graphics.Rect()
             val stableDeadline = SystemClock.uptimeMillis() + 2000L
+            var ready = false
             while (SystemClock.uptimeMillis() < stableDeadline) {
                 var isEnabled = false
                 scenario.onActivity { activity ->
@@ -248,16 +260,29 @@ class NativeWindowInsetsTest {
                     isEnabled = view?.isEnabled == true
                     view?.getGlobalVisibleRect(bounds)
                 }
-                if (isEnabled && bounds == prevBounds && bounds.width() > 0) break
+                if (isEnabled && bounds == prevBounds && bounds.width() > 0) {
+                    ready = true
+                    break
+                }
                 prevBounds.set(bounds)
                 Thread.sleep(50)
             }
+            if (!ready) {
+                // The view never reached enabled + stable bounds, so tapping now would be
+                // premature or misplaced and would consume an attempt without a fair chance
+                // of landing. Skip the tap and let the next attempt retry the readiness wait.
+                return@repeat
+            }
             tapViewCenter(scenario, viewId, what)
+            tapped = true
             val deadline = SystemClock.uptimeMillis() + pollMs
             while (SystemClock.uptimeMillis() < deadline && prefs.isSyncEnabled() != expected) {
                 Thread.sleep(100)
             }
             if (prefs.isSyncEnabled() == expected) return
+        }
+        if (!tapped) {
+            fail("$what never became enabled with stable bounds; no tap could be injected")
         }
         assertEquals("A screen tap must change the persisted setting", expected, prefs.isSyncEnabled())
     }
