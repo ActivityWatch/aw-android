@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.suspendCancellableCoroutine
+import net.activitywatch.android.AWPreferences
+import net.activitywatch.android.SYNC_INTERVAL_MS
 import net.activitywatch.android.SyncInterface
 import kotlin.coroutines.resume
 
@@ -24,6 +26,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             try {
                 syncInterface.syncBothAndMirrorAsync { success, message ->
                     if (!continuation.isActive) return@syncBothAndMirrorAsync
+
+                    // The alarm-triggered path runs independently of SyncScheduler (whose in-process
+                    // Handler chain may be dead after a process kill) — re-anchor here too, or the
+                    // "Next sync" display gets stuck showing a stale/past time forever after a restart.
+                    AWPreferences(applicationContext).setSchedulerNextRunAt(
+                        System.currentTimeMillis() + SYNC_INTERVAL_MS
+                    )
 
                     if (success) {
                         Log.i(TAG, "Automatic sync completed successfully: $message")

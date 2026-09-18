@@ -12,11 +12,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 private const val TAG = "SyncScheduler"
-private const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
+// internal (not private): SyncSettingsActivity reads this to render "next sync at" without
+// duplicating the interval or requiring a data-model change.
+internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
+    private val prefs = AWPreferences(context)
     private lateinit var syncInterface: SyncInterface
     private var isRunning = false
 
@@ -46,7 +49,9 @@ class SyncScheduler(private val context: Context) {
                 syncInterface = SyncInterface(context)
 
                 // Handler and AlarmManager calls are thread-safe; post from IO is fine.
+                val firstRunAt = System.currentTimeMillis() + 60 * 1000L
                 handler.postDelayed(syncRunnable, 60 * 1000L)
+                prefs.setSchedulerNextRunAt(firstRunAt)
                 scheduleAlarm()
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "aw-sync native library unavailable; sync scheduler disabled", e)
@@ -100,8 +105,10 @@ class SyncScheduler(private val context: Context) {
             }
             // Schedule next sync only after this one completes, preventing overlapping JNI calls.
             if (isRunning) {
+                val nextRunAt = System.currentTimeMillis() + SYNC_INTERVAL_MS
                 Log.i(TAG, "Scheduling next sync in 15 minutes")
                 handler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
+                prefs.setSchedulerNextRunAt(nextRunAt)
             }
         }
     }

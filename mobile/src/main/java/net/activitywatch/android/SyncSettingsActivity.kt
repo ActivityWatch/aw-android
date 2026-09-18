@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.util.Log
 import android.view.MenuItem
@@ -22,6 +24,12 @@ import java.text.DateFormat
 import java.util.Date
 
 private const val TAG = "SyncSettingsActivity"
+
+// While the screen is visible, "Next sync" is otherwise only refreshed by an explicit event
+// (switch toggle, completed-sync broadcast). Without a periodic tick, a displayed deadline that
+// passes while the user is looking at the screen stays stuck showing the old timestamp instead
+// of flipping to "due now".
+private const val NEXT_SYNC_REFRESH_INTERVAL_MS = 30 * 1000L
 
 internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
     if (status == null) return "Last sync: never"
@@ -41,6 +49,30 @@ internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): Stri
     // counts; showing "pulled 0, pushed 0" for them would invent an answer.
     if (!status.hasReport) return headline
     return "$headline\n${formatSyncDetail(status)}"
+}
+
+/**
+ * "When will it sync next?" — uses the scheduler's own recorded next-run time
+ * (written by SyncScheduler.start() and after each completed sync) so the displayed
+ * time matches what the scheduler actually has registered. Falls back to
+ * lastCompletedAt + SYNC_INTERVAL_MS when no scheduler time is recorded (e.g. after
+ * a fresh install before the first start() call).
+ */
+internal fun formatNextSyncStatus(
+    enabled: Boolean,
+    lastStatus: SyncStatus?,
+    dateFormat: DateFormat,
+    now: Long = System.currentTimeMillis(),
+    schedulerNextRunAt: Long? = null,
+): String {
+    if (!enabled) return "Next sync: sync is disabled"
+    if (lastStatus == null) {
+        return "Next sync: shortly (first sync runs about a minute after ActivityWatch starts)"
+    }
+    val nextAt = schedulerNextRunAt?.takeIf { it > 0L }
+        ?: (lastStatus.completedAt + SYNC_INTERVAL_MS)
+    if (nextAt <= now) return "Next sync: due now"
+    return "Next sync: ${dateFormat.format(Date(nextAt))}"
 }
 
 /**
@@ -69,6 +101,7 @@ class SyncSettingsActivity : AppCompatActivity() {
     private lateinit var switchSyncEnabled: SwitchCompat
     private lateinit var tvSyncDirStatus: TextView
     private lateinit var tvLastSyncStatus: TextView
+    private lateinit var tvNextSyncStatus: TextView
     private lateinit var btnChooseDir: Button
 
     // Guards against the switch listener firing when we set isChecked programmatically
@@ -78,7 +111,16 @@ class SyncSettingsActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION) {
                 updateLastSyncStatus()
+                updateNextSyncStatus()
             }
+        }
+    }
+
+    private val nextSyncRefreshHandler = Handler(Looper.getMainLooper())
+    private val nextSyncRefreshRunnable = object : Runnable {
+        override fun run() {
+            updateNextSyncStatus()
+            nextSyncRefreshHandler.postDelayed(this, NEXT_SYNC_REFRESH_INTERVAL_MS)
         }
     }
 
@@ -147,6 +189,7 @@ class SyncSettingsActivity : AppCompatActivity() {
         switchSyncEnabled = findViewById(R.id.switch_sync_enabled)
         tvSyncDirStatus = findViewById(R.id.tv_sync_dir_status)
         tvLastSyncStatus = findViewById(R.id.tv_last_sync_status)
+        tvNextSyncStatus = findViewById(R.id.tv_next_sync_status)
         btnChooseDir = findViewById(R.id.btn_choose_sync_dir)
 
         refreshUI()
@@ -160,6 +203,7 @@ class SyncSettingsActivity : AppCompatActivity() {
                 action = BackgroundService.ACTION_SYNC_ENABLED_CHANGED
                 putExtra(BackgroundService.EXTRA_START_ORIGIN, BackgroundService.START_ORIGIN_SETTINGS)
             })
+            updateNextSyncStatus()
         }
 
         btnChooseDir.setOnClickListener {
@@ -179,6 +223,8 @@ class SyncSettingsActivity : AppCompatActivity() {
             IntentFilter(AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
+        nextSyncRefreshHandler.postDelayed(nextSyncRefreshRunnable, NEXT_SYNC_REFRESH_INTERVAL_MS)
     }
 
     override fun onResume() {
@@ -188,6 +234,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     override fun onStop() {
         unregisterReceiver(syncStatusReceiver)
+        nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
         super.onStop()
     }
 
@@ -197,12 +244,22 @@ class SyncSettingsActivity : AppCompatActivity() {
         isUpdatingSwitch = false
         updateSyncDirStatus()
         updateLastSyncStatus()
+        updateNextSyncStatus()
     }
 
     private fun updateLastSyncStatus() {
         tvLastSyncStatus.text = formatSyncStatus(
             prefs.getLastSyncStatus(),
             combinedDateTimeFormat(),
+        )
+    }
+
+    private fun updateNextSyncStatus() {
+        tvNextSyncStatus.text = formatNextSyncStatus(
+            prefs.isSyncEnabled(),
+            prefs.getLastSyncStatus(),
+            combinedDateTimeFormat(),
+            schedulerNextRunAt = prefs.getSchedulerNextRunAt().takeIf { it > 0L },
         )
     }
 
