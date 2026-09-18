@@ -31,8 +31,15 @@ private const val TAG = "SyncSettingsActivity"
 // of flipping to "due now".
 private const val NEXT_SYNC_REFRESH_INTERVAL_MS = 30 * 1000L
 
-internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
-    if (status == null) return "Last sync: never"
+internal fun formatSyncStatus(
+    status: SyncStatus?,
+    dateFormat: DateFormat,
+    isPushOnlyDevice: Boolean = false,
+): String {
+    // Android is push-only until sync v2 ships; append a fixed note so users know
+    // pull is expected to be empty and won't arrive until v2.
+    val pushOnlyNote = if (isPushOnlyDevice) "\nPush-only on this device (pull arrives with sync v2)" else ""
+    if (status == null) return "Last sync: never$pushOnlyNote"
 
     val whenText = dateFormat.format(Date(status.completedAt))
     val headline = if (status.success) {
@@ -47,8 +54,8 @@ internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): Stri
     }
     // Runs recorded before the SyncReport crossed the JNI boundary carry no
     // counts; showing "pulled 0, pushed 0" for them would invent an answer.
-    if (!status.hasReport) return headline
-    return "$headline\n${formatSyncDetail(status)}"
+    if (!status.hasReport) return "$headline$pushOnlyNote"
+    return "$headline\n${formatSyncDetail(status, isPushOnlyDevice)}$pushOnlyNote"
 }
 
 /**
@@ -80,7 +87,7 @@ internal fun formatNextSyncStatus(
  * this, a pass that transferred nothing is indistinguishable from one that
  * transferred everything — the failure mode of a boolean-only status.
  */
-internal fun formatSyncDetail(status: SyncStatus): String {
+internal fun formatSyncDetail(status: SyncStatus, isPushOnlyDevice: Boolean = false): String {
     val peers = status.peersImported + status.peersSkipped + status.peersFailed
     val parts = mutableListOf("pulled ${status.eventsPulled}, pushed ${status.eventsPushed}")
     if (peers > 0) {
@@ -90,8 +97,12 @@ internal fun formatSyncDetail(status: SyncStatus): String {
         parts += peerText
     }
     val line = parts.joinToString(" · ")
-    if (status.warnings.isEmpty()) return line
-    return (listOf(line) + status.warnings).joinToString("\n")
+    // The "zero peers in a configured sync dir" warning is a desktop diagnostic
+    // (aw-server-rust#687) — not meaningful on Android where pull is a no-op by
+    // construction (SAF mirror is outbound-only until sync v2).
+    val warnings = if (isPushOnlyDevice) status.warnings.filter { "zero peers" !in it } else status.warnings
+    if (warnings.isEmpty()) return line
+    return (listOf(line) + warnings).joinToString("\n")
 }
 
 class SyncSettingsActivity : AppCompatActivity() {
@@ -251,6 +262,7 @@ class SyncSettingsActivity : AppCompatActivity() {
         tvLastSyncStatus.text = formatSyncStatus(
             prefs.getLastSyncStatus(),
             combinedDateTimeFormat(),
+            isPushOnlyDevice = true,
         )
     }
 
