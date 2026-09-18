@@ -121,6 +121,25 @@ class SyncSettingsActivityTest {
     }
 
     @Test
+    fun formatNextSyncStatus_usesSchedulerNextRunAtOverComputedInterval() {
+        // After a service restart, scheduler schedules first run at +60s, not lastCompletedAt+15min.
+        // The UI must show the scheduler-registered time, not the computed one.
+        val completedAt = 1_788_226_200_000L       // 2026-09-01 01:30:00 UTC
+        val now = completedAt + 5 * 1000L           // 5s after last sync
+        val schedulerNextRunAt = now + 60 * 1000L   // scheduler registered +60s from restart
+        assertEquals(
+            "Next sync: 2026-09-01 01:31",
+            formatNextSyncStatus(
+                enabled = true,
+                lastStatus = SyncStatus(completedAt = completedAt, success = true),
+                dateFormat = dateFormat,
+                now = now,
+                schedulerNextRunAt = schedulerNextRunAt,
+            ),
+        )
+    }
+
+    @Test
     fun normalizeError_capsLength() {
         val raw = "x".repeat(SyncStatus.MAX_ERROR_CHARS + 50)
         val normalized = SyncStatus.normalizeError(raw)

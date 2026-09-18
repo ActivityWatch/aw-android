@@ -155,6 +155,18 @@ class AWPreferences(context: Context) {
         )
     }
 
+    // When the SyncScheduler registers the next run (on start or after each completed sync),
+    // it records the epoch-ms of that run here so the UI can display the actual scheduled time
+    // rather than computing it from lastCompletedAt + interval (which diverges after restarts).
+    // Returns 0L if no scheduled time has been recorded yet.
+    fun getSchedulerNextRunAt(): Long {
+        return sharedPreferences.getLong("schedulerNextRunAt", 0L)
+    }
+
+    fun setSchedulerNextRunAt(epochMs: Long) {
+        sharedPreferences.edit().putLong("schedulerNextRunAt", epochMs).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the

@@ -44,22 +44,25 @@ internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): Stri
 }
 
 /**
- * "When will it sync next?" — derived from the existing SyncScheduler interval and the
- * last completed run, with no new persisted state. The scheduler always reschedules
- * SYNC_INTERVAL_MS after the previous run completes (SyncScheduler.performSync), so
- * lastCompletedAt + SYNC_INTERVAL_MS is the real next-run time whenever sync is enabled.
+ * "When will it sync next?" — uses the scheduler's own recorded next-run time
+ * (written by SyncScheduler.start() and after each completed sync) so the displayed
+ * time matches what the scheduler actually has registered. Falls back to
+ * lastCompletedAt + SYNC_INTERVAL_MS when no scheduler time is recorded (e.g. after
+ * a fresh install before the first start() call).
  */
 internal fun formatNextSyncStatus(
     enabled: Boolean,
     lastStatus: SyncStatus?,
     dateFormat: DateFormat,
     now: Long = System.currentTimeMillis(),
+    schedulerNextRunAt: Long? = null,
 ): String {
     if (!enabled) return "Next sync: sync is disabled"
     if (lastStatus == null) {
         return "Next sync: shortly (first sync runs about a minute after ActivityWatch starts)"
     }
-    val nextAt = lastStatus.completedAt + SYNC_INTERVAL_MS
+    val nextAt = schedulerNextRunAt?.takeIf { it > 0L }
+        ?: (lastStatus.completedAt + SYNC_INTERVAL_MS)
     if (nextAt <= now) return "Next sync: due now"
     return "Next sync: ${dateFormat.format(Date(nextAt))}"
 }
@@ -237,6 +240,7 @@ class SyncSettingsActivity : AppCompatActivity() {
             prefs.isSyncEnabled(),
             prefs.getLastSyncStatus(),
             combinedDateTimeFormat(),
+            schedulerNextRunAt = prefs.getSchedulerNextRunAt().takeIf { it > 0L },
         )
     }
 
