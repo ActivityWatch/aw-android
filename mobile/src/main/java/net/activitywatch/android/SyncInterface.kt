@@ -10,6 +10,7 @@ import androidx.documentfile.provider.DocumentFile
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -256,6 +257,7 @@ class SyncInterface(context: Context) {
             },
             mirrorBeforeCallback
         ) {
+            copyPeerFilesFromSafDir()
             syncBoth(BuildConfig.SERVER_PORT, hostname)
         }
     }
@@ -495,6 +497,89 @@ class SyncInterface(context: Context) {
                 counts[1]++
             }
         }
+    }
+
+    /**
+     * Before each full sync, copy peer databases from the user-configured SAF
+     * directory into the internal sync directory so that [syncBoth] can find them.
+     *
+     * Syncthing (or any external file-sync tool) writes peer databases into the
+     * SAF-granted tree as `<hostname>/<device_id>/test.db`.  The internal [syncDir]
+     * is app-private and invisible to those tools, so without this step `pull_all`
+     * inside `syncBoth` always finds zero peers — every run reports "pulled 0"
+     * regardless of how many peers have synced their data into the Syncthing folder.
+     *
+     * We skip the directory whose name matches our own hostname to avoid replacing
+     * live staging files with the one-cycle-stale SAF mirror.  Errors for individual
+     * entries are logged and skipped so a partially-accessible SAF directory does not
+     * abort an otherwise healthy sync pass.
+     */
+    private fun copyPeerFilesFromSafDir() {
+        val uriStr = AWPreferences(appContext).getSyncDirUri() ?: return
+        val safUri = Uri.parse(uriStr)
+        val safDir = DocumentFile.fromTreeUri(appContext, safUri) ?: return
+        if (!safDir.isDirectory) {
+            Log.w(TAG, "SAF peer pre-copy: configured URI is not a directory")
+            return
+        }
+
+        val ownHostname = getDeviceName()
+        val destRoot = File(syncDir)
+        var copied = 0
+        var errors = 0
+
+        for (hostDir in safDir.listFiles()) {
+            if (!hostDir.isDirectory) continue
+            val hostname = hostDir.name ?: continue
+            if (hostname == ownHostname) continue // own staging is authoritative in the internal dir
+
+            val localHostDir = File(destRoot, hostname)
+            localHostDir.mkdirs()
+            val (c, e) = copyFromSafDirectory(hostDir, localHostDir)
+            copied += c
+            errors += e
+        }
+        Log.i(TAG, "SAF peer pre-copy: copied=$copied errors=$errors")
+    }
+
+    /**
+     * Recursively copy [safDir] (a SAF DocumentFile subtree) into [destDir] (a
+     * local File directory), skipping entries that cannot be read.
+     *
+     * Returns (copiedCount, errorCount).
+     */
+    private fun copyFromSafDirectory(safDir: DocumentFile, destDir: File): Pair<Int, Int> {
+        var copied = 0
+        var errors = 0
+        for (entry in safDir.listFiles()) {
+            if (cancelRequested) break
+            val name = entry.name ?: continue
+            try {
+                if (entry.isDirectory) {
+                    val subDest = File(destDir, name)
+                    subDest.mkdirs()
+                    val (c, e) = copyFromSafDirectory(entry, subDest)
+                    copied += c
+                    errors += e
+                } else {
+                    val inp = appContext.contentResolver.openInputStream(entry.uri)
+                    if (inp == null) {
+                        Log.w(TAG, "SAF peer pre-copy: null input stream for $name")
+                        errors++
+                        continue
+                    }
+                    inp.use { FileOutputStream(File(destDir, name)).use { out -> it.copyTo(out) } }
+                    copied++
+                }
+            } catch (e: IOException) {
+                Log.w(TAG, "SAF peer pre-copy: failed to copy $name: ${e.message}")
+                errors++
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SAF peer pre-copy: permission denied for $name: ${e.message}")
+                errors++
+            }
+        }
+        return Pair(copied, errors)
     }
 
     fun getSyncDirectory(): String = syncDir
