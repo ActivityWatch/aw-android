@@ -19,6 +19,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import com.jakewharton.threetenabp.AndroidThreeTen
 import org.json.JSONArray
+import org.json.JSONObject
 import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
 import org.threeten.bp.LocalTime
@@ -32,11 +33,11 @@ private const val BAR_WIDTH = 400
 private const val BAR_HEIGHT = 24
 private const val BAR_CORNER_RADIUS = 12f
 
-// Category accent colors (matching the dots) - these stay constant in both themes
-private val CATEGORY_ACCENT_COLORS = intArrayOf(
-    Color.parseColor("#00BFA5"),  // Teal - category 1
-    Color.parseColor("#7986CB"),  // Purple - category 2
-    Color.parseColor("#42A5F5")   // Blue - category 3
+// Fallback accent colors used when a category has no configured color in aw-webui
+private val FALLBACK_ACCENT_COLORS = intArrayOf(
+    Color.parseColor("#00BFA5"),  // Teal
+    Color.parseColor("#7986CB"),  // Purple
+    Color.parseColor("#42A5F5")   // Blue
 )
 
 /**
@@ -63,6 +64,12 @@ object CategoryTimeWidgetUpdater {
         R.id.app_time_1,
         R.id.app_time_2,
         R.id.app_time_3
+    )
+
+    private val appDotIds = intArrayOf(
+        R.id.app_dot_1,
+        R.id.app_dot_2,
+        R.id.app_dot_3
     )
 
     /**
@@ -108,17 +115,20 @@ object CategoryTimeWidgetUpdater {
                 views.setTextViewText(R.id.widget_minutes, minutes.toString())
 
                 // Draw and set the bar chart
-                val barChartBitmap = createBarChartBitmap(context, categoryData, totalMillis)
+                val configuredColors = parseCategoryColors(ri.getSetting("classes"))
+                val barChartBitmap = createBarChartBitmap(context, categoryData, totalMillis, configuredColors)
                 views.setImageViewBitmap(R.id.widget_bar_chart, barChartBitmap)
 
                 // Update top 3 apps
                 val topApps = categoryData.take(3)
-                
+                val dotColors = resolveBarColors(context, topApps.map { it.first }, configuredColors)
+
                 for (i in 0 until 3) {
                     if (i < topApps.size) {
                         val (name, duration) = topApps[i]
                         views.setTextViewText(appNameIds[i], name)
                         views.setTextViewText(appTimeIds[i], formatDurationShort(duration))
+                        views.setInt(appDotIds[i], "setColorFilter", dotColors[i])
                         views.setViewVisibility(appRowIds[i], View.VISIBLE)
                     } else {
                         views.setViewVisibility(appRowIds[i], View.GONE)
@@ -168,16 +178,63 @@ object CategoryTimeWidgetUpdater {
         }
 
         /**
-         * Get the category colors array, with the "others" color resolved from theme resources
+         * Parse the aw-webui `classes` setting JSON into a map of top-level category
+         * name → CSS hex color string (e.g. "#00BFA5").  Only top-level categories
+         * (name array length == 1) are included.  Returns an empty map on any error.
+         *
+         * This function is kept free of Android APIs so it can be tested on the JVM.
          */
-        private fun getCategoryColors(context: Context): IntArray {
+        internal fun parseCategoryColors(settingsJson: String): Map<String, String> {
+            val result = mutableMapOf<String, String>()
+            val v = settingsJson.trim()
+            if (v == "null" || !v.startsWith("[")) return result
+            try {
+                val array = JSONArray(v)
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val nameArr = obj.optJSONArray("name") ?: continue
+                    if (nameArr.length() != 1) continue  // only top-level categories
+                    val name = nameArr.optString(0) ?: continue
+                    val color = obj.optJSONObject("data")?.optString("color") ?: continue
+                    if (color.isBlank()) continue
+                    result[name] = color
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not parse classes setting for colors", e)
+            }
+            return result
+        }
+
+        /**
+         * Resolve the 4-element color array for the bar chart: top-3 category colors
+         * (from configured settings, falling back to hardcoded defaults) + others color.
+         * Silently skips invalid hex strings and uses the fallback.
+         */
+        internal fun resolveBarColors(
+            context: Context,
+            categoryNames: List<String>,
+            configuredColors: Map<String, String>
+        ): IntArray {
             val othersColor = ContextCompat.getColor(context, R.color.widget_bar_bg)
-            return intArrayOf(
-                CATEGORY_ACCENT_COLORS[0],
-                CATEGORY_ACCENT_COLORS[1],
-                CATEGORY_ACCENT_COLORS[2],
-                othersColor
-            )
+            val colors = IntArray(4) { i ->
+                if (i < 3) {
+                    val name = categoryNames.getOrNull(i)
+                    val hex = if (name != null) configuredColors[name] else null
+                    if (hex != null) {
+                        try {
+                            Color.parseColor(hex)
+                        } catch (_: IllegalArgumentException) {
+                            Log.w(TAG, "Invalid color '$hex' for category '$name', using fallback")
+                            FALLBACK_ACCENT_COLORS[i]
+                        }
+                    } else {
+                        FALLBACK_ACCENT_COLORS[i]
+                    }
+                } else {
+                    othersColor
+                }
+            }
+            return colors
         }
 
         /**
@@ -186,9 +243,11 @@ object CategoryTimeWidgetUpdater {
         private fun createBarChartBitmap(
             context: Context,
             categoryData: List<Pair<String, Long>>,
-            totalMillis: Long
+            totalMillis: Long,
+            configuredColors: Map<String, String> = emptyMap()
         ): Bitmap {
-            val categoryColors = getCategoryColors(context)
+            val categoryNames = categoryData.take(3).map { it.first }
+            val categoryColors = resolveBarColors(context, categoryNames, configuredColors)
             val bitmap = Bitmap.createBitmap(BAR_WIDTH, BAR_HEIGHT, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val paint = Paint().apply {
