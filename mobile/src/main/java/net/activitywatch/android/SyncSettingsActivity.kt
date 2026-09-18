@@ -223,6 +223,7 @@ class SyncSettingsActivity : AppCompatActivity() {
             IntentFilter(AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
         nextSyncRefreshHandler.postDelayed(nextSyncRefreshRunnable, NEXT_SYNC_REFRESH_INTERVAL_MS)
     }
 
