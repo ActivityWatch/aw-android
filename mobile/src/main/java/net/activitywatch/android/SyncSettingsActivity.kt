@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.util.Log
 import android.view.MenuItem
@@ -22,6 +24,12 @@ import java.text.DateFormat
 import java.util.Date
 
 private const val TAG = "SyncSettingsActivity"
+
+// While the screen is visible, "Next sync" is otherwise only refreshed by an explicit event
+// (switch toggle, completed-sync broadcast). Without a periodic tick, a displayed deadline that
+// passes while the user is looking at the screen stays stuck showing the old timestamp instead
+// of flipping to "due now".
+private const val NEXT_SYNC_REFRESH_INTERVAL_MS = 30 * 1000L
 
 internal fun formatSyncStatus(status: SyncStatus?, dateFormat: DateFormat): String {
     if (status == null) return "Last sync: never"
@@ -105,6 +113,14 @@ class SyncSettingsActivity : AppCompatActivity() {
                 updateLastSyncStatus()
                 updateNextSyncStatus()
             }
+        }
+    }
+
+    private val nextSyncRefreshHandler = Handler(Looper.getMainLooper())
+    private val nextSyncRefreshRunnable = object : Runnable {
+        override fun run() {
+            updateNextSyncStatus()
+            nextSyncRefreshHandler.postDelayed(this, NEXT_SYNC_REFRESH_INTERVAL_MS)
         }
     }
 
@@ -207,6 +223,7 @@ class SyncSettingsActivity : AppCompatActivity() {
             IntentFilter(AWPreferences.LAST_SYNC_STATUS_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        nextSyncRefreshHandler.postDelayed(nextSyncRefreshRunnable, NEXT_SYNC_REFRESH_INTERVAL_MS)
     }
 
     override fun onResume() {
@@ -216,6 +233,7 @@ class SyncSettingsActivity : AppCompatActivity() {
 
     override fun onStop() {
         unregisterReceiver(syncStatusReceiver)
+        nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
         super.onStop()
     }
 
