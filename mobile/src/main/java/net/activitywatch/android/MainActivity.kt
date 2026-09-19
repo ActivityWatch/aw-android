@@ -104,6 +104,36 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         }
     }
 
+    private fun openBugReport() {
+        val body = """
+            ## Description
+
+            Describe the problem here.
+
+            ## Steps to reproduce
+
+            1.
+
+            ## Expected behavior
+
+            Describe what you expected to happen.
+
+            ## Environment
+
+            - App version: $version
+            - Android version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})
+        """.trimIndent()
+        val uri = Uri.parse("https://github.com/ActivityWatch/aw-android/issues/new")
+            .buildUpon()
+            .appendQueryParameter("body", body)
+            .build()
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (e: ActivityNotFoundException) {
+            Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
     }
@@ -336,8 +366,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 openDashboardInBrowser()
             }
             R.id.nav_send -> {
-                Snackbar.make(binding.coordinatorLayout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                openBugReport()
             }
         }
 
