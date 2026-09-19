@@ -30,6 +30,8 @@ import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private const val TAG = "MainActivity"
 
@@ -52,6 +54,31 @@ internal fun initialWebUiUrl(
 
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
+
+internal const val BUG_REPORT_ISSUE_URL = "https://github.com/ActivityWatch/aw-android/issues/new"
+
+/** Prefilled GitHub issue URL for the drawer "Report bugs" item. */
+internal fun bugReportUrl(appVersion: String, androidVersion: String, apiLevel: Int): String {
+    val body = """
+        ## Description
+
+        Describe the problem here.
+
+        ## Steps to reproduce
+
+        1.
+
+        ## Expected behavior
+
+        Describe what you expected to happen.
+
+        ## Environment
+
+        - App version: $appVersion
+        - Android version: $androidVersion (API $apiLevel)
+    """.trimIndent()
+    return "$BUG_REPORT_ISSUE_URL?body=${URLEncoder.encode(body, StandardCharsets.UTF_8.name())}"
+}
 
 /** Native Home lives in MainActivity, so it inherits the last WebView chrome unless reset. */
 internal fun shouldResetChromeForNativeDestination(isWebUiDestination: Boolean): Boolean =
@@ -105,28 +132,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     }
 
     private fun openBugReport() {
-        val body = """
-            ## Description
-
-            Describe the problem here.
-
-            ## Steps to reproduce
-
-            1.
-
-            ## Expected behavior
-
-            Describe what you expected to happen.
-
-            ## Environment
-
-            - App version: $version
-            - Android version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})
-        """.trimIndent()
-        val uri = Uri.parse("https://github.com/ActivityWatch/aw-android/issues/new")
-            .buildUpon()
-            .appendQueryParameter("body", body)
-            .build()
+        val uri = Uri.parse(bugReportUrl(version, Build.VERSION.RELEASE, Build.VERSION.SDK_INT))
         try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (e: ActivityNotFoundException) {
