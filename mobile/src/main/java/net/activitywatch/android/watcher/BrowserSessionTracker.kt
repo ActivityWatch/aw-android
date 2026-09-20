@@ -28,7 +28,8 @@ internal class BrowserSessionTracker(
     // logging so we have a chance to receive the page title, which often only arrives
     // after the page loads and/or the user interacts with it.
     fun handleUrl(newUrl: String?, newBrowser: String?, audible: Boolean = false): CompletedBrowserSession? {
-        if (newUrl == lastUrl && newBrowser == lastBrowser) return null
+        // Same page: nothing to log for the url, but playback may have started/stopped.
+        if (newUrl == lastUrl && newBrowser == lastBrowser) return handleAudible(audible)
 
         val completed = completeCurrentSession()
 

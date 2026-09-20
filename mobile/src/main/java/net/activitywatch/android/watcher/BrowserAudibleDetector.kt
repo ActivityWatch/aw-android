@@ -2,55 +2,47 @@ package net.activitywatch.android.watcher
 
 import android.content.ComponentName
 import android.content.Context
-import android.media.AudioManager
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
 import android.util.Log
 
-// Decides the `audible` value for a browser session from the two signals we can get:
+// Reports whether a browser is currently playing audio, for the `audible` field on
+// aw-watcher-android-web events. A browser is considered audible when it owns a media
+// session in STATE_PLAYING (Chrome/Firefox publish one for page audio/video). That needs
+// the MediaWatcher notification-listener access; without it the answer is always false.
 //
-//  * `browserPlaying`: whether the browser package itself owns a media session that is
-//    currently playing. This is the precise signal (Chrome/Firefox publish a media session
-//    for page audio/video) but it needs the MediaWatcher notification-listener access,
-//    so it's null when that isn't granted.
-//  * `musicActive`: AudioManager.isMusicActive(), which is global (any app) and so can't
-//    tell browser audio apart from e.g. a music app playing in the background. Only used
-//    as a coarse fallback when the precise signal is unavailable.
-internal fun resolveAudible(browserPlaying: Boolean?, musicActive: Boolean): Boolean =
-    browserPlaying ?: musicActive
-
+// AudioManager.isMusicActive() is deliberately not used as a fallback: it's device-wide,
+// so a music app in the background would mark silent browser sessions audible, and
+// aw-webui treats audible browser events as not-AFK evidence.
 internal class BrowserAudibleDetector(context: Context) {
     private val TAG = "BrowserAudibleDetector"
     private val appContext = context.applicationContext
     private val listenerComponent = ComponentName(appContext, MediaWatcher::class.java)
     private val sessionManager =
         appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
-    private val audioManager =
-        appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     private var cachedBrowser: String? = null
     private var cachedAt = 0L
     private var cachedResult = false
 
-    // onAccessibilityEvent fires many times a second while scrolling; getActiveSessions is a
-    // binder call, so the answer is cached briefly instead of being recomputed per event.
+    // onAccessibilityEvent runs on the service's main thread and fires many times a second
+    // while scrolling; getActiveSessions is a binder IPC that also builds a MediaController
+    // per session, and blocking that thread is what produced the WebWatcher ANRs in
+    // aw-android#261. So the answer is cached briefly instead of being recomputed per event.
     fun isAudible(browserPackage: String): Boolean {
         val nowMs = SystemClock.elapsedRealtime()
         if (browserPackage == cachedBrowser && nowMs - cachedAt < CACHE_MS) return cachedResult
 
-        cachedResult = resolveAudible(
-            browserPlaying = browserHasPlayingSession(browserPackage),
-            musicActive = audioManager?.isMusicActive == true,
-        )
+        cachedResult = browserHasPlayingSession(browserPackage)
         cachedBrowser = browserPackage
         cachedAt = nowMs
         return cachedResult
     }
 
-    private fun browserHasPlayingSession(browserPackage: String): Boolean? {
-        val manager = sessionManager ?: return null
-        if (!MediaWatcher.isNotificationAccessGranted(appContext)) return null
+    private fun browserHasPlayingSession(browserPackage: String): Boolean {
+        val manager = sessionManager ?: return false
+        if (!MediaWatcher.isNotificationAccessGranted(appContext)) return false
         return try {
             manager.getActiveSessions(listenerComponent).any { controller ->
                 controller.packageName == browserPackage &&
@@ -59,7 +51,7 @@ internal class BrowserAudibleDetector(context: Context) {
         } catch (e: SecurityException) {
             // Access can be revoked between the settings check and the call.
             Log.w(TAG, "Media session access denied: ${e.message}")
-            null
+            false
         }
     }
 
