@@ -1,7 +1,9 @@
 package net.activitywatch.android.watcher
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.threeten.bp.Instant
 
@@ -126,5 +128,70 @@ class BrowserSessionTrackerTest {
 
         checkNotNull(completed)
         assertEquals(0L, completed.duration.seconds)
+    }
+    @Test
+    fun `audible defaults to false and is attached to the completed session`() {
+        val clock = FakeClock(Instant.ofEpochSecond(1000))
+        val tracker = BrowserSessionTracker(clock::now)
+
+        tracker.handleUrl("example.com", "chrome")
+        val first = tracker.handleUrl("example.org", "chrome", audible = true)
+        val second = tracker.handleUrl("example.net", "chrome")
+
+        checkNotNull(first)
+        assertFalse(first.audible)
+        checkNotNull(second)
+        assertTrue(second.audible)
+    }
+
+    @Test
+    fun `audible change splits the session and keeps url browser and title`() {
+        val clock = FakeClock(Instant.ofEpochSecond(1000))
+        val tracker = BrowserSessionTracker(clock::now)
+
+        tracker.handleUrl("example.com", "chrome", audible = false)
+        tracker.handleWindowTitle("Example Domain")
+        clock.advanceSeconds(10)
+        val silent = tracker.handleAudible(true)
+        clock.advanceSeconds(20)
+        val playing = tracker.handleUrl("example.org", "chrome")
+
+        checkNotNull(silent)
+        assertEquals("example.com", silent.url)
+        assertEquals("chrome", silent.browser)
+        assertEquals("Example Domain", silent.title)
+        assertFalse(silent.audible)
+        assertEquals(Instant.ofEpochSecond(1000), silent.start)
+        assertEquals(10L, silent.duration.seconds)
+
+        checkNotNull(playing)
+        assertEquals("example.com", playing.url)
+        assertEquals("Example Domain", playing.title)
+        assertTrue(playing.audible)
+        assertEquals(Instant.ofEpochSecond(1010), playing.start)
+        assertEquals(20L, playing.duration.seconds)
+    }
+
+    @Test
+    fun `unchanged audible state does not split the session`() {
+        val clock = FakeClock(Instant.ofEpochSecond(1000))
+        val tracker = BrowserSessionTracker(clock::now)
+
+        tracker.handleUrl("example.com", "chrome", audible = true)
+        clock.advanceSeconds(5)
+
+        assertNull(tracker.handleAudible(true))
+    }
+
+    @Test
+    fun `audible without an active session is ignored`() {
+        val tracker = BrowserSessionTracker()
+
+        assertNull(tracker.handleAudible(true))
+
+        // Ending a session (window changed away) also leaves nothing to split.
+        tracker.handleUrl("example.com", "chrome")
+        tracker.handleUrl(null, null)
+        assertNull(tracker.handleAudible(true))
     }
 }
