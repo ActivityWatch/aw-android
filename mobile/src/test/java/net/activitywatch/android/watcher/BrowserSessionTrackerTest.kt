@@ -173,6 +173,26 @@ class BrowserSessionTrackerTest {
     }
 
     @Test
+    fun `same url with a changed audible state splits the session via handleUrl`() {
+        val clock = FakeClock(Instant.ofEpochSecond(1000))
+        val tracker = BrowserSessionTracker(clock::now)
+
+        tracker.handleUrl("example.com", "chrome", audible = false)
+        clock.advanceSeconds(10)
+        val silent = tracker.handleUrl("example.com", "chrome", audible = true)
+        clock.advanceSeconds(20)
+        val playing = tracker.handleUrl("example.org", "chrome")
+
+        checkNotNull(silent)
+        assertFalse(silent.audible)
+        assertEquals(10L, silent.duration.seconds)
+        checkNotNull(playing)
+        assertEquals("example.com", playing.url)
+        assertTrue(playing.audible)
+        assertEquals(20L, playing.duration.seconds)
+    }
+
+    @Test
     fun `unchanged audible state does not split the session`() {
         val clock = FakeClock(Instant.ofEpochSecond(1000))
         val tracker = BrowserSessionTracker(clock::now)

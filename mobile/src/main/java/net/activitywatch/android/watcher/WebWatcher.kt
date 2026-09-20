@@ -147,6 +147,7 @@ class WebWatcher : AccessibilityService() {
                         // Still on the previous url; only the audible state may have moved.
                         handleAudible(audible)
                     } else {
+                        // Also covers the same-url case: the tracker splits on an audible change.
                         handleUrl(newUrl, newBrowser = browser, audible = audible)
                     }
                     when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
