@@ -67,6 +67,10 @@ class OnboardingActivity : AppCompatActivity() {
                 // First, check if the user has granted the usage permission
                 if(UsageStatsWatcher.isUsageAllowed(this)) {
                     AWPreferences(this).setFirstTimeRunFlag()
+                    // MainActivity finished itself when it handed off to onboarding, so
+                    // relaunch it here; otherwise the task ends at the launcher and the
+                    // BackgroundService (server + sync) never starts until the next open.
+                    startActivity(Intent(this, MainActivity::class.java))
                     finish()
                 } else {
                     // Show a snackbar and don't finish the activity
