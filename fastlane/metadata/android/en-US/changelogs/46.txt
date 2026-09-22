@@ -1,0 +1,7 @@
+- fix(onboarding): relaunch MainActivity after onboarding finishes (#298)
+- fix(sync): suppress desktop 'zero peers' warning in Sync Settings; show push-only note (#293)
+- fix(widget): read category colors from aw-webui settings (#289)
+- feat(sync): show next scheduled sync time in Sync Settings (#290)
+- fix(android): migrate unsanitized hostname after sanitizer change (#273)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.2
