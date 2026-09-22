@@ -1,7 +1,10 @@
 <resources>
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- Base application theme. DayNight lets Android WebView see the correct
+         prefers-color-scheme value when the user chooses "System" in aw-webui.
+         The AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM call in AWApplication
+         ensures the mode is set before any Activity starts. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>

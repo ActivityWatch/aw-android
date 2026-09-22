@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Text color override to match AppCompat DayNight defaults in dark mode. -->
+    <color name="default_text_color">#FFFFFF</color>
+
     <!-- Widget theme colors (dark mode overrides) -->
     <color name="widget_background">#2A2A2A</color>
     <color name="widget_text_primary">#FFFFFF</color>
