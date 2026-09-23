@@ -88,6 +88,11 @@ class UpgradeWithHistoryTest {
         context.getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean("isFirstTime", false)
             .putBoolean("hasMigratedHostname", true)
+            // Distinct from hasMigratedHostname: without this, startup opens sqlite.db
+            // from Java to rewrite bucket hostnames while the rust worker is switching
+            // journal_mode to WAL. On this 17MB seed that races SQLITE_BUSY, the worker
+            // panics, and events/count stays 500 for the rest of the test.
+            .putString("sanitizedHostnameMigratedTo", hostname)
             .putBoolean("hasMigratedWatcherAndroidBucketNames", false)
             .putBoolean("hasRequestedNotificationPermission", true)
             .commit()
