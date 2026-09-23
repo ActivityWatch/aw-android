@@ -7,6 +7,7 @@ import android.os.Looper
 import android.system.Os
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -130,6 +131,39 @@ data class SyncStatus(
                 warnings = warnings,
                 peers = peers,
             )
+        }
+
+        /**
+         * SharedPreferences encoding for [peers]. Null means "store nothing"
+         * (empty list). Decode never throws: a corrupt prefs value becomes
+         * empty rather than crashing the settings screen.
+         */
+        fun encodePeers(peers: List<SyncPeer>): String? {
+            if (peers.isEmpty()) return null
+            val arr = JSONArray()
+            for (peer in peers) {
+                arr.put(
+                    JSONObject()
+                        .put("hostname", peer.hostname)
+                        .put("outcome", peer.outcome),
+                )
+            }
+            return arr.toString()
+        }
+
+        fun decodePeers(raw: String?): List<SyncPeer> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return try {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).mapNotNull { i ->
+                    val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val hostname = obj.optString("hostname", "").ifBlank { return@mapNotNull null }
+                    val outcome = obj.optString("outcome", "")
+                    SyncPeer(hostname = hostname, outcome = outcome)
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
     }
 }

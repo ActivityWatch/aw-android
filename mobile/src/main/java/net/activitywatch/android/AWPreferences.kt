@@ -119,6 +119,9 @@ class AWPreferences(context: Context) {
                 ?.split("\n")
                 ?.filter { it.isNotEmpty() }
                 ?: emptyList(),
+            peers = SyncStatus.decodePeers(
+                sharedPreferences.getString("lastSyncPeers", null),
+            ),
         )
     }
 
@@ -148,6 +151,12 @@ class AWPreferences(context: Context) {
             editor.remove("lastSyncWarnings")
         } else {
             editor.putString("lastSyncWarnings", status.warnings.joinToString("\n"))
+        }
+        val peersEncoded = SyncStatus.encodePeers(status.peers)
+        if (peersEncoded == null) {
+            editor.remove("lastSyncPeers")
+        } else {
+            editor.putString("lastSyncPeers", peersEncoded)
         }
         editor.apply()
         appContext.sendBroadcast(

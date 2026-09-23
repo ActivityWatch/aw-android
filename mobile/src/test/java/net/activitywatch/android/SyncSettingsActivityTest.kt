@@ -469,4 +469,62 @@ class SyncSettingsActivityTest {
             ),
         )
     }
+
+    @Test
+    fun encodeDecodePeers_roundTripsHostnamesAndOutcomes() {
+        val peers = listOf(
+            SyncPeer("desktop", "imported"),
+            SyncPeer("laptop", "imported"),
+            SyncPeer("workpc", "skipped"),
+            SyncPeer("server", "failed"),
+        )
+        assertEquals(peers, SyncStatus.decodePeers(SyncStatus.encodePeers(peers)))
+    }
+
+    @Test
+    fun encodePeers_returnsNullForEmpty() {
+        assertEquals(null, SyncStatus.encodePeers(emptyList()))
+    }
+
+    @Test
+    fun decodePeers_emptyOnNullOrBlank() {
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers(null))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers(""))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("   "))
+    }
+
+    @Test
+    fun decodePeers_neverThrowsOnMalformed() {
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("not json"))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("{]"))
+    }
+
+    @Test
+    fun formatSyncDetail_usesDecodedPeersAfterPrefsRoundTrip() {
+        // The settings UI reloads through SharedPreferences, so names must
+        // survive encode → decode or the new hostname line never appears.
+        val encoded = SyncStatus.encodePeers(
+            listOf(
+                SyncPeer("desktop", "imported"),
+                SyncPeer("laptop", "imported"),
+                SyncPeer("workpc", "skipped"),
+                SyncPeer("server", "failed"),
+            ),
+        )
+        assertEquals(
+            "pulled 10, pushed 0 · peers 2/4 imported, 1 skipped, 1 failed (desktop, laptop, !server)",
+            formatSyncDetail(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    eventsPulled = 10,
+                    peersImported = 2,
+                    peersSkipped = 1,
+                    peersFailed = 1,
+                    peers = SyncStatus.decodePeers(encoded),
+                ),
+            ),
+        )
+    }
 }
