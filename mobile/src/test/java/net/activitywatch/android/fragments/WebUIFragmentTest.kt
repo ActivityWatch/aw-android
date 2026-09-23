@@ -242,6 +242,15 @@ class WebUIFragmentTest {
     }
 
     @Test
+    fun `streamed export cache is deleted when it can no longer be queued`() {
+        val file = persistExportStream(createTempDir(), "payload".byteInputStream())
+        val pending = PendingExport("orphan.json", "application/json", file)
+        assertTrue(pending.cacheFile.isFile)
+        pending.deleteCache()
+        assertFalse(pending.cacheFile.exists())
+    }
+
+    @Test
     fun `resolveEmbeddedExportUrl accepts loopback and relative API paths`() {
         assertEquals(
             "http://127.0.0.1:5600/api/0/export",

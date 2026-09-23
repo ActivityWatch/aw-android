@@ -549,6 +549,22 @@ class WebUIFragment : Fragment() {
         reloadHandler.postDelayed(reloadRunnable, delay)
     }
 
+    /**
+     * Always run [action] on the main looper.
+     *
+     * JS-bridge callbacks and background fetch completions must not use
+     * `view?.post`: a detached view drops the runnable, so a finished export
+     * is never queued and the cache file leaks. The fragment Handler still
+     * fires after the view is gone; callers then enqueue or delete.
+     */
+    private fun postToUi(action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+        } else {
+            reloadHandler.post(action)
+        }
+    }
+
     override fun onDestroyView() {
         reloadHandler.removeCallbacks(reloadRunnable)
         filePathCallback?.onReceiveValue(null)
@@ -582,14 +598,19 @@ class WebUIFragment : Fragment() {
     }
 
     private fun onExportFromUrl(url: String, filename: String) {
-        val base = webView?.url ?: "http://127.0.0.1:5600/"
-        val resolved = resolveEmbeddedExportUrl(url, base)
-        if (resolved == null || !isEmbeddedActivityWatchUrl(resolved)) {
-            Log.w(TAG, "Rejected export URL: $url")
-            showExportToast(getString(R.string.export_save_failed), long = true)
-            return
+        // @JavascriptInterface runs on the WebView bridge thread. webView.url
+        // (and Toast) are UI-thread only.
+        postToUi {
+            if (!isAdded) return@postToUi
+            val base = webView?.url ?: "http://127.0.0.1:5600/"
+            val resolved = resolveEmbeddedExportUrl(url, base)
+            if (resolved == null || !isEmbeddedActivityWatchUrl(resolved)) {
+                Log.w(TAG, "Rejected export URL: $url")
+                showExportToast(getString(R.string.export_save_failed), long = true)
+                return@postToUi
+            }
+            downloadEmbeddedExport(resolved, filename, inferExportMimeType(filename, null))
         }
-        downloadEmbeddedExport(resolved, filename, inferExportMimeType(filename, null))
     }
 
     private fun downloadEmbeddedExport(url: String, filename: String, mimeType: String?) {
@@ -619,17 +640,15 @@ class WebUIFragment : Fragment() {
                     connection.disconnect()
                 }
             }
-            view?.post {
-                result.fold(
-                    onSuccess = { file ->
-                        queueExportFile(file, safeName, resolvedMime)
-                    },
-                    onFailure = { error ->
-                        Log.e(TAG, "Failed to fetch export from $url", error)
-                        showExportToast(getString(R.string.export_save_failed), long = true)
-                    },
-                )
-            }
+            result.fold(
+                onSuccess = { file ->
+                    queueExportFile(file, safeName, resolvedMime)
+                },
+                onFailure = { error ->
+                    Log.e(TAG, "Failed to fetch export from $url", error)
+                    notifyExportFailed()
+                },
+            )
         }
     }
 
@@ -654,28 +673,21 @@ class WebUIFragment : Fragment() {
     }
 
     private fun notifyExportFailed() {
-        val notify = {
-            showExportToast(getString(R.string.export_save_failed), long = true)
+        postToUi {
+            if (isAdded) {
+                showExportToast(getString(R.string.export_save_failed), long = true)
+            }
         }
-        view?.post(notify) ?: if (isAdded) requireActivity().runOnUiThread(notify) else Unit
     }
 
     private fun enqueuePending(pending: PendingExport) {
-        val enqueue = {
+        postToUi {
             if (isAdded) {
                 exportQueue.enqueue(pending)
                 launchNextExportPicker()
             } else {
                 pending.deleteCache()
             }
-        }
-        val view = view
-        if (view != null) {
-            view.post(enqueue)
-        } else if (isAdded) {
-            requireActivity().runOnUiThread(enqueue)
-        } else {
-            pending.deleteCache()
         }
     }
 
