@@ -73,6 +73,8 @@ class WebUIFragmentTest {
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.beginExport"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.appendExport"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.finishExport"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("Android.exportFromUrl"))
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("XMLHttpRequest.prototype"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("var CHUNK = $EXPORT_BRIDGE_CHUNK_SIZE;"))
         assertTrue(EXPORT_BRIDGE_CHUNK_SIZE < 1024 * 1024)
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("/\\.csv$/i"))
@@ -229,6 +231,38 @@ class WebUIFragmentTest {
         val file = persistExportPayload(createTempDir(), "{\"ok\":true}")
         assertTrue(file.isFile)
         assertEquals("{\"ok\":true}", file.readText())
+    }
+
+    @Test
+    fun `persistExportStream copies bytes without holding a string`() {
+        val payload = ByteArray(64 * 1024) { it.toByte() }
+        val file = persistExportStream(createTempDir(), payload.inputStream())
+        assertTrue(file.isFile)
+        assertEquals(payload.toList(), file.readBytes().toList())
+    }
+
+    @Test
+    fun `resolveEmbeddedExportUrl accepts loopback and relative API paths`() {
+        assertEquals(
+            "http://127.0.0.1:5600/api/0/export",
+            resolveEmbeddedExportUrl("/api/0/export", "http://127.0.0.1:5600/#/buckets"),
+        )
+        assertEquals(
+            "http://127.0.0.1:5600/api/0/buckets/aw-watcher/export",
+            resolveEmbeddedExportUrl("http://127.0.0.1:5600/api/0/buckets/aw-watcher/export"),
+        )
+        assertNull(resolveEmbeddedExportUrl("   "))
+    }
+
+    @Test
+    fun `WebAppInterface exportFromUrl reaches the native downloader`() {
+        val received = mutableListOf<Pair<String, String>>()
+        val bridge = WebAppInterface(
+            onExport = { _, _, _ -> error("string export must not run") },
+            onExportUrl = { url, filename -> received.add(url to filename) },
+        )
+        bridge.exportFromUrl("/api/0/export", "aw-bucket-export.json")
+        assertEquals(listOf("/api/0/export" to "aw-bucket-export.json"), received)
     }
 
     private fun cachedExport(dir: File, name: String, content: String): PendingExport {

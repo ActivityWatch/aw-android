@@ -151,6 +151,29 @@ internal val ANDROID_EXPORT_HOOK_JS = """
     event.stopPropagation();
     window.__awAndroidSendBlob(href, el.getAttribute('download') || 'export');
   }, true);
+
+  // JSON bucket exports go through axios today. Abort that XHR and stream
+  // natively so a 30s timeout / JSON.parse of 500k events cannot kill the save.
+  var xhr = XMLHttpRequest.prototype;
+  var origOpen = xhr.open;
+  var origSend = xhr.send;
+  xhr.open = function (method, url) {
+    this.__awExportUrl = typeof url === 'string' ? url : '';
+    return origOpen.apply(this, arguments);
+  };
+  xhr.send = function () {
+    var url = this.__awExportUrl || '';
+    var match = url.match(/\/0\/(?:buckets\/([^/?#]+)\/)?export(?:[?#]|$)/);
+    if (match && typeof Android !== 'undefined' && Android.exportFromUrl) {
+      var filename = match[1]
+        ? ('aw-bucket-export-' + decodeURIComponent(match[1]) + '.json')
+        : 'aw-bucket-export.json';
+      Android.exportFromUrl(url, filename);
+      this.abort();
+      return;
+    }
+    return origSend.apply(this, arguments);
+  };
 })();
 """.trimIndent()
 
@@ -253,9 +276,36 @@ internal fun readExportSnapshot(state: Bundle): ExportQueueSnapshot? {
 }
 
 internal fun persistExportPayload(cacheDir: File, content: String): File {
+    return persistExportStream(cacheDir, content.byteInputStream(StandardCharsets.UTF_8))
+}
+
+internal fun persistExportStream(cacheDir: File, input: java.io.InputStream): File {
     val dir = File(cacheDir, "exports").apply { mkdirs() }
-    return File(dir, "${java.util.UUID.randomUUID()}.export").apply {
-        writeText(content, StandardCharsets.UTF_8)
+    val file = File(dir, "${java.util.UUID.randomUUID()}.export")
+    try {
+        file.outputStream().use { output -> input.copyTo(output) }
+    } catch (e: Exception) {
+        if (file.exists() && !file.delete()) {
+            Log.w(TAG, "Failed to delete incomplete export cache ${file.name}")
+        }
+        throw e
+    }
+    return file
+}
+
+internal fun resolveEmbeddedExportUrl(url: String, baseUrl: String = "http://127.0.0.1:5600/"): String? {
+    val trimmed = url.trim()
+    if (trimmed.isEmpty()) {
+        return null
+    }
+    return try {
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed
+        } else {
+            URI(baseUrl).resolve(trimmed).toString()
+        }
+    } catch (_: Exception) {
+        null
     }
 }
 
@@ -484,7 +534,7 @@ class WebUIFragment : Fragment() {
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
         myWebView.addJavascriptInterface(
-            WebAppInterface(::queueExport, ::onColorSchemeReported),
+            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl),
             "Android",
         )
         arguments?.let {
@@ -531,13 +581,29 @@ class WebUIFragment : Fragment() {
         }
     }
 
+    private fun onExportFromUrl(url: String, filename: String) {
+        val base = webView?.url ?: "http://127.0.0.1:5600/"
+        val resolved = resolveEmbeddedExportUrl(url, base)
+        if (resolved == null || !isEmbeddedActivityWatchUrl(resolved)) {
+            Log.w(TAG, "Rejected export URL: $url")
+            showExportToast(getString(R.string.export_save_failed), long = true)
+            return
+        }
+        downloadEmbeddedExport(resolved, filename, inferExportMimeType(filename, null))
+    }
+
     private fun downloadEmbeddedExport(url: String, filename: String, mimeType: String?) {
         val token = context?.let { ensureDashboardApiKey(it) }.orEmpty()
+        val cacheDir = context?.applicationContext?.cacheDir ?: return
+        val safeName = sanitizeExportFilename(filename)
+        val resolvedMime = inferExportMimeType(safeName, mimeType)
         thread(name = "aw-export-fetch") {
             val result = runCatching {
                 val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 15_000
-                    readTimeout = 60_000
+                    // Streamed exports send headers immediately, then trickle
+                    // events. Allow long gaps without holding the JSON in RAM.
+                    readTimeout = 120_000
                     instanceFollowRedirects = true
                     if (token.isNotEmpty()) {
                         setRequestProperty("Authorization", "Bearer $token")
@@ -548,15 +614,15 @@ class WebUIFragment : Fragment() {
                     if (code !in 200..299) {
                         error("export HTTP $code")
                     }
-                    connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                    persistExportStream(cacheDir, connection.inputStream)
                 } finally {
                     connection.disconnect()
                 }
             }
             view?.post {
                 result.fold(
-                    onSuccess = { body ->
-                        queueExport(body, filename, inferExportMimeType(filename, mimeType))
+                    onSuccess = { file ->
+                        queueExportFile(file, safeName, resolvedMime)
                     },
                     onFailure = { error ->
                         Log.e(TAG, "Failed to fetch export from $url", error)
@@ -576,12 +642,25 @@ class WebUIFragment : Fragment() {
             PendingExport(safeName, resolvedMime, persistExportPayload(cacheDir, content))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to persist export payload", e)
-            val notify = {
-                showExportToast(getString(R.string.export_save_failed), long = true)
-            }
-            view?.post(notify) ?: if (isAdded) requireActivity().runOnUiThread(notify) else Unit
+            notifyExportFailed()
             return
         }
+        enqueuePending(pending)
+    }
+
+    private fun queueExportFile(file: File, filename: String, mimeType: String) {
+        Log.i(TAG, "Export save requested: $filename ($mimeType, ${file.length()} bytes)")
+        enqueuePending(PendingExport(filename, mimeType, file))
+    }
+
+    private fun notifyExportFailed() {
+        val notify = {
+            showExportToast(getString(R.string.export_save_failed), long = true)
+        }
+        view?.post(notify) ?: if (isAdded) requireActivity().runOnUiThread(notify) else Unit
+    }
+
+    private fun enqueuePending(pending: PendingExport) {
         val enqueue = {
             if (isAdded) {
                 exportQueue.enqueue(pending)
@@ -754,6 +833,7 @@ internal fun writeExport(context: Context, uri: Uri, source: File): Boolean {
 class WebAppInterface(
     private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
     private val onColorScheme: (String) -> Unit = {},
+    private val onExportUrl: (url: String, filename: String) -> Unit = { _, _ -> },
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -803,5 +883,10 @@ class WebAppInterface(
     @JavascriptInterface
     fun reportColorScheme(scheme: String) {
         onColorScheme(scheme)
+    }
+
+    @JavascriptInterface
+    fun exportFromUrl(url: String, filename: String) {
+        onExportUrl(url, filename)
     }
 }
