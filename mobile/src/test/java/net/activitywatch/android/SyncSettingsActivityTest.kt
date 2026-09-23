@@ -385,4 +385,146 @@ class SyncSettingsActivityTest {
         assertEquals(0, status.eventsPulled)
         assertEquals(2, status.eventsPushed)
     }
+
+    @Test
+    fun fromJniResponse_parsesPeersArray() {
+        val status = SyncStatus.fromJniResponse(
+            """
+            {
+              "success": true,
+              "events_pulled": 10,
+              "events_pushed": 0,
+              "peers_imported": 2,
+              "peers_skipped": 1,
+              "peers_failed": 1,
+              "peers": [
+                {"device_id": "abc", "hostname": "desktop", "path": "/sync/desktop", "outcome": {"kind": "imported"}, "buckets": []},
+                {"device_id": "def", "hostname": "laptop", "path": "/sync/laptop", "outcome": {"kind": "imported"}, "buckets": []},
+                {"device_id": "ghi", "hostname": "workpc", "path": "/sync/workpc", "outcome": {"kind": "skipped", "reason": "up to date"}, "buckets": []},
+                {"device_id": "jkl", "hostname": "server", "path": "/sync/server", "outcome": {"kind": "failed", "error": "read error"}, "buckets": []}
+              ]
+            }
+            """.trimIndent(),
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(4, status.peers.size)
+        assertEquals(SyncPeer("desktop", "imported"), status.peers[0])
+        assertEquals(SyncPeer("laptop", "imported"), status.peers[1])
+        assertEquals(SyncPeer("workpc", "skipped"), status.peers[2])
+        assertEquals(SyncPeer("server", "failed"), status.peers[3])
+    }
+
+    @Test
+    fun fromJniResponse_emptyPeersWhenNoPeersKey() {
+        val status = SyncStatus.fromJniResponse(
+            """{"success": true, "events_pulled": 0, "peers_imported": 1}""",
+            completedAt = 1_788_226_200_000L,
+        )
+
+        assertEquals(emptyList<SyncPeer>(), status.peers)
+    }
+
+    @Test
+    fun formatSyncDetail_appendsImportedAndFailedPeerNames() {
+        // Per-peer hostnames appear in parens after the aggregate text.
+        // Skipped peers are intentionally omitted (not notable in normal operation).
+        // Failed peers are prefixed with "!" to distinguish them without extra prose.
+        assertEquals(
+            "pulled 10, pushed 0 · peers 2/4 imported, 1 skipped, 1 failed (desktop, laptop, !server)",
+            formatSyncDetail(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    eventsPulled = 10,
+                    peersImported = 2,
+                    peersSkipped = 1,
+                    peersFailed = 1,
+                    peers = listOf(
+                        SyncPeer("desktop", "imported"),
+                        SyncPeer("laptop", "imported"),
+                        SyncPeer("workpc", "skipped"),
+                        SyncPeer("server", "failed"),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncDetail_omitsParensWhenNoPeers() {
+        // Older native libs return no peers array; aggregate text stays unchanged.
+        assertEquals(
+            "pulled 10, pushed 0 · peers 2/3 imported, 1 skipped",
+            formatSyncDetail(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    eventsPulled = 10,
+                    peersImported = 2,
+                    peersSkipped = 1,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun encodeDecodePeers_roundTripsHostnamesAndOutcomes() {
+        val peers = listOf(
+            SyncPeer("desktop", "imported"),
+            SyncPeer("laptop", "imported"),
+            SyncPeer("workpc", "skipped"),
+            SyncPeer("server", "failed"),
+        )
+        assertEquals(peers, SyncStatus.decodePeers(SyncStatus.encodePeers(peers)))
+    }
+
+    @Test
+    fun encodePeers_returnsNullForEmpty() {
+        assertEquals(null, SyncStatus.encodePeers(emptyList()))
+    }
+
+    @Test
+    fun decodePeers_emptyOnNullOrBlank() {
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers(null))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers(""))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("   "))
+    }
+
+    @Test
+    fun decodePeers_neverThrowsOnMalformed() {
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("not json"))
+        assertEquals(emptyList<SyncPeer>(), SyncStatus.decodePeers("{]"))
+    }
+
+    @Test
+    fun formatSyncDetail_usesDecodedPeersAfterPrefsRoundTrip() {
+        // The settings UI reloads through SharedPreferences, so names must
+        // survive encode → decode or the new hostname line never appears.
+        val encoded = SyncStatus.encodePeers(
+            listOf(
+                SyncPeer("desktop", "imported"),
+                SyncPeer("laptop", "imported"),
+                SyncPeer("workpc", "skipped"),
+                SyncPeer("server", "failed"),
+            ),
+        )
+        assertEquals(
+            "pulled 10, pushed 0 · peers 2/4 imported, 1 skipped, 1 failed (desktop, laptop, !server)",
+            formatSyncDetail(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    eventsPulled = 10,
+                    peersImported = 2,
+                    peersSkipped = 1,
+                    peersFailed = 1,
+                    peers = SyncStatus.decodePeers(encoded),
+                ),
+            ),
+        )
+    }
 }
