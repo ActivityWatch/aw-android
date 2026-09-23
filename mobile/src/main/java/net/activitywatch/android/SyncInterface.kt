@@ -17,6 +17,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "SyncInterface"
 
+/**
+ * Per-peer summary from a single sync pass. Carries only the fields needed for
+ * the UI: hostname (human-readable device name) and outcome kind. Full detail
+ * (buckets, path) stays in the Rust layer.
+ */
+data class SyncPeer(
+    val hostname: String,
+    // "imported", "skipped", or "failed" — the "kind" field from PeerOutcome
+    val outcome: String,
+)
+
 data class SyncStatus(
     val completedAt: Long,
     val success: Boolean,
@@ -38,6 +49,9 @@ data class SyncStatus(
     val peersSkipped: Int = 0,
     val peersFailed: Int = 0,
     val warnings: List<String> = emptyList(),
+    // Per-peer breakdown from the "peers" array in the JNI response. Empty for
+    // older native libs that pre-date the SyncReport JNI output.
+    val peers: List<SyncPeer> = emptyList(),
 ) {
     companion object {
         const val MAX_ERROR_CHARS = 500
@@ -87,6 +101,15 @@ data class SyncStatus(
                     .take(MAX_WARNINGS)
             } ?: emptyList()
 
+            val peers = json.optJSONArray("peers")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    val peer = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val hostname = peer.optString("hostname", "").ifBlank { return@mapNotNull null }
+                    val outcome = peer.optJSONObject("outcome")?.optString("kind", "") ?: ""
+                    SyncPeer(hostname = hostname, outcome = outcome)
+                }
+            } ?: emptyList()
+
             return SyncStatus(
                 completedAt = completedAt,
                 success = success,
@@ -105,6 +128,7 @@ data class SyncStatus(
                 peersSkipped = json.optInt("peers_skipped", 0).coerceAtLeast(0),
                 peersFailed = json.optInt("peers_failed", 0).coerceAtLeast(0),
                 warnings = warnings,
+                peers = peers,
             )
         }
     }
