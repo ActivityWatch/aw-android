@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Text color override to match AppCompat DayNight defaults in dark mode. -->
-    <color name="default_text_color">#FFFFFF</color>
+    <!-- Do not override default_text_color here. Native Auth/Sync/Onboarding
+         keep light chrome via applySafeWindowInsets(); a night white text
+         color would be unreadable on that background (aw-android#301 P1). -->
 
     <!-- Widget theme colors (dark mode overrides) -->
     <color name="widget_background">#2A2A2A</color>
