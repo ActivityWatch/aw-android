@@ -10,6 +10,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Configurator
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.watcher.utils.MAX_CONDITION_WAIT_TIME_MILLIS
 import net.activitywatch.android.watcher.utils.PAGE_MAX_WAIT_TIME_MILLIS
@@ -18,6 +22,7 @@ import net.activitywatch.android.watcher.utils.createCustomTabsWrapper
 import org.awaitility.Awaitility.await
 import org.hamcrest.TypeSafeMatcher
 import org.junit.Assume
+import org.junit.Assert.assertFalse
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Rule
@@ -58,6 +63,7 @@ class WebWatcherTest {
 
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
+            val focusedText = if (browser == "com.brave.browser") typeInFocusedBraveBar() else null
             openHome() // to commit last event
 
             val matchers = testWebPages.map { it.toMatcher(browser) }
@@ -68,6 +74,31 @@ class WebWatcherTest {
 
                 matchers.all { matcher -> events.any { matcher.matches(it) } }
             }
+            if (focusedText != null) {
+                val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
+                assertFalse(events.any { it.getJSONObject("data").optString("url") == focusedText })
+            }
+        }
+    }
+
+    private fun typeInFocusedBraveBar(): String {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(testWebPages.first().url))
+            .setPackage("com.brave.browser").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+
+        val configurator = Configurator.getInstance()
+        val previousFlags = configurator.uiAutomationFlags
+        configurator.uiAutomationFlags = FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES
+        return try {
+            val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+            checkNotNull(device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar")), 5_000)).click()
+            val bar = device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar").focused(true)), 5_000)
+            val text = "focus-${System.currentTimeMillis()}.invalid"
+            checkNotNull(bar).text = text
+            device.waitForIdle()
+            text
+        } finally {
+            configurator.uiAutomationFlags = previousFlags
         }
     }
 
@@ -120,8 +151,9 @@ data class WebPage(val url: String, val title: String) {
         expectedBrowser = expectedBrowser,
     )
 
-    // Samsung Internet does not match title at all as no android.webkit.WebView node is present
-    private fun shouldMatchTitle(browser: String) = browser != "com.sec.android.app.sbrowser"
+    // Samsung Internet and Brave do not expose page titles through the WebView node.
+    private fun shouldMatchTitle(browser: String) =
+        browser != "com.sec.android.app.sbrowser" && browser != "com.brave.browser"
 }
 
 class WebWatcherEventMatcher(

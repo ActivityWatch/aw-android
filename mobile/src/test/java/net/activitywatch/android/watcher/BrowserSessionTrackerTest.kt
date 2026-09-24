@@ -66,6 +66,18 @@ class BrowserSessionTrackerTest {
     }
 
     @Test
+    fun `unavailable url ends the previous browser session`() {
+        val tracker = BrowserSessionTracker()
+        tracker.handleUrl("example.com", "chrome")
+
+        val completed = tracker.handleUrl(null, null)
+
+        checkNotNull(completed)
+        assertEquals("example.com", completed.url)
+        assertEquals("chrome", completed.browser)
+    }
+
+    @Test
     fun `title set before the url changes is attached to the completed session`() {
         val clock = FakeClock(Instant.ofEpochSecond(1000))
         val tracker = BrowserSessionTracker(clock::now)
