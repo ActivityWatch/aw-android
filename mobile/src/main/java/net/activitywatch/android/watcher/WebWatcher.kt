@@ -117,16 +117,17 @@ class WebWatcher : AccessibilityService() {
         }
 
         try {
+            val browser = packageName!!
+            val newUrl = extractUrl(browser, event)
+            if (newUrl == null) {
+                maybeDumpTree(browser)
+                if (windowChanged) handleUrl(null, newBrowser = null)
+            } else {
+                handleUrl(newUrl, newBrowser = browser)
+            }
+
             event.source?.let { source ->
                 try {
-                    val browser = packageName!!
-                    val newUrl = extractUrl(browser, event)
-
-                    if (newUrl == null) {
-                        maybeDumpTree(browser)
-                    } else {
-                        handleUrl(newUrl, newBrowser = browser)
-                    }
                     findWebView(source)?.let { webView ->
                         handleWindowTitle(webView.text.toString())
                         if (webView !== source) webView.recycle()
