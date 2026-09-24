@@ -11,6 +11,7 @@ import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import net.activitywatch.android.RustInterface
@@ -62,18 +63,7 @@ class WebWatcherTest {
 
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
-            val focusedText = if (browser == "com.brave.browser") {
-                val launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse(testWebPages.first().url))
-                    .setPackage(browser).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(launchIntent)
-                val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-                checkNotNull(device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar")), 5_000)).click()
-                val bar = device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar").focused(true)), 5_000)
-                val text = "focus-${System.currentTimeMillis()}.invalid"
-                checkNotNull(bar).text = text
-                device.waitForIdle()
-                text
-            } else null
+            val focusedText = if (browser == "com.brave.browser") typeInFocusedBraveBar() else null
             openHome() // to commit last event
 
             val matchers = testWebPages.map { it.toMatcher(browser) }
@@ -88,6 +78,27 @@ class WebWatcherTest {
                 val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
                 assertFalse(events.any { it.getJSONObject("data").optString("url") == focusedText })
             }
+        }
+    }
+
+    private fun typeInFocusedBraveBar(): String {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(testWebPages.first().url))
+            .setPackage("com.brave.browser").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+
+        val configurator = Configurator.getInstance()
+        val previousFlags = configurator.uiAutomationFlags
+        configurator.uiAutomationFlags = FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES
+        return try {
+            val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+            checkNotNull(device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar")), 5_000)).click()
+            val bar = device.wait(Until.findObject(By.res("com.brave.browser:id/url_bar").focused(true)), 5_000)
+            val text = "focus-${System.currentTimeMillis()}.invalid"
+            checkNotNull(bar).text = text
+            device.waitForIdle()
+            text
+        } finally {
+            configurator.uiAutomationFlags = previousFlags
         }
     }
 
