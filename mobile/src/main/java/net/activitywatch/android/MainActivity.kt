@@ -30,6 +30,8 @@ import net.activitywatch.android.databinding.ActivityMainBinding
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private const val TAG = "MainActivity"
 
@@ -52,6 +54,31 @@ internal fun initialWebUiUrl(
 
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
+
+internal const val BUG_REPORT_ISSUE_URL = "https://github.com/ActivityWatch/aw-android/issues/new"
+
+/** Prefilled GitHub issue URL for the drawer "Report bugs" item. */
+internal fun bugReportUrl(appVersion: String, androidVersion: String, apiLevel: Int): String {
+    val body = """
+        ## Description
+
+        Describe the problem here.
+
+        ## Steps to reproduce
+
+        1.
+
+        ## Expected behavior
+
+        Describe what you expected to happen.
+
+        ## Environment
+
+        - App version: $appVersion
+        - Android version: $androidVersion (API $apiLevel)
+    """.trimIndent()
+    return "$BUG_REPORT_ISSUE_URL?body=${URLEncoder.encode(body, StandardCharsets.UTF_8.name())}"
+}
 
 /** Native Home lives in MainActivity, so it inherits the last WebView chrome unless reset. */
 internal fun shouldResetChromeForNativeDestination(isWebUiDestination: Boolean): Boolean =
@@ -99,6 +126,15 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private fun openDashboardInBrowser(url: String = baseURL) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+        } catch (e: ActivityNotFoundException) {
+            Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openBugReport() {
+        val uri = Uri.parse(bugReportUrl(version, Build.VERSION.RELEASE, Build.VERSION.SDK_INT))
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (e: ActivityNotFoundException) {
             Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
         }
@@ -336,8 +372,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 openDashboardInBrowser()
             }
             R.id.nav_send -> {
-                Snackbar.make(binding.coordinatorLayout, "The send button was clicked, but it's not yet implemented!", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+                openBugReport()
             }
         }
 
