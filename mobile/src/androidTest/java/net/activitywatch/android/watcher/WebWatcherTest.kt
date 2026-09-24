@@ -120,8 +120,9 @@ data class WebPage(val url: String, val title: String) {
         expectedBrowser = expectedBrowser,
     )
 
-    // Samsung Internet does not match title at all as no android.webkit.WebView node is present
-    private fun shouldMatchTitle(browser: String) = browser != "com.sec.android.app.sbrowser"
+    // Samsung Internet and Brave do not expose page titles through the WebView node.
+    private fun shouldMatchTitle(browser: String) =
+        browser != "com.sec.android.app.sbrowser" && browser != "com.brave.browser"
 }
 
 class WebWatcherEventMatcher(

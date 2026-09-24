@@ -8,18 +8,24 @@ import android.view.accessibility.AccessibilityNodeInfo
 import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 
-private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? {
-    event.source?.let { source ->
-        val nodes = source.findAccessibilityNodeInfosByViewId(viewId)
-        try {
-            return processExtractedText(nodes.firstOrNull()?.text?.toString())
-        } finally {
-            nodes.forEach { it.recycle() }
-            source.recycle()
-        }
+private fun extractTextByViewId(
+    source: AccessibilityNodeInfo?,
+    viewId: String,
+    ignoreFocused: Boolean = false,
+): String? {
+    source ?: return null
+    val nodes = source.findAccessibilityNodeInfosByViewId(viewId)
+    try {
+        val node = nodes.firstOrNull()?.takeUnless { ignoreFocused && it.isFocused }
+        return processExtractedText(node?.text?.toString())
+    } finally {
+        nodes.forEach { it.recycle() }
+        source.recycle()
     }
-    return null
 }
+
+private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? =
+    extractTextByViewId(event.source, viewId)
 
 class WebWatcher : AccessibilityService() {
 
@@ -50,6 +56,8 @@ class WebWatcher : AccessibilityService() {
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
         "com.android.chrome" -> extractTextByViewId(event, "com.android.chrome:id/url_bar")
+        // Page events omit Brave's toolbar; the focused address bar may show a search hint.
+        "com.brave.browser" -> extractTextByViewId(rootInActiveWindow, "com.brave.browser:id/url_bar", ignoreFocused = true)
         "org.mozilla.firefox" ->
             // Compose toolbar (current)
             extractFirefoxUrl(event)
@@ -206,6 +214,7 @@ class WebWatcher : AccessibilityService() {
     companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
+            "com.brave.browser",
             "org.mozilla.firefox",
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
