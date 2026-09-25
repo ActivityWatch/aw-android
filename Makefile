@@ -170,7 +170,7 @@ build-apk-per-abi: $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_
 			echo "No key secrets set, not signing $$out"; \
 			mv $$tmp $$out; \
 		elif [ "$(RELEASE_TYPE)" = debug ]; then \
-			./scripts/sign_apk_debug.sh $$tmp $$out; \
+			./scripts/sign_apk_debug.sh $$tmp $$out $<; \
 		else \
 			echo "No key secrets set, not signing $$out"; \
 			mv $$tmp $$out; \
