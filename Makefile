@@ -140,15 +140,21 @@ endif
 
 # Per-ABI APKs, e.g. dist/aw-android-arm64-v8a.apk (aw-android#61).
 # The universal APK carries native libs for every ABI, which puts it well over
-# 200MB. Each per-ABI APK is the same unsigned APK with the other ABIs' lib/
-# dirs (and any stale v1 signature files listing them) removed, then signed
-# the same way as dist/aw-android.apk.
+# 200MB. Each per-ABI APK is the same APK with the other ABIs' lib/ dirs (and
+# any stale v1 signature files listing them) removed, then signed the same way
+# as dist/aw-android.apk. With no release secrets a *debug* build is re-signed
+# with the debug keystore instead: Gradle signed it before we rewrote the
+# archive, and a signature that no longer verifies cannot be installed.
 # ABIs are read from the APK itself, so debug builds (abiFilters) only yield
 # the ABIs they actually contain.
 build-apk-per-abi: $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE_UNSIGNED).apk
 	mkdir -p dist
+	@# Per-ABI outputs from an earlier build would otherwise survive a debug
+	@# build that only covers abiFilters, leaving two builds mixed in dist/.
+	@# The universal dist/aw-android.apk is spelled differently and stays.
+	rm -f dist/aw-android-*.apk
 	@set -ef; \
-	abis=$$(unzip -Z1 $< 'lib/*' | cut -d/ -f2 | sort -u); \
+	abis=$$(unzip -Z1 $< 'lib/*' | cut -d/ -f2 | grep -v '^$$' | sort -u); \
 	if [ -z "$$abis" ]; then echo "No native libs found in $<"; exit 1; fi; \
 	for abi in $$abis; do \
 		out=dist/aw-android-$$abi.apk; tmp=dist/aw-android-$$abi.unsigned.apk; \
@@ -160,9 +166,19 @@ build-apk-per-abi: $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_
 		fi; \
 		if [ "$(HAS_SECRETS)" = true ]; then \
 			./scripts/sign_apk.sh $$tmp $$out; rm -f $$tmp.idsig; \
+		elif [ -z "$$others" ]; then \
+			echo "No key secrets set, not signing $$out"; \
+			mv $$tmp $$out; \
+		elif [ "$(RELEASE_TYPE)" = debug ]; then \
+			./scripts/sign_apk_debug.sh $$tmp $$out; \
 		else \
 			echo "No key secrets set, not signing $$out"; \
 			mv $$tmp $$out; \
+		fi; \
+		got=$$(unzip -Z1 $$out 'lib/*' | cut -d/ -f2 | grep -v '^$$' | sort -u); \
+		if [ "$$got" != "$$abi" ]; then \
+			echo "$$out contains ABIs '$$got', expected only '$$abi'"; \
+			exit 1; \
 		fi; \
 	done
 
