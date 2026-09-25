@@ -39,7 +39,7 @@ dist/aw-android.apks:
 
 # Extracts device-specific APKs from the apks bundle
 build-device-specific-apks:
-	# TODO: add arm(7), x86, x86_64
+	@# For distributable per-ABI APKs, use build-apk-per-abi instead (aw-android#61).
 	$(BUNDLETOOL) \
 		extract-apks \
 		--apks=dist/aw-android.apks \
@@ -137,6 +137,34 @@ ifneq ($(HAS_SECRETS), true)
 else
 	./scripts/sign_apk.sh $< $@
 endif
+
+# Per-ABI APKs, e.g. dist/aw-android-arm64-v8a.apk (aw-android#61).
+# The universal APK carries native libs for every ABI, which puts it well over
+# 200MB. Each per-ABI APK is the same unsigned APK with the other ABIs' lib/
+# dirs (and any stale v1 signature files listing them) removed, then signed
+# the same way as dist/aw-android.apk.
+# ABIs are read from the APK itself, so debug builds (abiFilters) only yield
+# the ABIs they actually contain.
+build-apk-per-abi: $(APKDIR)/standard/$(RELEASE_TYPE)/mobile-standard-$(RELEASE_TYPE_UNSIGNED).apk
+	mkdir -p dist
+	@set -ef; \
+	abis=$$(unzip -Z1 $< 'lib/*' | cut -d/ -f2 | sort -u); \
+	if [ -z "$$abis" ]; then echo "No native libs found in $<"; exit 1; fi; \
+	for abi in $$abis; do \
+		out=dist/aw-android-$$abi.apk; tmp=dist/aw-android-$$abi.unsigned.apk; \
+		cp $< $$tmp; \
+		others=$$(for a in $$abis; do [ "$$a" = "$$abi" ] || echo "lib/$$a/*"; done); \
+		if [ -n "$$others" ]; then \
+			zip -q -d $$tmp $$others; \
+			zip -q -d $$tmp 'META-INF/MANIFEST.MF' 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.DSA' 'META-INF/*.EC' || [ $$? -eq 12 ]; \
+		fi; \
+		if [ "$(HAS_SECRETS)" = true ]; then \
+			./scripts/sign_apk.sh $$tmp $$out; rm -f $$tmp.idsig; \
+		else \
+			echo "No key secrets set, not signing $$out"; \
+			mv $$tmp $$out; \
+		fi; \
+	done
 
 # for mobile-standard-debug.apk and mobile-standard-debug-androidTest.apk
 dist/$(RELEASE_TYPE)/%: $(APKDIR)/standard/$(RELEASE_TYPE)/%

@@ -254,7 +254,13 @@ jobs:
         JKS_STOREPASS: ${{ secrets.KEY_ANDROID_JKS_STOREPASS }}
         JKS_KEYPASS: ${{ secrets.KEY_ANDROID_JKS_KEYPASS }}
       run: |
-        make dist/aw-android.${{ matrix.type }}
+        if [ "${{ matrix.type }}" = apk ]; then
+          # Per-ABI APKs first: signing dist/aw-android.apk moves the Gradle
+          # output away, and build-apk-per-abi reads that same file (aw-android#61).
+          make build-apk-per-abi dist/aw-android.apk
+        else
+          make dist/aw-android.${{ matrix.type }}
+        fi
 
     - name: Upload
       uses: actions/upload-artifact@v4
