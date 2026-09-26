@@ -48,19 +48,21 @@
             android:name=".OnboardingActivity"
             android:screenOrientation="portrait"
             android:configChanges="orientation"
-            android:theme="@style/AppTheme.NoActionBar"
+            android:theme="@style/AppTheme.LightOnly"
             android:exported="true" />
 
         <activity
             android:name=".AuthSettingsActivity"
             android:screenOrientation="portrait"
             android:configChanges="orientation"
+            android:theme="@style/AppTheme.LightOnly"
             android:exported="false"/>
 
         <activity
             android:name=".SyncSettingsActivity"
             android:screenOrientation="portrait"
             android:configChanges="orientation"
+            android:theme="@style/AppTheme.LightOnly"
             android:exported="false"/>
 
         <receiver
