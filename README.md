@@ -6,16 +6,16 @@ aw-android
 
 A very work-in-progress ActivityWatch app for Android.
 
-Available on Google Play:
+## Download
 
-<a title="Get it on Google Play" href="https://play.google.com/store/apps/details?id=net.activitywatch.android">
-    <img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" width="240px"/>
-</a>
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
+     alt="Get it on F-Droid"
+     height="80">](https://f-droid.org/packages/net.activitywatch.android/)
+[<img src="https://play.google.com/intl/en_us/badges/images/generic/en-play-badge.png"
+     alt="Get it on Google Play"
+     height="80">](https://play.google.com/store/apps/details?id=net.activitywatch.android)
 
-
-## Usage
-
-Install the APK from the Play Store or from the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
+Or download the latest APK from the [Releases Section](https://github.com/ActivityWatch/aw-android/releases/latest).
 
 ### For Oculus Quest
 
