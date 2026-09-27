@@ -118,7 +118,7 @@ class MainActivityNavigationTest {
 
     @Test
     fun bugReportUrl_pointsAtNewIssueFormWithSingleBodyParam() {
-        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34)
+        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34, device = "Google Pixel 8")
 
         assertTrue(url.startsWith("$BUG_REPORT_ISSUE_URL?body="))
         assertFalse(url.substringAfter("?body=").contains("&"))
@@ -126,24 +126,24 @@ class MainActivityNavigationTest {
 
     @Test
     fun bugReportUrl_bodyDecodesToOutlineWithEnvironmentDetails() {
-        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34)
+        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34, device = "Google Pixel 8")
         val body = URLDecoder.decode(url.substringAfter("?body="), StandardCharsets.UTF_8.name())
 
         assertTrue(body.startsWith("## Description\n"))
         assertTrue(body.contains("## Steps to reproduce\n"))
         assertTrue(body.contains("## Expected behavior\n"))
-        assertTrue(body.endsWith("## Environment\n\n- App version: 0.12.3\n- Android version: 14 (API 34)"))
+        assertTrue(body.endsWith("## Environment\n\n- App version: 0.12.3\n- Android version: 14 (API 34)\n- Device: Google Pixel 8"))
     }
 
     @Test
     fun bugReportUrl_encodesReservedCharactersInVersions() {
-        val url = bugReportUrl(appVersion = "1.0-rc&1 #2", androidVersion = "?", apiLevel = 1)
+        val url = bugReportUrl(appVersion = "1.0-rc&1 #2", androidVersion = "?", apiLevel = 1, device = "A&B #1?")
         val encoded = url.substringAfter("?body=")
         val body = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
 
         assertFalse(encoded.contains("&"))
         assertFalse(encoded.contains("#"))
         assertFalse(encoded.contains("?"))
-        assertTrue(body.contains("- App version: 1.0-rc&1 #2\n- Android version: ? (API 1)"))
+        assertTrue(body.contains("- App version: 1.0-rc&1 #2\n- Android version: ? (API 1)\n- Device: A&B #1?"))
     }
 }

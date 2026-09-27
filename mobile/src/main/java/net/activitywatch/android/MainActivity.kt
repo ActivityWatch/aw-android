@@ -58,7 +58,7 @@ internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResu
 internal const val BUG_REPORT_ISSUE_URL = "https://github.com/ActivityWatch/aw-android/issues/new"
 
 /** Prefilled GitHub issue URL for the drawer "Report bugs" item. */
-internal fun bugReportUrl(appVersion: String, androidVersion: String, apiLevel: Int): String {
+internal fun bugReportUrl(appVersion: String, androidVersion: String, apiLevel: Int, device: String): String {
     val body = """
         ## Description
 
@@ -76,6 +76,7 @@ internal fun bugReportUrl(appVersion: String, androidVersion: String, apiLevel: 
 
         - App version: $appVersion
         - Android version: $androidVersion (API $apiLevel)
+        - Device: $device
     """.trimIndent()
     return "$BUG_REPORT_ISSUE_URL?body=${URLEncoder.encode(body, StandardCharsets.UTF_8.name())}"
 }
@@ -123,21 +124,22 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         return buildDashboardUrl(url, dashboardApiKey)
     }
 
-    private fun openDashboardInBrowser(url: String = baseURL) {
+    private fun openExternalUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authenticatedUrl(url))))
+            startActivity(intent)
         } catch (e: ActivityNotFoundException) {
             Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
         }
     }
 
+    private fun openDashboardInBrowser(url: String = baseURL) {
+        openExternalUrl(authenticatedUrl(url))
+    }
+
     private fun openBugReport() {
-        val uri = Uri.parse(bugReportUrl(version, Build.VERSION.RELEASE, Build.VERSION.SDK_INT))
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (e: ActivityNotFoundException) {
-            Snackbar.make(binding.root, R.string.no_browser_found, Snackbar.LENGTH_SHORT).show()
-        }
+        val device = "${Build.MANUFACTURER} ${Build.MODEL}"
+        openExternalUrl(bugReportUrl(version, Build.VERSION.RELEASE, Build.VERSION.SDK_INT, device))
     }
 
     override fun onFragmentInteraction(item: Uri) {
