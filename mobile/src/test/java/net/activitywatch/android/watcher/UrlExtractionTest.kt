@@ -58,9 +58,38 @@ class UrlExtractionTest {
     }
 
     @Test
-    fun `stripProtocol removes http and https prefixes only`() {
-        assertEquals("example.com", stripProtocol("http://example.com"))
-        assertEquals("example.com", stripProtocol("https://example.com"))
-        assertEquals("example.com", stripProtocol("example.com"))
+    fun `normalizeUrl adds https to a bare host and path`() {
+        assertEquals("https://vas3k.club/post/32336", normalizeUrl("vas3k.club/post/32336"))
+        assertEquals("https://example.com", normalizeUrl("example.com"))
+    }
+
+    @Test
+    fun `normalizeUrl keeps a scheme the browser shows`() {
+        // http must not be upgraded: the address bar says the page is plain http.
+        assertEquals("http://example.com/page", normalizeUrl("http://example.com/page"))
+        assertEquals("https://example.com/page", normalizeUrl("https://example.com/page"))
+        assertEquals("file:///sdcard/a.html", normalizeUrl("file:///sdcard/a.html"))
+    }
+
+    @Test
+    fun `normalizeUrl trims surrounding whitespace`() {
+        assertEquals("https://example.com/a", normalizeUrl("  example.com/a \n"))
+        assertEquals("http://example.com", normalizeUrl(" http://example.com "))
+    }
+
+    @Test
+    fun `normalizeUrl treats empty and blank as no url`() {
+        assertNull(normalizeUrl(null))
+        assertNull(normalizeUrl(""))
+        assertNull(normalizeUrl("   "))
+    }
+
+    @Test
+    fun `normalizeUrl leaves port and query string alone`() {
+        assertEquals(
+            "https://127.0.0.1:5600/api/0/info?x=1&y=a%20b#frag",
+            normalizeUrl("127.0.0.1:5600/api/0/info?x=1&y=a%20b#frag"),
+        )
+        assertEquals("https://localhost:8080/?q=a://b", normalizeUrl("localhost:8080/?q=a://b"))
     }
 }

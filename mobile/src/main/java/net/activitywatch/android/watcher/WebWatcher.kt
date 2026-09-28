@@ -56,7 +56,7 @@ class WebWatcher : AccessibilityService() {
             ?: extractTextByViewId(event, "$packageName:id/url_bar_title")
             ?: extractTextByViewId(event, "$packageName:id/mozac_browser_toolbar_url_view")
 
-    // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
+    // Applies normalizeUrl uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
         "com.android.chrome",
@@ -74,7 +74,7 @@ class WebWatcher : AccessibilityService() {
                 ?: extractTextByViewId(event, "com.opera.browser:id/address_field")
         "com.microsoft.emmx" -> extractTextByViewId(event, "com.microsoft.emmx:id/url_bar")
         else -> null
-    }?.let(stripProtocol)
+    }?.let(::normalizeUrl)
 
     override fun onCreate() {
         super.onCreate()

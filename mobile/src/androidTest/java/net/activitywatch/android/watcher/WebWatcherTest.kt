@@ -115,7 +115,7 @@ private fun JSONArray.asListOfJsonObjects() = this.let {
 
 data class WebPage(val url: String, val title: String) {
     fun toMatcher(expectedBrowser: String): WebWatcherEventMatcher = WebWatcherEventMatcher(
-        expectedUrl = url.removePrefix("https://"),
+        expectedUrl = url,
         expectedTitle = title.takeIf { shouldMatchTitle(expectedBrowser) },
         expectedBrowser = expectedBrowser,
     )
