@@ -46,16 +46,26 @@ class WebWatcher : AccessibilityService() {
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
 
+    private fun extractChromiumUrl(packageName: String, event: AccessibilityEvent): String? =
+        extractTextByViewId(event, "$packageName:id/url_bar")
+
+    private fun extractGeckoUrl(packageName: String, event: AccessibilityEvent): String? =
+        // Compose toolbar (current)
+        extractFirefoxUrl(event)
+            // View-based toolbar (older Firefox versions)
+            ?: extractTextByViewId(event, "$packageName:id/url_bar_title")
+            ?: extractTextByViewId(event, "$packageName:id/mozac_browser_toolbar_url_view")
+
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
-        "com.android.chrome" -> extractTextByViewId(event, "com.android.chrome:id/url_bar")
-        "org.mozilla.firefox" ->
-            // Compose toolbar (current)
-            extractFirefoxUrl(event)
-                // View-based toolbar (older Firefox versions)
-                ?: extractTextByViewId(event, "org.mozilla.firefox:id/url_bar_title")
-                ?: extractTextByViewId(event, "org.mozilla.firefox:id/mozac_browser_toolbar_url_view")
+        "com.android.chrome",
+        "app.vanadium.browser",
+        "com.brave.browser",
+        "org.cromite.cromite" -> extractChromiumUrl(packageName, event)
+        "org.mozilla.firefox",
+        "org.ironfoxoss.ironfox",
+        "org.mozilla.fennec_fdroid" -> extractGeckoUrl(packageName, event)
         "com.sec.android.app.sbrowser" ->
             extractTextByViewId(event, "com.sec.android.app.sbrowser:id/location_bar_edit_text")
                 ?: extractTextByViewId(event, "com.sec.android.app.sbrowser:id/custom_tab_toolbar_url_bar_text")
@@ -209,7 +219,12 @@ class WebWatcher : AccessibilityService() {
             "org.mozilla.firefox",
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
-            "com.microsoft.emmx"
+            "com.microsoft.emmx",
+            "app.vanadium.browser",
+            "com.brave.browser",
+            "org.cromite.cromite",
+            "org.ironfoxoss.ironfox",
+            "org.mozilla.fennec_fdroid",
         )
     }
 }
