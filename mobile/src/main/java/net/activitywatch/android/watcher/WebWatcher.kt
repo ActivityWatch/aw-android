@@ -19,6 +19,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import net.activitywatch.android.RustInterface
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
+import net.activitywatch.android.AWPreferences
 import org.json.JSONObject
 
 private fun extractTextByViewId(
@@ -97,7 +99,9 @@ class WebWatcher : AccessibilityService() {
     // Installed apps that can open https links, other than the built-in browsers. Looked
     // up via PackageManager instead of scanning each app's accessibility tree, so events
     // from non-browser apps stay a set lookup.
-    @Volatile private var detectedBrowsers: Set<String> = emptySet()
+    // Package -> versionCode, so a browser update re-learns its URL bar style.
+    @Volatile private var detectedBrowsers: Map<String, Long> = emptyMap()
+    private lateinit var probeMemory: BrowserProbeMemory
 
     private val packageChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -123,11 +127,14 @@ class WebWatcher : AccessibilityService() {
             extractTextByViewId(event, "com.opera.browser:id/url_field")
                 ?: extractTextByViewId(event, "com.opera.browser:id/address_field")
         "com.microsoft.emmx" -> extractTextByViewId(event, "com.microsoft.emmx:id/url_bar")
-        // Chromium first: a by-id lookup is cheap, the Gecko path walks the tree.
         // Page events omit the toolbar in Chromium forks (same as Brave), so search
         // from rootInActiveWindow with ignoreFocused to avoid recording typed text.
-        in detectedBrowsers -> extractTextByViewId(rootInActiveWindow, "$packageName:id/url_bar", ignoreFocused = true)
-            ?: extractGeckoUrl(packageName, event)
+        in detectedBrowsers -> probeMemory.extract(packageName, detectedBrowsers.getValue(packageName), System.currentTimeMillis()) {
+            when (it) {
+                UrlBarStyle.CHROMIUM -> extractTextByViewId(rootInActiveWindow, "$packageName:id/url_bar", ignoreFocused = true)
+                UrlBarStyle.GECKO -> extractGeckoUrl(packageName, event)
+            }
+        }
         else -> null
     }?.let(stripProtocol)
 
@@ -142,12 +149,22 @@ class WebWatcher : AccessibilityService() {
             return
         }
         detectedBrowsers = selectDetectedBrowsers(resolved, KNOWN_BROWSER_PACKAGES, packageName)
-        Log.i(TAG, "Detected browsers without a dedicated extractor: $detectedBrowsers")
+            .associateWith { versionCodeOf(it) }
+        probeMemory.retain(detectedBrowsers.keys)
+        Log.i(TAG, "Detected browsers without a dedicated extractor: ${detectedBrowsers.keys}")
+    }
+
+    private fun versionCodeOf(pkg: String): Long = try {
+        PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(pkg, 0))
+    } catch (ex: PackageManager.NameNotFoundException) {
+        -1L
     }
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
+        val prefs = AWPreferences(this)
+        probeMemory = BrowserProbeMemory(prefs.getBrowserProbeState(), prefs::setBrowserProbeState)
         refreshDetectedBrowsers()
         ContextCompat.registerReceiver(
             this,
@@ -183,8 +200,10 @@ class WebWatcher : AccessibilityService() {
         }
 
         val packageName = event.packageName?.toString()
-        val isKnownBrowser = packageName != null &&
-            (packageName in KNOWN_BROWSER_PACKAGES || packageName in detectedBrowsers)
+        // A backed-off package is handled like any non-browser app, which also skips the
+        // WebView walk below.
+        val isKnownBrowser = packageName != null && (packageName in KNOWN_BROWSER_PACKAGES ||
+            detectedBrowsers[packageName]?.let { probeMemory.isActive(packageName, it, System.currentTimeMillis()) } == true)
 
         val windowChanged = windowChanged(event.windowId)
         lastWindowId = event.windowId
