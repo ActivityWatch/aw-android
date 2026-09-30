@@ -28,15 +28,18 @@ private data class ProbeState(
 // A package that produced a URL once is never backed off: a real browser hides its URL
 // bar in fullscreen video or on a new tab, and backing off would then miss pages.
 // State is kept across restarts through `save`, as a JSON string (see encode()).
+// Synchronized: retain() runs on the browser detection thread.
 internal class BrowserProbeMemory(saved: String?, private val save: (String) -> Unit) {
     private val states: MutableMap<String, ProbeState> = decode(saved)
 
     // False while a package that never produced a URL is backed off: the caller should
     // then treat its events like those of any non-browser app.
     // A known browser is always due: its nextProbeAtMs stays 0.
+    @Synchronized
     fun isActive(pkg: String, versionCode: Long, nowMs: Long): Boolean =
         current(pkg, versionCode)?.let { isDue(it, nowMs) } ?: true
 
+    @Synchronized
     fun extract(pkg: String, versionCode: Long, nowMs: Long, probe: (UrlBarStyle) -> String?): String? {
         val state = current(pkg, versionCode) ?: ProbeState(versionCode)
         state.style?.let { return probe(it) }
@@ -52,6 +55,7 @@ internal class BrowserProbeMemory(saved: String?, private val save: (String) -> 
         return null
     }
 
+    @Synchronized
     fun retain(packages: Set<String>) {
         if (states.keys.retainAll(packages)) save(encode())
     }

@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -108,11 +109,14 @@ class WebWatcher : AccessibilityService() {
     // Package -> versionCode, so a browser update re-learns its URL bar style.
     @Volatile private var detectedBrowsers: Map<String, Long> = emptyMap()
     private lateinit var probeMemory: BrowserProbeMemory
+    // PackageManager queries can be slow; the service thread must keep handling events.
+    // One thread keeps refreshes in order, so the newest result is published last.
+    private val detectionExecutor = Executors.newSingleThreadExecutor()
 
     private val packageChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.d(TAG, "Package change (${intent.action} ${intent.data}), re-detecting browsers")
-            refreshDetectedBrowsers()
+            detectionExecutor.execute { refreshDetectedBrowsers() }
         }
     }
 
@@ -171,7 +175,7 @@ class WebWatcher : AccessibilityService() {
         Log.i(TAG, "Creating WebWatcher")
         val prefs = AWPreferences(this)
         probeMemory = BrowserProbeMemory(prefs.getBrowserProbeState(), prefs::setBrowserProbeState)
-        refreshDetectedBrowsers()
+        detectionExecutor.execute { refreshDetectedBrowsers() }
         ContextCompat.registerReceiver(
             this,
             packageChangeReceiver,
@@ -363,6 +367,7 @@ class WebWatcher : AccessibilityService() {
         // Lets already-queued events finish writing.
         writer.shutdown()
         unregisterReceiver(packageChangeReceiver)
+        detectionExecutor.shutdown()
         super.onDestroy()
     }
 
