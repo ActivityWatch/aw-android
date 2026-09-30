@@ -37,6 +37,12 @@ class WebWatcher : AccessibilityService() {
     // rejects bare testTag names, so we traverse manually.
     private fun extractFirefoxUrl(event: AccessibilityEvent): String? {
         val root = rootInActiveWindow ?: return null
+        // In split screen the active window can be another browser; its URL bar would be
+        // logged under this event's package (and teach BrowserProbeMemory a wrong style).
+        if (root.packageName != event.packageName) {
+            root.recycle()
+            return null
+        }
         try {
             val found = findNode(root) { it.viewIdResourceName == "ADDRESSBAR_URL_BOX" }
             val result = parseFirefoxAddressBarContentDescription(found?.contentDescription?.toString())
