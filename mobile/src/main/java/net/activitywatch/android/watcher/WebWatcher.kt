@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -67,11 +68,14 @@ class WebWatcher : AccessibilityService() {
     // Package -> versionCode, so a browser update re-learns its URL bar style.
     @Volatile private var detectedBrowsers: Map<String, Long> = emptyMap()
     private lateinit var probeMemory: BrowserProbeMemory
+    // PackageManager queries can be slow; the service thread must keep handling events.
+    // One thread keeps refreshes in order, so the newest result is published last.
+    private val detectionExecutor = Executors.newSingleThreadExecutor()
 
     private val packageChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.d(TAG, "Package change (${intent.action} ${intent.data}), re-detecting browsers")
-            refreshDetectedBrowsers()
+            detectionExecutor.execute { refreshDetectedBrowsers() }
         }
     }
 
@@ -138,7 +142,7 @@ class WebWatcher : AccessibilityService() {
         Log.i(TAG, "Creating WebWatcher")
         val prefs = AWPreferences(this)
         probeMemory = BrowserProbeMemory(prefs.getBrowserProbeState(), prefs::setBrowserProbeState)
-        refreshDetectedBrowsers()
+        detectionExecutor.execute { refreshDetectedBrowsers() }
         ContextCompat.registerReceiver(
             this,
             packageChangeReceiver,
@@ -289,6 +293,7 @@ class WebWatcher : AccessibilityService() {
 
     override fun onDestroy() {
         unregisterReceiver(packageChangeReceiver)
+        detectionExecutor.shutdown()
         super.onDestroy()
     }
 
