@@ -23,6 +23,13 @@
 
 set -eu
 
+ADB_BIN=$(command -v adb)
+
+# Every adb call is bounded: a wedged emulator must fail the job fast with a
+# visible step trace, not sit silent until the 30 min step timeout (#313).
+adb() { timeout "${ADB_TIMEOUT:-90}" "$ADB_BIN" "$@"; }
+step() { echo "[smoke $(date -u +%H:%M:%S)] $*"; }
+
 PKG=net.activitywatch.android
 APK=${1:-}
 SMOKE_SECONDS=${SMOKE_SECONDS:-20}
@@ -67,13 +74,13 @@ apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -print | sort -V | 
 "$apksigner" sign --ks "$tmp/smoke.jks" --ks-key-alias smoke \
     --ks-pass pass:android --key-pass pass:android "$tmp/aligned.apk"
 
-adb uninstall "$PKG" >/dev/null 2>&1 || true
+step "install"; adb uninstall "$PKG" >/dev/null 2>&1 || true
 adb logcat -c
-adb install -r "$tmp/aligned.apk"
+ADB_TIMEOUT=300 adb install -r "$tmp/aligned.apk"
 # Usage access must be granted before launch: without it onboarding's Finish
 # button refuses and the app never leaves the first-run screen.
 adb shell appops set "$PKG" android:get_usage_stats allow >/dev/null 2>&1 || true
-adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1
+step "launch"; adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1
 sleep 5
 
 # A fresh install always opens OnboardingActivity, which keeps the process alive
@@ -93,6 +100,7 @@ complete_onboarding() {
 }
 # CI emulators are slow (first launch plus dexopt can take well over a minute),
 # so poll against a deadline rather than a fixed handful of attempts.
+step "onboarding"
 onboarding_deadline=$(( $(date +%s) + ${ONBOARDING_SECONDS:-120} ))
 while [ "$(date +%s)" -lt "$onboarding_deadline" ]; do
     complete_onboarding || true
@@ -114,6 +122,7 @@ fi
 # added later; today the Rust server shares the main process.
 pids_before=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')
 
+step "observing for ${SMOKE_SECONDS}s"
 sleep "$SMOKE_SECONDS"
 
 mkdir -p "$(dirname "$LOGCAT_OUT")"
