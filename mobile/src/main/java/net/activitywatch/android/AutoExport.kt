@@ -67,6 +67,21 @@ internal fun exportsToPrune(existing: List<String>, hostname: String, keep: Int 
     return ours.dropLast(keep.coerceAtLeast(1))
 }
 
+/**
+ * Names from [existing] that are partial-download temp files for this host (any date).
+ * A process kill during download leaves `<name>.json.tmp` (or `<name>.json.tmp.json` on
+ * providers that append a MIME extension). These are missed by [exportsToPrune] (only
+ * handles completed `.json` files) and [recoverInterruptedExports] (only handles `.bak`
+ * files), so stale temp files from previous dates accumulate if not cleared explicitly.
+ */
+internal fun tempExportsToClear(existing: List<String>, hostname: String): List<String> {
+    val prefix = autoExportFilePrefix(hostname)
+    return existing.filter { name ->
+        name.startsWith(prefix) &&
+            (name.endsWith(".json.tmp") || name.endsWith(".json.tmp.json"))
+    }
+}
+
 /** Restore this device's saved exports before any new download or retention pass. */
 internal fun recoverInterruptedExports(
     existing: List<String>,

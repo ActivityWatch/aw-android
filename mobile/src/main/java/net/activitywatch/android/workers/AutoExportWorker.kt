@@ -21,6 +21,7 @@ import net.activitywatch.android.copyExportCancellable
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
 import net.activitywatch.android.recoverInterruptedExports
+import net.activitywatch.android.tempExportsToClear
 import net.activitywatch.android.stableExportKey
 import java.net.HttpURLConnection
 import java.net.URL
@@ -62,9 +63,12 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             // Write to a temp file first so an interrupted download doesn't leave a partial
             // file with the final name (which would look like a complete backup).
             // The existing export is kept until its replacement is complete.
+            // Clear any temp files left by previous runs on any date (process death across
+            // days would otherwise leave stale partials outside the retention window).
+            tempExportsToClear(dir.listFiles().mapNotNull { it.name }, host).forEach { stale ->
+                dir.findFile(stale)?.delete()
+            }
             val tempName = "$name.tmp"
-            dir.findFile(tempName)?.delete()
-            dir.findFile("$tempName.json")?.delete() // some SAF providers append .json to the MIME type
             val tempFile = dir.createFile("application/json", tempName)
                 ?: error("could not create $tempName")
             // Set aside today's earlier export (if any) instead of deleting it, so a failed

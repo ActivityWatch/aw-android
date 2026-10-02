@@ -36,6 +36,26 @@ class AutoExportTest {
     }
 
     @Test
+    fun tempExportsToClear_matchesAnyDateAndBothSuffixes() {
+        val existing = listOf(
+            "aw-export-pixel-2026-10-01.json.tmp",       // yesterday's orphaned download
+            "aw-export-pixel-2026-10-01.json.tmp.json",  // same, provider appended extension
+            "aw-export-pixel-2026-10-02.json.tmp",       // today's (also cleared pre-create)
+            "aw-export-pixel-2026-10-02.json",            // completed — must not be touched
+            "aw-export-other-2026-10-01.json.tmp",        // different device — must not be touched
+            "photo.jpg",
+        )
+        assertEquals(
+            listOf(
+                "aw-export-pixel-2026-10-01.json.tmp",
+                "aw-export-pixel-2026-10-01.json.tmp.json",
+                "aw-export-pixel-2026-10-02.json.tmp",
+            ).sorted(),
+            tempExportsToClear(existing, "pixel").sorted(),
+        )
+    }
+
+    @Test
     fun prune_keepIsClampedToAtLeastOne() {
         val existing = listOf("aw-export-h-2026-10-01.json", "aw-export-h-2026-10-02.json")
         assertEquals(listOf("aw-export-h-2026-10-01.json"), exportsToPrune(existing, "h", keep = 0))
