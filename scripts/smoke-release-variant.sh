@@ -128,7 +128,7 @@ app_log=$(awk -v before="${pid_before:-}" -v after="${pid_after:-}" -v pkg="$PKG
 
 # Resolution errors R8 can introduce, anywhere in the app process's output.
 if printf '%s\n' "$app_log" \
-    | grep -E "ClassNotFoundException|NoSuchMethodError|NoSuchFieldError|UnsatisfiedLinkError|AbstractMethodError"; then
+    | grep -E "ClassNotFoundException|NoClassDefFoundError|NoSuchMethodError|NoSuchFieldError|UnsatisfiedLinkError|AbstractMethodError|ExceptionInInitializerError"; then
     echo "FAIL: R8-style resolution errors in logcat (see $LOGCAT_OUT)" >&2
     status=1
 fi
