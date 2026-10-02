@@ -104,23 +104,27 @@ if adb shell dumpsys activity activities 2>/dev/null | grep "ResumedActivity" | 
     status=1
 fi
 
+# Capture the PID before the window too: if the app crashes it is reaped (or
+# replaced) by the time we read it after, and the error lines carry the old PID.
+pid_before=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')
+
 sleep "$SMOKE_SECONDS"
 
 mkdir -p "$(dirname "$LOGCAT_OUT")"
 adb logcat -d -v threadtime > "$LOGCAT_OUT"
 
 # Process must still be alive (a startup crash kills it).
-pid=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')
-if [ -z "$pid" ]; then
+pid_after=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')
+if [ -z "$pid_after" ]; then
     echo "FAIL: $PKG is not running after ${SMOKE_SECONDS}s" >&2
     status=1
 fi
 
-# Lines the app process emitted (PID column), or lines naming the package. The
+# Lines the app process emitted (either PID), or lines naming the package. The
 # PID scope catches caught errors logged under app-specific tags (e.g. a watcher
 # logging a native-init failure) that a tag-name match would drop.
-app_log=$(awk -v pid="${pid:-}" -v pkg="$PKG" \
-    '(pid != "" && $3 == pid) || index($0, pkg) { print }' "$LOGCAT_OUT")
+app_log=$(awk -v before="${pid_before:-}" -v after="${pid_after:-}" -v pkg="$PKG" \
+    '(before != "" && $3 == before) || (after != "" && $3 == after) || index($0, pkg) { print }' "$LOGCAT_OUT")
 
 # Resolution errors R8 can introduce, anywhere in the app process's output.
 if printf '%s\n' "$app_log" \
