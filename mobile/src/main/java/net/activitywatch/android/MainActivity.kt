@@ -265,7 +265,26 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val usw = UsageStatsWatcher(this)
         val mode = if (usw.isUsingDiscreteEvents()) "discrete event insertion" else "heartbeat merging"
         Log.i("MainActivity", "Using $mode mode for event tracking")
-        lifecycleScope.launch { usw.sendHeartbeatsSuspend() }
+        lifecycleScope.launch {
+            var banner: Snackbar? = null
+            withDelayedIndicator(
+                IMPORT_INDICATOR_DELAY_MS,
+                show = {
+                    banner =
+                        Snackbar.make(
+                                binding.coordinatorLayout,
+                                R.string.importing_usage_history,
+                                Snackbar.LENGTH_INDEFINITE,
+                            )
+                            // The app theme's text colour is dark, unreadable on the dark Snackbar.
+                            .setTextColor(ContextCompat.getColor(this@MainActivity, R.color.chrome_on_dark))
+                            .also { it.show() }
+                },
+                hide = { banner?.dismiss() },
+            ) {
+                usw.sendHeartbeatsSuspend()
+            }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
