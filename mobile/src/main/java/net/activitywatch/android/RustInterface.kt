@@ -15,6 +15,40 @@ import org.threeten.bp.Instant
 
 private const val TAG = "RustInterface"
 
+internal enum class PortProbe {
+    FREE,
+    IN_USE,
+    SOCKET_DENIED,
+}
+
+/**
+ * Check whether the local server can listen on [port] before handing it to Rust.
+ *
+ * A port held by another process throws [java.net.BindException]. Being unable
+ * to create a socket at all throws its parent [java.net.SocketException]
+ * instead: GrapheneOS's per-app Network permission makes `socket()` fail with
+ * EACCES (ActivityWatch/activitywatch#1003). Only the former used to be caught,
+ * so the latter escaped the IO coroutine in BackgroundService and killed the
+ * app at startup.
+ */
+internal fun probeServerPort(
+    port: Int,
+    open: (Int) -> java.io.Closeable = { java.net.ServerSocket(it) },
+    onDenied: (Exception) -> Unit = { Log.w(TAG, "Socket probe on port $port failed", it) },
+): PortProbe =
+    try {
+        open(port).close()
+        PortProbe.FREE
+    } catch (e: java.net.BindException) {
+        PortProbe.IN_USE
+    } catch (e: java.io.IOException) {
+        onDenied(e)
+        PortProbe.SOCKET_DENIED
+    } catch (e: SecurityException) {
+        onDenied(e)
+        PortProbe.SOCKET_DENIED
+    }
+
 class RustInterface(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
@@ -87,16 +121,23 @@ class RustInterface(context: Context? = null) {
 
     fun startServerTask() {
         if (!serverStarted) {
-            // check if the flavor's port is already in use
-            try {
-                val socket = java.net.ServerSocket(BuildConfig.SERVER_PORT)
-                socket.close()
-            } catch (e: java.net.BindException) {
-                Log.e(
-                    TAG,
-                    "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
-                )
-                return
+            when (probeServerPort(BuildConfig.SERVER_PORT)) {
+                PortProbe.FREE -> {}
+                PortProbe.IN_USE -> {
+                    Log.e(
+                        TAG,
+                        "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
+                    )
+                    return
+                }
+                PortProbe.SOCKET_DENIED -> {
+                    Log.e(
+                        TAG,
+                        "Cannot open a socket on port ${BuildConfig.SERVER_PORT}; not starting the " +
+                            "server. On GrapheneOS, check that the app's Network permission is enabled."
+                    )
+                    return
+                }
             }
 
             serverStarted = true
