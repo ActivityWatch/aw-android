@@ -15,7 +15,8 @@
 # class/method/JNI resolution error from the app process.
 #
 # Usage: scripts/smoke-release-variant.sh [path/to/release.apk]
-# Env:   ANDROID_HOME (required), SMOKE_SECONDS (default 20), LOGCAT_OUT
+# Env:   ANDROID_HOME (required), SMOKE_SECONDS (default 20), ONBOARDING_SECONDS
+#        (default 120), LOGCAT_OUT
 #        (default mobile/build/release-smoke-logcat.log)
 #        MAPPING (default: R8 mapping.txt under the APK's Gradle build root;
 #        must be set explicitly for a prebuilt APK living outside one)
@@ -90,9 +91,12 @@ complete_onboarding() {
     read -r x1 y1 x2 y2 < <(printf '%s' "$bounds" | grep -o '[0-9][0-9]*' | tr '\n' ' ')
     adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
 }
-for _ in 1 2 3 4 5; do
+# CI emulators are slow (first launch plus dexopt can take well over a minute),
+# so poll against a deadline rather than a fixed handful of attempts.
+onboarding_deadline=$(( $(date +%s) + ${ONBOARDING_SECONDS:-120} ))
+while [ "$(date +%s)" -lt "$onboarding_deadline" ]; do
     complete_onboarding || true
-    sleep 1
+    sleep 2
     adb shell dumpsys activity activities 2>/dev/null | grep "ResumedActivity" | grep -q "OnboardingActivity" || break
 done
 
