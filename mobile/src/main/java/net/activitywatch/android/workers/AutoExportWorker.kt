@@ -56,10 +56,20 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             dir.findFile("$tempName.json")?.delete() // some SAF providers append .json to the MIME type
             val tempFile = dir.createFile("application/json", tempName)
                 ?: error("could not create $tempName")
+            // Set aside today's earlier export (if any) instead of deleting it, so a failed
+            // promotion never costs the last good backup.
+            var backup: DocumentFile? = null
             try {
                 download(tempFile)
                 // Download succeeded — promote temp file to final name.
-                dir.findFile(name)?.delete()
+                val existing = dir.findFile(name)
+                if (existing != null) {
+                    val backupName = "$name.bak"
+                    dir.findFile(backupName)?.delete()
+                    dir.findFile("$backupName.json")?.delete()
+                    if (existing.renameTo(backupName)) backup = existing
+                    else existing.delete() // provider can't rename; nothing safer to do
+                }
                 val renamed = try {
                     DocumentsContract.renameDocument(
                         applicationContext.contentResolver, tempFile.uri, name)
@@ -79,8 +89,14 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     }
                     tempFile.delete()
                 }
+                backup?.delete()
             } catch (e: Exception) {
                 tempFile.delete()
+                // Promotion failed: drop any half-written final file and restore the previous export.
+                if (backup != null) {
+                    dir.findFile(name)?.delete()
+                    backup.renameTo(name)
+                }
                 throw e
             }
             exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { dir.findFile(it)?.delete() }
