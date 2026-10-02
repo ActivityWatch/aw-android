@@ -423,7 +423,7 @@ jobs:
         api-level: ${{ matrix.api-level }}
         target: default
         arch: x86_64
-        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -memory 2048
         disable-animations: true
         script: >-
           bash -o pipefail -c 'set +e; make test-e2e; test_status=$?;
