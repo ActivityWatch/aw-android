@@ -20,7 +20,7 @@
         "\n• Open the drawer menu and tap "Activity" to see your events"
         "\n• Go to <b>Sync Settings</b> to sync data across your devices"
 
-        "\n\n<b>Need help?</b> Check out the <a href='https://activitywatch.net/'>ActivityWatch documentation</a> or report issues on <a href='https://github.com/ActivityWatch/aw-android/issues'>GitHub</a>."
+        "\n\n<b>Need help?</b> Check out the <a href='https://docs.activitywatch.net/'>ActivityWatch documentation</a> or report issues on <a href='https://github.com/ActivityWatch/aw-android/issues'>GitHub</a>."
     </string>
     <string name="button_log_text">Click me to log data!</string>
     <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
