@@ -90,10 +90,19 @@ pids_launch=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')
 # without starting the server or WebView — so a stripped JNI symbol or
 # @JavascriptInterface method would pass unnoticed. Tap Continue/Finish on the
 # live UI dump until the first-run screen is gone.
+UI_DUMP=${LOGCAT_OUT%.log}-ui.xml
+mkdir -p "$(dirname "$UI_DUMP")"
 complete_onboarding() {
     local bounds x1 y1 x2 y2
+    # If the screen slept or the keyguard returned during a slow install, the
+    # dump shows that instead of the app and no button is ever found. One #313
+    # run did 17 dumps and 0 taps; the cause was invisible, hence the saved dump.
+    adb shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+    adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
     adb shell uiautomator dump /sdcard/smoke-ui.xml >/dev/null 2>&1 || true
-    bounds=$(adb shell cat /sdcard/smoke-ui.xml 2>/dev/null | tr '>' '\n' \
+    # Keep the last dump next to the logcat so a failure shows what was on screen.
+    adb shell cat /sdcard/smoke-ui.xml 2>/dev/null > "$UI_DUMP" || true
+    bounds=$(tr '>' '\n' < "$UI_DUMP" \
         | grep 'resource-id="[^"]*nextButton"' \
         | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -n 1)
     [ -n "$bounds" ] || return 1
@@ -130,8 +139,11 @@ done
 status=0
 
 # Must have positively left the first-run screen, or this test exercised nothing.
-if [ "$(onboarding_state)" != left ]; then
-    echo "FAIL: did not confirm leaving OnboardingActivity after tapping through; runtime path was never exercised" >&2
+final_state=$(onboarding_state)
+if [ "$final_state" != left ]; then
+    echo "FAIL: did not confirm leaving OnboardingActivity after tapping through (state: $final_state); runtime path was never exercised" >&2
+    # Name the window the last UI dump saw, so the cause is in the job log.
+    echo "  last UI dump ($UI_DUMP): packages=[$(grep -o 'package="[^"]*"' "$UI_DUMP" 2>/dev/null | sort -u | cut -d'"' -f2 | tr '\n' ' ')] nextButton=$(grep -c 'nextButton' "$UI_DUMP" 2>/dev/null || true)" >&2
     status=1
 fi
 
