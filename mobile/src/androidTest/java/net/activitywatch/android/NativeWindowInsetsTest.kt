@@ -237,7 +237,7 @@ class NativeWindowInsetsTest {
         prefs: AWPreferences,
         expected: Boolean,
         maxAttempts: Int = 3,
-        pollMs: Long = 2000L,
+        pollMs: Long = 5000L,
     ) {
         var tapped = false
         repeat(maxAttempts) { attempt ->
@@ -249,9 +249,10 @@ class NativeWindowInsetsTest {
                 if (prefs.isSyncEnabled() == expected) return
             }
             // Wait until the view is enabled and its bounds are stable across two samples.
+            // 4s: the activity can take longer to settle on a loaded software-emulated runner.
             val bounds = android.graphics.Rect()
             val prevBounds = android.graphics.Rect()
-            val stableDeadline = SystemClock.uptimeMillis() + 2000L
+            val stableDeadline = SystemClock.uptimeMillis() + 4000L
             var ready = false
             while (SystemClock.uptimeMillis() < stableDeadline) {
                 var isEnabled = false
