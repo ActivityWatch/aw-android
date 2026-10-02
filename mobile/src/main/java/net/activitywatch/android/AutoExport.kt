@@ -6,6 +6,10 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.io.InputStream
+import java.io.OutputStream
 import net.activitywatch.android.workers.AutoExportWorker
 import java.util.concurrent.TimeUnit
 
@@ -80,6 +84,18 @@ internal fun recoverInterruptedExports(
             EXPORT_DATE.matches(final.removePrefix(prefix).removeSuffix(".json"))) {
             check(restore(backup, final)) { "could not restore $backup" }
         }
+    }
+}
+
+/** Blocking reads remain timeout-bounded; cancellation prevents the next write. */
+internal suspend fun copyExportCancellable(input: InputStream, output: OutputStream) {
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (true) {
+        currentCoroutineContext().ensureActive()
+        val count = input.read(buffer)
+        currentCoroutineContext().ensureActive()
+        if (count < 0) return
+        output.write(buffer, 0, count)
     }
 }
 

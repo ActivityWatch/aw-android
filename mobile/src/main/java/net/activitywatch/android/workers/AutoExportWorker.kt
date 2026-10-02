@@ -10,11 +10,14 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.BuildConfig
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.autoExportFilename
+import net.activitywatch.android.copyExportCancellable
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
 import net.activitywatch.android.recoverInterruptedExports
@@ -69,6 +72,7 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             var backup: DocumentFile? = null
             try {
                 download(tempFile)
+                currentCoroutineContext().ensureActive()
                 // Download succeeded — promote temp file to final name.
                 val existing = dir.findFile(name)
                 if (existing != null) {
@@ -85,7 +89,8 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 // Never copy into the completed filename: process death could leave a partial
                 // export there without a backup to recover. Providers must support rename.
                 check(renamed != null) { "export folder does not support safe promotion by rename" }
-                backup?.delete()
+                currentCoroutineContext().ensureActive()
+                backup?.let { check(it.delete()) { "could not remove saved export ${it.name}" } }
             } catch (e: Exception) {
                 tempFile.delete()
                 // Promotion failed: drop any half-written final file and restore the previous export.
@@ -96,7 +101,12 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 }
                 throw e
             }
-            exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { dir.findFile(it)?.delete() }
+            exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { oldName ->
+                currentCoroutineContext().ensureActive()
+                val old = dir.findFile(oldName)
+                check(old == null || old.delete()) { "could not prune $oldName" }
+            }
+            currentCoroutineContext().ensureActive()
             record(prefs, "ok")
             Result.success()
         } catch (e: CancellationException) {
@@ -127,7 +137,7 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 if (code !in 200..299) error("export HTTP $code")
                 val out = applicationContext.contentResolver.openOutputStream(target.uri, "wt")
                     ?: error("cannot open ${target.name}")
-                out.use { o -> connection.inputStream.use { it.copyTo(o) } }
+                out.use { o -> connection.inputStream.use { copyExportCancellable(it, o) } }
                 return
             } catch (e: java.net.ConnectException) {
                 lastError = e
