@@ -1,6 +1,9 @@
 package net.activitywatch.android
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
@@ -39,6 +42,38 @@ class DelayedIndicatorTest {
             assertEquals("boom", e.message)
         }
         assertEquals(listOf("show", "hide"), calls)
+    }
+
+    @Test
+    fun indicatorIsHiddenWhenSlowWorkIsCancelled() = runBlocking {
+        val workStarted = CompletableDeferred<Unit>()
+        val job =
+            launch {
+                withDelayedIndicator(10, show, hide) {
+                    workStarted.complete(Unit)
+                    delay(60_000)
+                }
+            }
+        workStarted.await()
+        // Wait for the delayed banner to appear before cancelling the caller.
+        while (calls.isEmpty()) delay(1)
+        job.cancelAndJoin()
+        assertEquals(listOf("show", "hide"), calls)
+    }
+
+    @Test
+    fun cancellationBeforeIndicatorShowsNeversShowsIt() = runBlocking {
+        val workStarted = CompletableDeferred<Unit>()
+        val job =
+            launch {
+                withDelayedIndicator(10_000, show, hide) {
+                    workStarted.complete(Unit)
+                    delay(60_000)
+                }
+            }
+        workStarted.await()
+        job.cancelAndJoin()
+        assertEquals(emptyList<String>(), calls)
     }
 
     @Test
