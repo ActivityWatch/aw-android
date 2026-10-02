@@ -505,7 +505,13 @@ jobs:
 
     - name: Run emulator and smoke the release variant
       uses: reactivecircus/android-emulator-runner@v2
-      timeout-minutes: 30
+      # The action's own post-boot adb calls (unlock / screen-off timeout /
+      # disabling animations) can wedge on this software-emulated runner (no
+      # KVM, TCG) and never reach the script at all — on 1fd93de the step sat
+      # silent for ~28min until this cap fired. Boot is ~2min and the smoke
+      # ~3min, so a tighter cap fails a wedged emulator fast instead of
+      # burning half an hour of runner time.
+      timeout-minutes: 15
       with:
         api-level: 29
         target: default
