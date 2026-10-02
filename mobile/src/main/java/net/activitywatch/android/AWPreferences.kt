@@ -95,6 +95,28 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putString("syncDirUri", uri).apply()
     }
 
+    // Scheduled export (aw-android#141). Interval is an AutoExportInterval name; OFF by default.
+    fun getAutoExportInterval(): AutoExportInterval =
+        AutoExportInterval.fromName(sharedPreferences.getString("autoExportInterval", null))
+
+    fun setAutoExportInterval(interval: AutoExportInterval) {
+        sharedPreferences.edit().putString("autoExportInterval", interval.name).apply()
+    }
+
+    // SAF tree URI of the folder scheduled exports are written into (null = not configured).
+    fun getAutoExportDirUri(): String? = sharedPreferences.getString("autoExportDirUri", null)
+
+    fun setAutoExportDirUri(uri: String?) {
+        sharedPreferences.edit().putString("autoExportDirUri", uri).apply()
+    }
+
+    // Human-readable result of the last scheduled export ("<epoch ms>|<ok|error text>").
+    fun getAutoExportLastResult(): String? = sharedPreferences.getString("autoExportLastResult", null)
+
+    fun setAutoExportLastResult(completedAt: Long, message: String) {
+        sharedPreferences.edit().putString("autoExportLastResult", "$completedAt|$message").apply()
+    }
+
     fun getLastSyncStatus(): SyncStatus? {
         val completedAt = sharedPreferences.getLong("lastSyncCompletedAt", 0L)
         if (completedAt == 0L) return null
