@@ -82,6 +82,9 @@ ADB_TIMEOUT=300 adb install -r "$tmp/aligned.apk"
 adb shell appops set "$PKG" android:get_usage_stats allow >/dev/null 2>&1 || true
 step "launch"; adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1
 sleep 5
+# PIDs of the first launch: a process that crashes during onboarding is gone by
+# the time we read the PIDs after the window, but its log lines carry these.
+pids_launch=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')
 
 # A fresh install always opens OnboardingActivity, which keeps the process alive
 # without starting the server or WebView — so a stripped JNI symbol or
@@ -100,19 +103,35 @@ complete_onboarding() {
 }
 # CI emulators are slow (first launch plus dexopt can take well over a minute),
 # so poll against a deadline rather than a fixed handful of attempts.
+#
+# Prints "onboarding" or "left" only when dumpsys actually reported a resumed
+# activity; a failed/empty dumpsys (wedged adb, mid-transition) prints "unknown"
+# so it can never be mistaken for having left onboarding.
+onboarding_state() {
+    local resumed
+    resumed=$(adb shell dumpsys activity activities 2>/dev/null | grep "ResumedActivity") || true
+    if [ -z "$resumed" ]; then
+        echo unknown
+    elif printf '%s\n' "$resumed" | grep -q "OnboardingActivity"; then
+        echo onboarding
+    else
+        echo left
+    fi
+}
+
 step "onboarding"
 onboarding_deadline=$(( $(date +%s) + ${ONBOARDING_SECONDS:-120} ))
 while [ "$(date +%s)" -lt "$onboarding_deadline" ]; do
     complete_onboarding || true
     sleep 2
-    adb shell dumpsys activity activities 2>/dev/null | grep "ResumedActivity" | grep -q "OnboardingActivity" || break
+    [ "$(onboarding_state)" = left ] && break
 done
 
 status=0
 
-# Must have left the first-run screen, or this test exercised nothing.
-if adb shell dumpsys activity activities 2>/dev/null | grep "ResumedActivity" | grep -q "OnboardingActivity"; then
-    echo "FAIL: still on OnboardingActivity after tapping through; runtime path was never exercised" >&2
+# Must have positively left the first-run screen, or this test exercised nothing.
+if [ "$(onboarding_state)" != left ]; then
+    echo "FAIL: did not confirm leaving OnboardingActivity after tapping through; runtime path was never exercised" >&2
     status=1
 fi
 
@@ -135,12 +154,12 @@ if [ -z "$pids_after" ]; then
     status=1
 fi
 
-# Lines any app process emitted (before/after PIDs), or lines naming the package.
-# The PID scope catches caught errors logged under app-specific tags (e.g. a
-# watcher logging a native-init failure) that a tag-name match would drop.
-app_log=$(awk -v before="${pids_before:-}" -v after="${pids_after:-}" -v pkg="$PKG" '
-    BEGIN { n = split(before " " after, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") p[a[i]] = 1 }
-    ($3 in p) || index($0, pkg) { print }' "$LOGCAT_OUT")
+# Lines emitted by the app's own PIDs. The PID scope catches caught errors logged
+# under app-specific tags (e.g. a watcher logging a native-init failure) and
+# excludes system_server/PackageManager noise that merely mentions the package.
+app_log=$(awk -v pids="${pids_launch:-} ${pids_before:-} ${pids_after:-}" '
+    BEGIN { n = split(pids, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") p[a[i]] = 1 }
+    $3 in p { print }' "$LOGCAT_OUT")
 
 # Resolution errors R8 can introduce, anywhere in the app process's output.
 if printf '%s\n' "$app_log" \
