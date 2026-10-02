@@ -1,6 +1,7 @@
 package net.activitywatch.android
 
 import android.content.Context
+import android.provider.Settings
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -31,6 +32,21 @@ internal fun autoExportFilePrefix(hostname: String): String = "aw-export-$hostna
 
 internal fun autoExportFilename(hostname: String, date: String): String =
     "${autoExportFilePrefix(hostname)}$date.json"
+
+/**
+ * Stable per-device key for the export file namespace.
+ * Appends the first 6 chars of ANDROID_ID to the hostname so two devices with
+ * the same user-visible name (same model, same configured device name) don't
+ * write into each other's export files or retention window.
+ */
+internal fun stableExportKey(context: Context): String {
+    val hostname = deviceHostname(context)
+    val androidId = Settings.Secure.getString(
+        context.contentResolver, Settings.Secure.ANDROID_ID)
+        ?.takeIf { it.isNotEmpty() }
+        ?.take(6) ?: return hostname
+    return "$hostname-$androidId"
+}
 
 /**
  * Names (from [existing]) that should be deleted so only the newest [keep]

@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -170,11 +171,12 @@ class SyncSettingsActivity : AppCompatActivity() {
 
                 // New grant secured — now release a different old URI to stay within Android's
                 // bounded persisted-grant allowance. Reselecting the current directory must not
-                // release the grant we just took for that same URI.
+                // release the grant we just took for that same URI. Also guard the case where the
+                // export folder uses the same URI: releasing it here would break the export worker.
                 val oldUriStr = prefs.getSyncDirUri()
                 if (oldUriStr != null) {
                     val oldUri = Uri.parse(oldUriStr)
-                    if (oldUri != uri) {
+                    if (oldUri != uri && oldUriStr != prefs.getAutoExportDirUri()) {
                         try {
                             val releaseFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                             contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
@@ -289,6 +291,12 @@ class SyncSettingsActivity : AppCompatActivity() {
         }
     }
 
+    // Refreshes the export status text whenever the worker writes a new result, so the screen
+    // doesn't show a stale "last export" line while the screen is open.
+    private val exportResultListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "autoExportLastResult") updateAutoExportStatus()
+    }
+
     override fun onStart() {
         super.onStart()
         ContextCompat.registerReceiver(
@@ -299,6 +307,8 @@ class SyncSettingsActivity : AppCompatActivity() {
         )
         nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
         nextSyncRefreshHandler.postDelayed(nextSyncRefreshRunnable, NEXT_SYNC_REFRESH_INTERVAL_MS)
+        getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(exportResultListener)
     }
 
     override fun onResume() {
@@ -309,6 +319,8 @@ class SyncSettingsActivity : AppCompatActivity() {
     override fun onStop() {
         unregisterReceiver(syncStatusReceiver)
         nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
+        getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(exportResultListener)
         super.onStop()
     }
 

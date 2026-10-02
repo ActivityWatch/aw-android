@@ -2,6 +2,7 @@ package net.activitywatch.android.workers
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.work.CoroutineWorker
@@ -14,9 +15,9 @@ import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.BuildConfig
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.autoExportFilename
-import net.activitywatch.android.deviceHostname
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
+import net.activitywatch.android.stableExportKey
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -44,17 +45,34 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 record(prefs, "export folder is no longer writable — choose it again")
                 return@withContext Result.failure()
             }
-            val host = deviceHostname(applicationContext)
+            val host = stableExportKey(applicationContext)
             val name = autoExportFilename(host, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
 
-            // Same-day re-run (e.g. a retry): replace rather than let the provider write "name (1).json".
-            dir.findFile(name)?.delete()
-            val target = dir.createFile("application/json", name)
-                ?: error("could not create $name")
+            // Write to a temp file first so an interrupted download doesn't leave a partial
+            // file with the final name (which would look like a complete backup).
+            // The existing export is kept until its replacement is complete.
+            val tempName = "$name.tmp"
+            dir.findFile(tempName)?.delete()
+            val tempFile = dir.createFile("application/json", tempName)
+                ?: error("could not create $tempName")
             try {
-                download(target)
+                download(tempFile)
+                // Download succeeded — promote temp file to final name.
+                dir.findFile(name)?.delete()
+                val renamed = DocumentsContract.renameDocument(
+                    applicationContext.contentResolver, tempFile.uri, name)
+                if (renamed == null) {
+                    // Provider doesn't support rename; fall back to copy + delete.
+                    val finalFile = dir.createFile("application/json", name)
+                        ?: error("could not create $name after rename failure")
+                    applicationContext.contentResolver.openInputStream(tempFile.uri)?.use { src ->
+                        applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
+                            ?.use { dst -> src.copyTo(dst) }
+                    }
+                    tempFile.delete()
+                }
             } catch (e: Exception) {
-                target.delete() // never leave a truncated export that looks like a backup
+                tempFile.delete()
                 throw e
             }
             exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { dir.findFile(it)?.delete() }
@@ -71,10 +89,10 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
     }
 
     private suspend fun download(target: DocumentFile) {
-        // The server normally runs in BackgroundService; if the process was cold-started by the
-        // worker, start it and wait for the port.
-        RustInterface(applicationContext).startServerTask()
+        // Create the API key before starting the server so the server loads it during
+        // initialisation and the first export request carries a valid token.
         val token = ensureDashboardApiKey(applicationContext)
+        RustInterface(applicationContext).startServerTask()
         val url = URL("http://127.0.0.1:${BuildConfig.SERVER_PORT}/api/0/export")
         var lastError: Exception? = null
         repeat(10) { attempt ->
