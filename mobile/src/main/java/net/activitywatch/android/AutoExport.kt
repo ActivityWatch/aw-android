@@ -77,8 +77,13 @@ internal fun exportsToPrune(existing: List<String>, hostname: String, keep: Int 
 internal fun tempExportsToClear(existing: List<String>, hostname: String): List<String> {
     val prefix = autoExportFilePrefix(hostname)
     return existing.filter { name ->
-        name.startsWith(prefix) &&
-            (name.endsWith(".json.tmp") || name.endsWith(".json.tmp.json"))
+        if (!name.startsWith(prefix)) return@filter false
+        val date = when {
+            name.endsWith(".json.tmp.json") -> name.removePrefix(prefix).removeSuffix(".json.tmp.json")
+            name.endsWith(".json.tmp") -> name.removePrefix(prefix).removeSuffix(".json.tmp")
+            else -> return@filter false
+        }
+        EXPORT_DATE.matches(date)
     }
 }
 

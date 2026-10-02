@@ -56,6 +56,19 @@ class AutoExportTest {
     }
 
     @Test
+    fun tempExportsToClear_doesNotMatchPrefixShareDevice() {
+        // "pixel-abc" is a prefix of "pixel-abc123"; cleanup must not cross device namespaces.
+        val existing = listOf(
+            "aw-export-pixel-abc-2026-10-01.json.tmp",    // this device — must be cleared
+            "aw-export-pixel-abc123-2026-10-01.json.tmp", // different device — must not be touched
+        )
+        assertEquals(
+            listOf("aw-export-pixel-abc-2026-10-01.json.tmp"),
+            tempExportsToClear(existing, "pixel-abc"),
+        )
+    }
+
+    @Test
     fun prune_keepIsClampedToAtLeastOne() {
         val existing = listOf("aw-export-h-2026-10-01.json", "aw-export-h-2026-10-02.json")
         assertEquals(listOf("aw-export-h-2026-10-01.json"), exportsToPrune(existing, "h", keep = 0))
