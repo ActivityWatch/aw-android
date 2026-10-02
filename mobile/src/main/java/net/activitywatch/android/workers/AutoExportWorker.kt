@@ -53,22 +53,28 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             // The existing export is kept until its replacement is complete.
             val tempName = "$name.tmp"
             dir.findFile(tempName)?.delete()
+            dir.findFile("$tempName.json")?.delete() // some SAF providers append .json to the MIME type
             val tempFile = dir.createFile("application/json", tempName)
                 ?: error("could not create $tempName")
             try {
                 download(tempFile)
                 // Download succeeded — promote temp file to final name.
                 dir.findFile(name)?.delete()
-                val renamed = DocumentsContract.renameDocument(
-                    applicationContext.contentResolver, tempFile.uri, name)
+                val renamed = try {
+                    DocumentsContract.renameDocument(
+                        applicationContext.contentResolver, tempFile.uri, name)
+                } catch (_: Exception) {
+                    null // some SAF providers throw instead of returning null
+                }
                 if (renamed == null) {
                     // Provider doesn't support rename; fall back to copy + delete.
                     val finalFile = dir.createFile("application/json", name)
                         ?: error("could not create $name after rename failure")
-                    applicationContext.contentResolver.openInputStream(tempFile.uri)?.use { src ->
-                        applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
-                            ?.use { dst -> src.copyTo(dst) }
-                    }
+                    val inStream = applicationContext.contentResolver.openInputStream(tempFile.uri)
+                        ?: error("cannot open input stream for temp file")
+                    val outStream = applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
+                        ?: error("cannot open output stream for $name")
+                    inStream.use { outStream.use { o -> inStream.copyTo(o) } }
                     tempFile.delete()
                 }
             } catch (e: Exception) {
