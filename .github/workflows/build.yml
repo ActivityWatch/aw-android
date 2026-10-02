@@ -523,7 +523,7 @@ jobs:
         if-no-files-found: ignore
 
   release-fastlane:
-    needs: [build-apk, test, get-versionCode]
+    needs: [build-apk, test, get-versionCode, test-release-smoke]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-research')  # skip research builds (GitHub release only)
     runs-on: ubuntu-latest
     steps:
@@ -627,7 +627,7 @@ jobs:
         fi
 
   release-gh:
-    needs: [build-apk, test]
+    needs: [build-apk, test, test-release-smoke]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
