@@ -82,19 +82,9 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 } catch (_: Exception) {
                     null // some SAF providers throw instead of returning null
                 }
-                if (renamed == null) {
-                    // Provider doesn't support rename; fall back to copy + delete.
-                    val finalFile = dir.createFile("application/json", name)
-                        ?: error("could not create $name after rename failure")
-                    val inStream = applicationContext.contentResolver.openInputStream(tempFile.uri)
-                        ?: error("cannot open input stream for temp file")
-                    inStream.use { ins ->
-                        val outStream = applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
-                            ?: error("cannot open output stream for $name")
-                        outStream.use { ins.copyTo(it) }
-                    }
-                    tempFile.delete()
-                }
+                // Never copy into the completed filename: process death could leave a partial
+                // export there without a backup to recover. Providers must support rename.
+                check(renamed != null) { "export folder does not support safe promotion by rename" }
                 backup?.delete()
             } catch (e: Exception) {
                 tempFile.delete()
