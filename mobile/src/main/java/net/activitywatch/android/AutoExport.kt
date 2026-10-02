@@ -63,6 +63,26 @@ internal fun exportsToPrune(existing: List<String>, hostname: String, keep: Int 
     return ours.dropLast(keep.coerceAtLeast(1))
 }
 
+/** Restore this device's saved exports before any new download or retention pass. */
+internal fun recoverInterruptedExports(
+    existing: List<String>,
+    hostname: String,
+    restore: (backup: String, final: String) -> Boolean,
+) {
+    val prefix = autoExportFilePrefix(hostname)
+    existing.forEach { backup ->
+        val final = when {
+            backup.endsWith(".json.bak.json") -> backup.removeSuffix(".bak.json")
+            backup.endsWith(".json.bak") -> backup.removeSuffix(".bak")
+            else -> return@forEach
+        }
+        if (final.startsWith(prefix) &&
+            EXPORT_DATE.matches(final.removePrefix(prefix).removeSuffix(".json"))) {
+            check(restore(backup, final)) { "could not restore $backup" }
+        }
+    }
+}
+
 object AutoExportScheduler {
     /** (Re)apply [interval]: enqueue periodic work, or cancel it for OFF. */
     fun apply(context: Context, interval: AutoExportInterval) {

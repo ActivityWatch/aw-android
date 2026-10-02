@@ -17,6 +17,7 @@ import net.activitywatch.android.RustInterface
 import net.activitywatch.android.autoExportFilename
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
+import net.activitywatch.android.recoverInterruptedExports
 import net.activitywatch.android.stableExportKey
 import java.net.HttpURLConnection
 import java.net.URL
@@ -46,6 +47,13 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 return@withContext Result.failure()
             }
             val host = stableExportKey(applicationContext)
+            recoverInterruptedExports(dir.listFiles().mapNotNull { it.name }, host) { backupName, finalName ->
+                val saved = dir.findFile(backupName) ?: error("missing $backupName")
+                // A final file beside a backup may be an interrupted, partial copy.
+                // Prefer the last known complete export, even if the copy actually finished.
+                val final = dir.findFile(finalName)
+                (final == null || final.delete()) && saved.renameTo(finalName)
+            }
             val name = autoExportFilename(host, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
 
             // Write to a temp file first so an interrupted download doesn't leave a partial
@@ -65,10 +73,8 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 val existing = dir.findFile(name)
                 if (existing != null) {
                     val backupName = "$name.bak"
-                    dir.findFile(backupName)?.delete()
-                    dir.findFile("$backupName.json")?.delete()
-                    if (existing.renameTo(backupName)) backup = existing
-                    else existing.delete() // provider can't rename; nothing safer to do
+                    check(existing.renameTo(backupName)) { "could not preserve $name before replacement" }
+                    backup = existing
                 }
                 val renamed = try {
                     DocumentsContract.renameDocument(
@@ -94,8 +100,9 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 tempFile.delete()
                 // Promotion failed: drop any half-written final file and restore the previous export.
                 if (backup != null) {
-                    dir.findFile(name)?.delete()
-                    backup.renameTo(name)
+                    val partial = dir.findFile(name)
+                    check(partial == null || partial.delete()) { "could not remove incomplete $name" }
+                    check(backup.renameTo(name)) { "could not restore $name; complete export retained as ${backup.name}" }
                 }
                 throw e
             }
