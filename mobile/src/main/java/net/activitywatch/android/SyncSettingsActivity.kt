@@ -198,7 +198,7 @@ class SyncSettingsActivity : AppCompatActivity() {
             val uri: Uri = result.data?.data ?: return@registerForActivityResult
             val flags = (result.data?.flags ?: 0) and
                 (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            if ((flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) {
+            if (flags != (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)) {
                 Toast.makeText(this, "Could not secure write access to selected folder", Toast.LENGTH_SHORT).show()
                 return@registerForActivityResult
             }
