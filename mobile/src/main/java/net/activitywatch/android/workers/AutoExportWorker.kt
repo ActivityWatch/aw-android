@@ -72,9 +72,11 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                         ?: error("could not create $name after rename failure")
                     val inStream = applicationContext.contentResolver.openInputStream(tempFile.uri)
                         ?: error("cannot open input stream for temp file")
-                    val outStream = applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
-                        ?: error("cannot open output stream for $name")
-                    inStream.use { outStream.use { o -> inStream.copyTo(o) } }
+                    inStream.use { ins ->
+                        val outStream = applicationContext.contentResolver.openOutputStream(finalFile.uri, "wt")
+                            ?: error("cannot open output stream for $name")
+                        outStream.use { ins.copyTo(it) }
+                    }
                     tempFile.delete()
                 }
             } catch (e: Exception) {
