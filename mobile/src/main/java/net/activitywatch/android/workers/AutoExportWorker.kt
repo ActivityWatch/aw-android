@@ -99,7 +99,6 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 // export there without a backup to recover. Providers must support rename.
                 check(renamed != null) { "export folder does not support safe promotion by rename" }
                 currentCoroutineContext().ensureActive()
-                backup?.let { check(it.delete()) { "could not remove saved export ${it.name}" } }
             } catch (e: Exception) {
                 tempFile.delete()
                 // Promotion failed: drop any half-written final file and restore the previous export.
@@ -109,6 +108,20 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     check(backup.renameTo(name)) { "could not restore $name; complete export retained as ${backup.name}" }
                 }
                 throw e
+            }
+            // Promotion succeeded, so the previous export is superseded. Deleting it is
+            // best-effort: a provider that refuses the delete must not cause us to discard a
+            // successfully downloaded export (the old code rolled back on this failure, so
+            // exports never advanced). A leftover .bak is harmless — it is outside the
+            // retention namespace and the next run overwrites it.
+            backup?.let { saved ->
+                try {
+                    if (!saved.delete()) {
+                        Log.w(TAG, "Could not remove superseded export ${saved.name}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not remove superseded export ${saved.name}", e)
+                }
             }
             exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { oldName ->
                 currentCoroutineContext().ensureActive()

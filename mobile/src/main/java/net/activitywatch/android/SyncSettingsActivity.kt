@@ -294,7 +294,11 @@ class SyncSettingsActivity : AppCompatActivity() {
     // Refreshes the export status text whenever the worker writes a new result, so the screen
     // doesn't show a stale "last export" line while the screen is open.
     private val exportResultListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "autoExportLastResult") updateAutoExportStatus()
+        // The worker records results via SharedPreferences on Dispatchers.IO, and listeners
+        // are invoked on the thread that performed the write. Touch the status view on the
+        // main thread to avoid CalledFromWrongThreadException when the worker finishes while
+        // this screen is open.
+        if (key == "autoExportLastResult") runOnUiThread { updateAutoExportStatus() }
     }
 
     override fun onStart() {
