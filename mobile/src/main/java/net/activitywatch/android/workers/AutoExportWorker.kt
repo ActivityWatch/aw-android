@@ -143,7 +143,17 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { oldName ->
                 currentCoroutineContext().ensureActive()
                 val old = dir.findFile(oldName)
-                check(old == null || old.delete()) { "could not prune $oldName" }
+                // Retention is best-effort: the export itself succeeded, so a provider that
+                // refuses a delete must not turn a completed export into a failed run — that
+                // would re-download the same export on every retry. Log and move on; the next
+                // run attempts the prune again.
+                try {
+                    if (old != null && !old.delete()) {
+                        Log.w(TAG, "Could not prune old export $oldName")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not prune old export $oldName", e)
+                }
             }
             currentCoroutineContext().ensureActive()
             record(prefs, "ok")
