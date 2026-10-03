@@ -61,10 +61,23 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val host = stableExportKey(applicationContext)
             recoverInterruptedExports(dir.listFiles().mapNotNull { it.name }, host) { backupName, finalName ->
                 val saved = dir.findFile(backupName) ?: error("missing $backupName")
-                // A final file beside a backup may be an interrupted, partial copy.
-                // Prefer the last known complete export, even if the copy actually finished.
-                val final = dir.findFile(finalName)
-                (final == null || final.delete()) && saved.renameTo(finalName)
+                if (dir.findFile(finalName) != null) {
+                    // Promotion is rename-only, so a final file beside a backup is a completed
+                    // export, never a partial copy: the backup only survives here when a
+                    // superseded copy could not be deleted (or a rollback could not remove it).
+                    // Keep the visible export and drop the stale backup — never delete the
+                    // final, which would let an older backup overwrite a newer export or leave
+                    // the folder with no visible export at all.
+                    try {
+                        if (!saved.delete()) Log.w(TAG, "Could not remove stale backup ${saved.name}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not remove stale backup ${saved.name}", e)
+                    }
+                    true
+                } else {
+                    // Interrupted promotion: the completed export survives only as the backup.
+                    saved.renameTo(finalName)
+                }
             }
             val name = autoExportFilename(host, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
 
