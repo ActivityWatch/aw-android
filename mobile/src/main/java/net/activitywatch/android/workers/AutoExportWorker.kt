@@ -31,6 +31,9 @@ import java.util.Locale
 
 private const val TAG = "AutoExportWorker"
 
+/** A non-transient failure (e.g. a 4xx from the export endpoint) that retrying cannot fix. */
+private class PermanentExportException(message: String) : Exception(message)
+
 /**
  * Scheduled export (aw-android#141): streams the same full export the webui
  * "Export all buckets" action uses (`GET /api/0/export`) straight into the
@@ -133,6 +136,12 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             Result.success()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: PermanentExportException) {
+            Log.e(TAG, "Scheduled export failed permanently", e)
+            record(prefs, e.message ?: e.javaClass.simpleName)
+            // Not transient (e.g. an expired API key): retrying forever would only drain the
+            // battery. Fail the run and surface the error in the settings status line.
+            Result.failure()
         } catch (e: Exception) {
             Log.e(TAG, "Scheduled export failed", e)
             record(prefs, e.message ?: e.javaClass.simpleName)
@@ -160,7 +169,9 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     // A 5xx while the Rust server is still booting is transient and worth
                     // retrying; a 4xx (e.g. 401) is not and should propagate immediately.
                     if (code in 500..599) throw java.io.IOException("export HTTP $code")
-                    error("export HTTP $code")
+                    // A 4xx (e.g. 401 expired key) will not succeed on retry; surface it as
+                    // permanent so the worker fails instead of retrying forever.
+                    throw PermanentExportException("export HTTP $code")
                 }
                 val out = applicationContext.contentResolver.openOutputStream(target.uri, "wt")
                     ?: error("cannot open ${target.name}")
