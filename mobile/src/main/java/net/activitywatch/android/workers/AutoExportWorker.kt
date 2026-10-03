@@ -128,15 +128,16 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             // Promotion succeeded, so the previous export is superseded. Deleting it is
             // best-effort: a provider that refuses the delete must not cause us to discard a
             // successfully downloaded export (the old code rolled back on this failure, so
-            // exports never advanced). A leftover .bak is harmless — it is outside the
-            // retention namespace and the next run overwrites it.
-            backup?.let { saved ->
+            // exports never advanced). A leftover .bak is outside the retention namespace and
+            // is dropped by the next run's recovery, which keeps the visible export it names.
+            val superseded = backup
+            if (superseded != null) {
                 try {
-                    if (!saved.delete()) {
-                        Log.w(TAG, "Could not remove superseded export ${saved.name}")
+                    if (!superseded.delete()) {
+                        Log.w(TAG, "Could not remove superseded export ${superseded.name}")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Could not remove superseded export ${saved.name}", e)
+                    Log.w(TAG, "Could not remove superseded export ${superseded.name}", e)
                 }
             }
             exportsToPrune(dir.listFiles().mapNotNull { it.name }, host).forEach { oldName ->
