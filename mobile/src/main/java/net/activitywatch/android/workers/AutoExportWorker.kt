@@ -47,8 +47,13 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
         try {
             val dir = DocumentFile.fromTreeUri(applicationContext, Uri.parse(dirUri))
             if (dir == null || !dir.canWrite()) {
+                // A SAF tree can be transiently unavailable (SD card unmounted, provider
+                // not yet mounted at boot, permission temporarily revoked). Result.failure()
+                // is terminal for periodic work — it would silently disable automatic
+                // export until the user re-enables it. Retry with backoff instead; the run
+                // succeeds once the folder is reachable again.
                 record(prefs, "export folder is no longer writable — choose it again")
-                return@withContext Result.failure()
+                return@withContext Result.retry()
             }
             val host = stableExportKey(applicationContext)
             recoverInterruptedExports(dir.listFiles().mapNotNull { it.name }, host) { backupName, finalName ->
@@ -138,12 +143,22 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             }
             try {
                 val code = connection.responseCode
-                if (code !in 200..299) error("export HTTP $code")
+                if (code !in 200..299) {
+                    // A 5xx while the Rust server is still booting is transient and worth
+                    // retrying; a 4xx (e.g. 401) is not and should propagate immediately.
+                    if (code in 500..599) throw java.io.IOException("export HTTP $code")
+                    error("export HTTP $code")
+                }
                 val out = applicationContext.contentResolver.openOutputStream(target.uri, "wt")
                     ?: error("cannot open ${target.name}")
                 out.use { o -> connection.inputStream.use { copyExportCancellable(it, o) } }
                 return
-            } catch (e: java.net.ConnectException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                // Covers ConnectException, SocketTimeoutException and 5xx: all can occur
+                // while the server is still starting. Retrying only ConnectException left
+                // the startup backoff ineffective for the other failure modes.
                 lastError = e
                 delay(1_000L * (attempt + 1)) // server still booting
             } finally {
