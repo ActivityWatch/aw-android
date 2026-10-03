@@ -20,17 +20,25 @@ class AutoExportRecoveryTest {
     }
 
     @Test
-    fun restartRestoresCompleteContentOverPartialOrCompletedReplacement() {
+    fun recoveryKeepsNewestContentWhenABackupAlsoExists() {
+        // Promotion is rename-only, so a `.bak` beside a final name means the export
+        // completed and only the stale backup survived (or its delete failed): the visible
+        // final is kept and the backup dropped. The backup is restored only when no final
+        // exists (an interrupted rename). The callback below mirrors that production policy;
+        // recoverInterruptedExports itself only selects candidates and invokes it.
         val final = "aw-export-h-2026-10-01.json"
         listOf(null, "partial", "new complete").forEach { replacement ->
             val files = mutableMapOf("$final.bak" to "old complete")
             if (replacement != null) files[final] = replacement
             recoverInterruptedExports(files.keys.toList(), "h") { backup, name ->
-                files.remove(name)
-                files[name] = files.remove(backup)!!
+                if (files.containsKey(name)) {
+                    files.remove(backup)
+                } else {
+                    files[name] = files.remove(backup)!!
+                }
                 true
             }
-            assertEquals(mapOf(final to "old complete"), files)
+            assertEquals(mapOf(final to (replacement ?: "old complete")), files)
         }
     }
 
