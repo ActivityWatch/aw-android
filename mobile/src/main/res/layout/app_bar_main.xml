@@ -27,8 +27,8 @@
          (the system claims the edge for Back), so keep a visible entry point. -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/open_drawer_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_gravity="bottom|start"
             android:layout_margin="16dp"
             android:contentDescription="@string/navigation_drawer_open"

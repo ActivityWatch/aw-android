@@ -349,7 +349,7 @@ class NativeWindowInsetsTest {
         }
     }
 
-    @Test fun drawerAndWebContentClearSystemBars() {
+    @Test fun drawerButtonOpensDrawerAndContentClearsSystemBars() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val prefs = AWPreferences(context)
         val wasFirstTime = prefs.isFirstTime()
@@ -359,10 +359,16 @@ class NativeWindowInsetsTest {
                 device.waitForIdle()
                 scenario.onActivity {
                     assertSafeContent(it, requireLightStatusIcons = false)
-                    it.findViewById<DrawerLayout>(R.id.drawer_layout).openDrawer(GravityCompat.START, false)
+                    val button = it.findViewById<View>(R.id.open_drawer_button)
+                    assertTrue("Drawer button must provide a 48dp touch target", button.width >= 48.dp(it))
+                    assertTrue("Drawer button must provide a 48dp touch target", button.height >= 48.dp(it))
+                    assertTrue("Drawer must start closed",
+                        !it.findViewById<DrawerLayout>(R.id.drawer_layout).isDrawerOpen(GravityCompat.START))
                 }
-                device.waitForIdle()
+                tapViewCenter(scenario, R.id.open_drawer_button, "Drawer button")
                 scenario.onActivity {
+                    assertTrue("Tapping the drawer button must open the drawer",
+                        it.findViewById<DrawerLayout>(R.id.drawer_layout).isDrawerOpen(GravityCompat.START))
                     val logo = it.findViewById<View>(R.id.imageView)
                     val bounds = android.graphics.Rect()
                     assertTrue(logo.getGlobalVisibleRect(bounds))
@@ -376,4 +382,7 @@ class NativeWindowInsetsTest {
             if (wasFirstTime) prefs.resetFirstTimeRunFlag()
         }
     }
+
+    private fun Int.dp(activity: Activity): Int =
+        (this * activity.resources.displayMetrics.density).toInt()
 }
