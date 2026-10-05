@@ -366,6 +366,7 @@ class NativeWindowInsetsTest {
                         !it.findViewById<DrawerLayout>(R.id.drawer_layout).isDrawerOpen(GravityCompat.START))
                 }
                 tapViewCenter(scenario, R.id.open_drawer_button, "Drawer button")
+                device.waitForIdle()
                 scenario.onActivity {
                     assertTrue("Tapping the drawer button must open the drawer",
                         it.findViewById<DrawerLayout>(R.id.drawer_layout).isDrawerOpen(GravityCompat.START))
