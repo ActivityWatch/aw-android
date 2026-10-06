@@ -67,6 +67,15 @@ class AWPreferences(context: Context) {
             .apply()
     }
 
+    // Per hostname, since staging lives under {sync_dir}/{hostname}/ (see StagingReset).
+    fun isStagingResetDone(hostname: String): Boolean {
+        return sharedPreferences.getBoolean(StagingReset.prefKey(hostname), false)
+    }
+
+    fun setStagingResetDone(hostname: String) {
+        sharedPreferences.edit().putBoolean(StagingReset.prefKey(hostname), true).apply()
+    }
+
     fun hasRequestedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
     }
