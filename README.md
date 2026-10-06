@@ -6,16 +6,21 @@ aw-android
 
 A very work-in-progress ActivityWatch app for Android.
 
-Available on Google Play:
+Available on Google Play and F-Droid:
 
 <a title="Get it on Google Play" href="https://play.google.com/store/apps/details?id=net.activitywatch.android">
-    <img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" width="240px"/>
+    <img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" height="80px"/>
 </a>
+<a title="Get it on F-Droid" href="https://f-droid.org/en/packages/net.activitywatch.android/">
+    <img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" height="80px"/>
+</a>
+
+For other platforms, see [activitywatch.net/downloads](https://activitywatch.net/downloads/).
 
 
 ## Usage
 
-Install the APK from the Play Store or from the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
+Install the app from the [Play Store](https://play.google.com/store/apps/details?id=net.activitywatch.android), [F-Droid](https://f-droid.org/en/packages/net.activitywatch.android/), or the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
 
 ### For Oculus Quest
 
@@ -95,10 +100,9 @@ case-variant like `-Research` is also refused).
   `-research` fails the assertion, so a research-marked build can never reach
   Play production from a plain tag. Self-test:
   `scripts/strip-research-suffix.sh --self-test`.
-- **F-Droid**: aw-android is not currently in F-Droid's `fdroiddata`, so there
-  is no F-Droid version regex that could attempt to build a `-research` tag. If
-  the app is ever added to F-Droid, the maintainer must ensure its version regex
-  ignores `-research` tags (F-Droid builds from tagged source).
+- **F-Droid**: aw-android is [on F-Droid](https://f-droid.org/en/packages/net.activitywatch.android/),
+  which builds from tagged source, so its version regex in `fdroiddata` must
+  ignore `-research` tags.
 - **Signing**: a study needs one stable signing key for its duration so
   participants can install updates over the top of a sideloaded APK. Note that
   a future Play release may be re-signed by Play App Signing, which would break
