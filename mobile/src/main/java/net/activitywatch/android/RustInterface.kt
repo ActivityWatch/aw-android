@@ -97,7 +97,9 @@ class RustInterface(context: Context? = null) {
     }
 
     companion object {
-        var serverStarted = false
+        // @Volatile so the check in startServerTask() is visible across threads
+        // without requiring callers to be inside a synchronized block.
+        @Volatile var serverStarted = false
     }
 
     private external fun initialize()
@@ -120,7 +122,16 @@ class RustInterface(context: Context? = null) {
     }
 
     fun startServerTask() {
-        if (!serverStarted) {
+        // Synchronize the check-and-set so two concurrent onStartCommand invocations
+        // (e.g. BOOT_COMPLETED and a MainActivity launch racing on a fresh install)
+        // cannot both pass the !serverStarted guard before either sets the flag.
+        // @Volatile on serverStarted also makes the flag visible to callers that
+        // read it outside this lock (e.g. BackgroundService.migrateSanitizedHostnameIdentity).
+        synchronized(this) {
+            if (serverStarted) {
+                Log.i(TAG, "Server already started, skipping")
+                return
+            }
             when (probeServerPort(BuildConfig.SERVER_PORT)) {
                 PortProbe.FREE -> {}
                 PortProbe.IN_USE -> {
@@ -139,25 +150,25 @@ class RustInterface(context: Context? = null) {
                     return
                 }
             }
-
             serverStarted = true
-            val executor = Executors.newSingleThreadExecutor()
-            val handler = Handler(Looper.getMainLooper())
-            executor.execute {
-                // will not block the UI thread
-
-                // Start server
-                Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
-                startServer(BuildConfig.SERVER_PORT)
-
-                handler.post {
-                    // will run on UI thread after the task is done
-                    Log.i(TAG, "Server finished")
-                    serverStarted = false
-                }
-            }
-            Log.w(TAG, "Server started")
         }
+
+        val executor = Executors.newSingleThreadExecutor()
+        val handler = Handler(Looper.getMainLooper())
+        executor.execute {
+            // will not block the UI thread
+
+            // Start server
+            Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
+            startServer(BuildConfig.SERVER_PORT)
+
+            handler.post {
+                // will run on UI thread after the task is done
+                Log.i(TAG, "Server finished")
+                serverStarted = false
+            }
+        }
+        Log.w(TAG, "Server started")
     }
 
     fun createBucketHelper(bucket_id: String, type: String, client: String = "aw-android") {
