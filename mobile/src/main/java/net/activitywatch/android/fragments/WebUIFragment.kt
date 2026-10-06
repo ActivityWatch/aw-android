@@ -565,6 +565,12 @@ class WebUIFragment : Fragment() {
         }
     }
 
+    fun canGoBack(): Boolean = webView?.canGoBack() == true
+
+    fun goBack() {
+        webView?.goBack()
+    }
+
     override fun onDestroyView() {
         reloadHandler.removeCallbacks(reloadRunnable)
         filePathCallback?.onReceiveValue(null)
