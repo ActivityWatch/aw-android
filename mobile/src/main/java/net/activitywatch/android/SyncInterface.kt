@@ -206,10 +206,50 @@ class SyncInterface(context: Context) {
     private external fun syncPull(port: Int, hostname: String): String
     private external fun syncPush(port: Int, hostname: String): String
     private external fun syncBoth(port: Int, hostname: String): String
+    private external fun resetStaging(hostname: String): String
     external fun getSyncDir(): String
     
     private fun getDeviceName(): String = deviceHostname(appContext)
-    
+
+    /**
+     * One-shot reset of the staging database if it hasn't been done yet.
+     * This removes stale duplicates from pre-ActivityWatch/aw-server-rust#713 staging data.
+     *
+     * Runs synchronously under the syncInFlight guard to prevent concurrent access.
+     * SharedPreferences flag ensures it only runs once per device.
+     *
+     * Returns: true if reset succeeded or was already done, false if reset failed.
+     */
+    private fun resetStagingOnce(): Boolean {
+        val prefs = AWPreferences(appContext)
+        val pref = "reset_staging_done_${getDeviceName()}"
+
+        if (prefs.getBoolean(pref, false)) {
+            Log.d(TAG, "Staging reset already performed for this device")
+            return true
+        }
+
+        return try {
+            Log.i(TAG, "Resetting staging database for device: ${getDeviceName()}")
+            val response = resetStaging(getDeviceName())
+            val json = JSONObject(response)
+            val success = json.optBoolean("success", false)
+
+            if (success) {
+                prefs.setBoolean(pref, true)
+                Log.i(TAG, "Staging reset completed successfully")
+                true
+            } else {
+                val error = json.optString("error", "unknown error")
+                Log.w(TAG, "Staging reset failed: $error")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during staging reset", e)
+            false
+        }
+    }
+
     // Async wrapper for syncPullAll
     fun syncPullAllAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
@@ -221,7 +261,7 @@ class SyncInterface(context: Context) {
     // Async wrapper for syncPush
     fun syncPushAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
-        performSyncAsync("Push", callback) {
+        performSyncAsync("Push", callback, preSyncFn = { resetStagingOnce() }) {
             syncPush(BuildConfig.SERVER_PORT, hostname)
         }
     }
@@ -254,7 +294,8 @@ class SyncInterface(context: Context) {
                 // parsed SyncReport; building it here again would discard the counts.
                 callback(success, message)
             },
-            mirrorBeforeCallback
+            mirrorBeforeCallback,
+            preSyncFn = { resetStagingOnce() }
         ) {
             syncBoth(BuildConfig.SERVER_PORT, hostname)
         }
@@ -285,6 +326,7 @@ class SyncInterface(context: Context) {
         operation: String,
         callback: (Boolean, String) -> Unit,
         mirrorBeforeCallback: Boolean = false,
+        preSyncFn: (() -> Boolean)? = null,
         syncFn: () -> String
     ) {
         val executor = Executors.newSingleThreadExecutor()
@@ -299,6 +341,18 @@ class SyncInterface(context: Context) {
             var nativeStatus: SyncStatus? = null
             try {
                 ensureLegacyFoldersMigrated()
+
+                // Run pre-sync operation (e.g., staging reset) if provided.
+                // A failed pre-sync step doesn't abort the sync, but is logged.
+                if (preSyncFn != null) {
+                    try {
+                        preSyncFn()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Pre-sync operation failed", e)
+                        // Continue with sync anyway; pre-sync failures are not critical.
+                    }
+                }
+
                 val response = syncFn()
                 val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())
                 nativeStatus = status
