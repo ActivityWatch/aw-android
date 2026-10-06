@@ -200,12 +200,19 @@ class NativeWindowInsetsTest {
      */
     private fun tapViewCenter(scenario: ActivityScenario<*>, viewId: Int, what: String) {
         val bounds = android.graphics.Rect()
+        val rootLocation = IntArray(2)
         device.waitForIdle()
         scenario.onActivity { activity ->
             val view = activity.findViewById<View>(viewId)
             assertNotNull("$what must exist", view)
             assertTrue("$what must be laid out on screen", view.getGlobalVisibleRect(bounds))
             assertTrue("$what must have a tappable area", bounds.width() > 0 && bounds.height() > 0)
+
+            // getGlobalVisibleRect() is expressed in the root view's coordinate space,
+            // while UiDevice.click() expects physical screen coordinates. The two differ
+            // when a native window is inset below the status bar.
+            activity.window.decorView.getLocationOnScreen(rootLocation)
+            bounds.offset(rootLocation[0], rootLocation[1])
         }
         assertTrue("$what tap must be injected", device.click(bounds.centerX(), bounds.centerY()))
     }
