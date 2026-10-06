@@ -4,7 +4,7 @@ aw-android
 [![GitHub Actions badge](https://github.com/ActivityWatch/aw-android/workflows/Build/badge.svg)](https://github.com/ActivityWatch/aw-android/actions)
 [![Play Store ratings](https://PlayBadges.pavi2410.me/badge/ratings?id=net.activitywatch.android&country=us)](https://play.google.com/store/apps/details?id=net.activitywatch.android)
 
-A very work-in-progress ActivityWatch app for Android.
+The official ActivityWatch app for Android: tracks app usage on your device and shows it in the same web UI as the desktop version.
 
 Available on Google Play and F-Droid:
 
