@@ -53,6 +53,19 @@ internal fun initialWebUiUrl(
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
 
+internal enum class BackAction { CLOSE_DRAWER, WEBVIEW_BACK, FINISH }
+
+/**
+ * Back (button or gesture) closes the drawer first, then walks the embedded web UI's
+ * history, and only finishes the activity when there is nowhere left to go
+ * (ActivityWatch/aw-android#321 item 6).
+ */
+internal fun backAction(drawerOpen: Boolean, webViewCanGoBack: Boolean): BackAction = when {
+    drawerOpen -> BackAction.CLOSE_DRAWER
+    webViewCanGoBack -> BackAction.WEBVIEW_BACK
+    else -> BackAction.FINISH
+}
+
 /** Native Home lives in MainActivity, so it inherits the last WebView chrome unless reset. */
 internal fun shouldResetChromeForNativeDestination(isWebUiDestination: Boolean): Boolean =
     !isWebUiDestination
@@ -182,10 +195,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
-                } else {
-                    finish()
+                val webUi = supportFragmentManager.findFragmentById(R.id.fragment_container) as? WebUIFragment
+                when (backAction(
+                    drawerOpen = binding.drawerLayout.isDrawerOpen(GravityCompat.START),
+                    webViewCanGoBack = webUi?.canGoBack() == true,
+                )) {
+                    BackAction.CLOSE_DRAWER -> binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    BackAction.WEBVIEW_BACK -> webUi?.goBack()
+                    BackAction.FINISH -> finish()
                 }
             }
         })
