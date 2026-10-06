@@ -101,8 +101,9 @@ case-variant like `-Research` is also refused).
   Play production from a plain tag. Self-test:
   `scripts/strip-research-suffix.sh --self-test`.
 - **F-Droid**: aw-android is [on F-Droid](https://f-droid.org/en/packages/net.activitywatch.android/),
-  which builds from tagged source, so its version regex in `fdroiddata` must
-  ignore `-research` tags.
+  which builds from tagged source. Its `fdroiddata` update check
+  (`UpdateCheckMode: Tags ^v[\d.]+$`) only matches plain release tags, so
+  `-research` (and beta/dev) tags are ignored; keep it that way.
 - **Signing**: a study needs one stable signing key for its duration so
   participants can install updates over the top of a sideloaded APK. Note that
   a future Play release may be re-signed by Play App Signing, which would break
