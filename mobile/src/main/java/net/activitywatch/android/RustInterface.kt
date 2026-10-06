@@ -127,7 +127,9 @@ class RustInterface(context: Context? = null) {
         // cannot both pass the !serverStarted guard before either sets the flag.
         // @Volatile on serverStarted also makes the flag visible to callers that
         // read it outside this lock (e.g. BackgroundService.migrateSanitizedHostnameIdentity).
-        synchronized(this) {
+        // Lock on Companion, not `this`: serverStarted is shared by every RustInterface
+        // instance, so a per-instance lock would not stop two instances racing.
+        synchronized(Companion) {
             if (serverStarted) {
                 Log.i(TAG, "Server already started, skipping")
                 return
