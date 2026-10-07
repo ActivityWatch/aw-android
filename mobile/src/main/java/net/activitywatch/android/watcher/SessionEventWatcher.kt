@@ -19,14 +19,18 @@ const val SESSION_BUCKET_ID = "aw-watcher-android"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
 
 class SessionEventWatcher(val context: Context) {
-    // RustInterface construction calls System.loadLibrary + JNI initialize.
-    // Doing that on the thread that constructed us (MainActivity, AlarmReceiver,
-    // widget refresh, TestFragment) blocked those callers; same pattern as
-    // WebWatcher/MediaWatcher in aw-android#262.
-    private val rust = OffThreadInit(
-        threadName = "SessionEventWatcher-init",
-        logTag = TAG,
-    ) { RustInterface(context.applicationContext) }
+    // Lazy so constructing SessionEventWatcher on the main thread (e.g. from the
+    // lifecycleScope.launch body in MainActivity.onResume, which runs inline via
+    // Dispatchers.Main.immediate) does not call Thread.start() on the UI thread.
+    // On a heavily-loaded fresh boot Thread.start() can block long enough to ANR.
+    // RustInterface itself uses loadLibrary + JNI init; those run on the worker
+    // thread inside OffThreadInit, same pattern as WebWatcher/MediaWatcher (#262).
+    private val rust by lazy {
+        OffThreadInit(
+            threadName = "SessionEventWatcher-init",
+            logTag = TAG,
+        ) { RustInterface(context.applicationContext) }
+    }
     private val sessionParser = SessionParser(context)
     private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
 

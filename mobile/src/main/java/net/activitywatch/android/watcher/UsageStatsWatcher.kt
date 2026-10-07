@@ -30,6 +30,8 @@ import java.net.URL
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // Single source of truth lives in SessionEventWatcher; alias here so the two watchers
 // can never drift to different bucket names.
@@ -304,7 +306,12 @@ class UsageStatsWatcher constructor(val context: Context) {
      */
     suspend fun sendHeartbeatsSuspend() {
         if (useSessionBasedEvents) {
-            sessionWatcher.sendSessionEventsSuspend()
+            // Dispatch to IO before touching the lazy sessionWatcher so its construction
+            // (and the nested SessionEventWatcher.rust OffThreadInit) never runs on the
+            // main thread, even when called from lifecycleScope.launch (Dispatchers.Main.immediate).
+            withContext(Dispatchers.IO) {
+                sessionWatcher.sendSessionEventsSuspend()
+            }
         }
         // Legacy SendHeartbeatsTask path is not awaitable; skip for widget use case.
     }
