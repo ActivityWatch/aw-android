@@ -80,19 +80,22 @@ private fun parseAlertArray(alerts: JSONArray, legacy: Boolean): List<CategoryAl
 
 internal fun alertsFromSetting(json: String): List<CategoryAlert> {
     val value = json.trim()
+    // Missing settings retain pre-migration behavior. Switching existing installs
+    // to opt-in needs a reachable enable control and an explicit migration notice.
     if (value.isEmpty() || value == "null") return DEFAULT_ALERTS
 
     return try {
         if (value.startsWith("[")) {
-            parseAlerts(value).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+            parseAlerts(value)
         } else {
             val config = JSONObject(value)
-            val alertsArray = config.getJSONArray("alerts")
-            val alerts = parseAlertArray(alertsArray, legacy = false)
-            if (alertsArray.length() == 0) alerts else alerts.takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+            // Do not coerce strings/numbers into an opt-in decision. Missing is
+            // the legacy state; explicit false or an invalid flag fails closed.
+            if (config.has("enabled") && config.opt("enabled") != true) return emptyList()
+            parseAlertArray(config.getJSONArray("alerts"), legacy = false)
         }
     } catch (e: Exception) {
-        DEFAULT_ALERTS
+        emptyList()
     }
 }
 
@@ -178,11 +181,14 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         }
 
         return try {
+            val alerts = alertsFromSetting(ri.getSetting("aw-notify"))
+            // Keep the periodic worker scheduled so enabling later takes effect,
+            // but never query activity or create notifications when disabled.
+            if (alerts.isEmpty()) return Result.success()
             val zone = ZoneId.systemDefault()
             val startOfDayHour = parseStartOfDayHour(ri.getSetting("startOfDay"))
             val now = LocalDateTime.now(zone)
             val categorySeconds = getCategorySecondsToday(ri, now, zone, startOfDayHour)
-            val alerts = alertsFromSetting(ri.getSetting("aw-notify"))
             checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour), alerts)
             Result.success()
         } catch (e: Exception) {
