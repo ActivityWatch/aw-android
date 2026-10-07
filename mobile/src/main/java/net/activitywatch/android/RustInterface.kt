@@ -159,15 +159,19 @@ class RustInterface(context: Context? = null) {
         val handler = Handler(Looper.getMainLooper())
         executor.execute {
             // will not block the UI thread
-
-            // Start server
-            Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
-            startServer(BuildConfig.SERVER_PORT)
-
-            handler.post {
-                // will run on UI thread after the task is done
-                Log.i(TAG, "Server finished")
-                serverStarted = false
+            try {
+                // Start server
+                Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
+                startServer(BuildConfig.SERVER_PORT)
+            } finally {
+                // Reset unconditionally, including when startServer() throws
+                // (JNI/native failure): otherwise serverStarted stays true and
+                // startServerTask() never restarts the server until process death.
+                handler.post {
+                    // will run on UI thread after the task is done
+                    Log.i(TAG, "Server finished")
+                    serverStarted = false
+                }
             }
         }
         Log.w(TAG, "Server started")
