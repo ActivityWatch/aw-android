@@ -110,6 +110,10 @@ android {
         viewBinding true
         buildConfig true
     }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -133,6 +137,8 @@ dependencies {
 
     testImplementation "junit:junit:4.13.2"
     testImplementation 'org.json:json:20231013'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'androidx.work:work-testing:2.9.1'
     androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
     androidTestImplementation "androidx.test:runner:$androidXTestVersion"
     androidTestImplementation "androidx.test:rules:$androidXTestVersion"
