@@ -100,7 +100,7 @@ internal fun formatSyncDetail(status: SyncStatus, isPushOnlyDevice: Boolean = fa
     // The "zero peers in a configured sync dir" warning is a desktop diagnostic
     // (aw-server-rust#687) — not meaningful on Android where pull is a no-op by
     // construction (SAF mirror is outbound-only until sync v2).
-    val warnings = if (isPushOnlyDevice) status.warnings.filter { "zero peers" !in it } else status.warnings
+    val warnings = if (isPushOnlyDevice) status.warnings.filter { "zero peers" !in it.lowercase() } else status.warnings
     if (warnings.isEmpty()) return line
     return (listOf(line) + warnings).joinToString("\n")
 }
