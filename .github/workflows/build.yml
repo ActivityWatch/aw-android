@@ -423,7 +423,7 @@ jobs:
         api-level: ${{ matrix.api-level }}
         target: default
         arch: x86_64
-        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -memory 2048
         disable-animations: true
         script: >-
           bash -o pipefail -c 'set +e; make test-e2e; test_status=$?;
@@ -464,8 +464,74 @@ jobs:
     #    # echo '<style>' >> GITHUB_STEP_SUMMARY.html;for file in ./mobile/build/reports/androidTests/connected/**/*.css; do cat $file >> GITHUB_STEP_SUMMARY.html ; done; echo '</style>' >> GITHUB_STEP_SUMMARY.html;
     #    cat GITHUB_STEP_SUMMARY.html >> $GITHUB_STEP_SUMMARY
 
+  # Runs the R8-minified release variant on an emulator (aw-android#268).
+  # test-e2e only installs the debug APK, so R8-introduced runtime failures
+  # (stripped JNI symbols, @JavascriptInterface methods, reflective classes)
+  # would otherwise first surface on a release tag.
+  test-release-smoke:
+    name: Test release variant (R8 smoke)
+    needs: [build-rust]
+    runs-on: ubicloud-standard-8
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Download jniLibs artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: jniLibs
+        path: mobile/src/main/jniLibs/
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ env.JAVA_VERSION }}
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: platform-tools
+
+    - name: Set up Android NDK
+      run: |
+        sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+
+    - name: Build release variant (R8)
+      run: ./gradlew :mobile:assembleStandardRelease -x lintVitalStandardRelease
+
+    - name: Run emulator and smoke the release variant
+      uses: reactivecircus/android-emulator-runner@v2
+      # The action's own post-boot adb calls (unlock / screen-off timeout /
+      # disabling animations) can wedge on this software-emulated runner (no
+      # KVM, TCG) and never reach the script at all — on 1fd93de the step sat
+      # silent for ~28min until this cap fired. Boot is ~2min and the smoke
+      # ~3min, so a tighter cap fails a wedged emulator fast instead of
+      # burning half an hour of runner time.
+      timeout-minutes: 15
+      with:
+        api-level: 29
+        target: default
+        arch: x86_64
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+        disable-animations: true
+        script: bash scripts/smoke-release-variant.sh mobile/build/outputs/apk/standard/release/mobile-standard-release-unsigned.apk
+
+    - name: Upload logcat
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-smoke-logcat
+        path: |
+          mobile/build/release-smoke-logcat.log
+          mobile/build/release-smoke-logcat-ui.xml
+        if-no-files-found: ignore
+
   release-fastlane:
-    needs: [build-apk, test, get-versionCode]
+    needs: [build-apk, test, get-versionCode, test-release-smoke]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-research')  # skip research builds (GitHub release only)
     runs-on: ubuntu-latest
     steps:
@@ -569,7 +635,7 @@ jobs:
         fi
 
   release-gh:
-    needs: [build-apk, test]
+    needs: [build-apk, test, test-release-smoke]
     if: startsWith(github.ref, 'refs/tags/v')  # only on runs triggered from tag
     runs-on: ubuntu-latest
     steps:
