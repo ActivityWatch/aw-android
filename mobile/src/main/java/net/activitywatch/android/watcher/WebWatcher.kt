@@ -1,7 +1,8 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
-import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
@@ -46,7 +47,9 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
-    private var lastTitleLookup = 0L
+    private val titleGate = TitleLookupGate()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var titleFollowUpPending = false
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -121,11 +124,10 @@ class WebWatcher : AccessibilityService() {
                     } else {
                         handleUrl(newUrl, newBrowser = browser)
                     }
-                    if (shouldLookUpTitle(browser)) {
-                        findWebView(source)?.let { webView ->
-                            handleWindowTitle(webView.text.toString())
-                            if (webView !== source) webView.recycle()
-                        }
+                    when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
+                        null -> {}
+                        0L -> lookUpTitle(source)
+                        else -> scheduleTitleLookup(browser, delay)
                     }
                 } finally {
                     source.recycle()
@@ -141,18 +143,30 @@ class WebWatcher : AccessibilityService() {
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
 
-    // findWebView walks the event's subtree, up to MAX_TRAVERSAL_NODES binder calls on this
-    // (main) thread, and content-change events arrive up to every 100ms while a page is
-    // open. Look the title up at most every TITLE_LOOKUP_MS while it is still unknown, and
-    // every TITLE_RECHECK_MS once found so in-page title changes are still picked up.
-    private fun shouldLookUpTitle(browser: String): Boolean {
-        // See findWebView: the lookup never matches Firefox.
-        if (browser == "org.mozilla.firefox") return false
-        val now = SystemClock.elapsedRealtime()
-        val interval = if (sessionTracker.hasTitle) TITLE_RECHECK_MS else TITLE_LOOKUP_MS
-        if (now - lastTitleLookup < interval) return false
-        lastTitleLookup = now
-        return true
+    // Runs a lookup that was skipped by the gate once it is allowed, so a title that
+    // arrives on a skipped event (with the page quiet afterwards) is still captured.
+    private fun scheduleTitleLookup(browser: String, delayMs: Long) {
+        if (titleFollowUpPending) return
+        titleFollowUpPending = true
+        mainHandler.postDelayed({
+            titleFollowUpPending = false
+            if (sessionTracker.currentBrowser != browser) return@postDelayed
+            if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@postDelayed
+            val root = rootInActiveWindow ?: return@postDelayed
+            try {
+                // A fresh tree: the skipped event's nodes have been recycled by now.
+                if (root.packageName?.toString() == browser) lookUpTitle(root)
+            } finally {
+                root.recycle()
+            }
+        }, delayMs)
+    }
+
+    private fun lookUpTitle(from: AccessibilityNodeInfo) {
+        findWebView(from)?.let { webView ->
+            handleWindowTitle(webView.text.toString())
+            if (webView !== from) webView.recycle()
+        }
     }
 
     // TODO(maintainer): this never finds a match for Firefox, so its page title is never
@@ -221,10 +235,12 @@ class WebWatcher : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    companion object {
-        private const val TITLE_LOOKUP_MS = 500L
-        private const val TITLE_RECHECK_MS = 5_000L
+    override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
 
+    companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",
