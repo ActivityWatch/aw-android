@@ -82,20 +82,21 @@ object CategoryTimeWidgetUpdater {
             
             Log.d(TAG, "Updating ${appWidgetIds.size} widget instances")
             
-            for (appWidgetId in appWidgetIds) {
-                updateSingleWidget(context, appWidgetManager, appWidgetId)
+            if (appWidgetIds.isNotEmpty()) {
+                updateWidgets(context, appWidgetManager, appWidgetIds)
             }
         }
 
         /**
-         * Update a single widget instance
+         * Update the given widget instances. Every instance shows the same data, so the
+         * day's query and the bar chart are built once and applied to all of them.
          */
-        fun updateSingleWidget(
+        fun updateWidgets(
             context: Context,
             appWidgetManager: AppWidgetManager,
-            appWidgetId: Int
+            appWidgetIds: IntArray
         ) {
-            Log.d(TAG, "Updating widget $appWidgetId")
+            Log.d(TAG, "Updating widgets ${appWidgetIds.joinToString()}")
 
             val views = RemoteViews(context.packageName, R.layout.widget_category_time)
 
@@ -174,7 +175,7 @@ object CategoryTimeWidgetUpdater {
             // Ensure loading indicator is hidden
             views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
 
-            appWidgetManager.updateAppWidget(appWidgetId, views)
+            appWidgetManager.updateAppWidget(appWidgetIds, views)
         }
 
         /**
