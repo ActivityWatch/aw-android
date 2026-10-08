@@ -42,8 +42,8 @@ class SessionEventWatcher(val context: Context) {
     }
 
     // queryEvents uses an inclusive lower bound, so replaying the last stored
-    // session's start timestamp would duplicate that session on every run.
-    private fun nextQueryStartTimestamp(): Long = (lastUpdated?.toEpochMilli()?.plus(1L)) ?: 0L
+    // event's start timestamp would duplicate that event on every run.
+    private fun queryStartAfter(last: Instant?): Long = (last?.toEpochMilli()?.plus(1L)) ?: 0L
 
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
@@ -55,9 +55,9 @@ class SessionEventWatcher(val context: Context) {
 
     private fun rustInterface(): RustInterface? = rust.await()
 
-    private fun getLastEventTime(): Instant? {
+    private fun getLastEventTime(bucketId: String): Instant? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
+        val events = ri.getEventsJSON(bucketId, limit = 1)
         return if (events.length() == 1) {
             val lastEvent = events[0] as JSONObject
             val timestampString = lastEvent.getString("timestamp")
@@ -103,12 +103,15 @@ class SessionEventWatcher(val context: Context) {
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
         ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
-        lastUpdated = getLastEventTime()
+        lastUpdated = getLastEventTime(SESSION_BUCKET_ID)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-        val startTimestamp = nextQueryStartTimestamp()
-        val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
-        val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
+        val sessions = sessionParser.parseUsageEventsSince(queryStartAfter(lastUpdated))
+        // Unlocks need their own cursor. Resuming them from the last *session* start
+        // re-sent every unlock since then on each run, and the server only merges a
+        // heartbeat into the newest event, so all but the last were inserted again.
+        val lastUnlock = getLastEventTime(UNLOCK_BUCKET_ID)
+        val unlockTimestamps = sessionParser.parseUnlockEventsSince(queryStartAfter(lastUnlock))
 
         var eventsSent = 0
 
