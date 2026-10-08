@@ -58,11 +58,19 @@ class SessionEventWatcher(val context: Context) {
 
     private fun rustInterface(): RustInterface? = rust.await()
 
+    // Data of the last stored session, reused when that session is emitted again so the
+    // server merge (which needs identical data) extends it. Re-deriving it would read the
+    // app's current label, which a language change or app update can alter, and the
+    // replay would then be inserted as a second copy.
+    private var lastStoredData: JSONObject? = null
+
     private fun getLastEventTime(): Instant? {
         val ri = rustInterface() ?: return null
         val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
+        lastStoredData = null
         return if (events.length() == 1) {
             val lastEvent = events[0] as JSONObject
+            lastStoredData = lastEvent.optJSONObject("data")
             val timestampString = lastEvent.getString("timestamp")
             try {
                 val timeCreatedDate = isoFormatter.parse(timestampString)
@@ -110,14 +118,16 @@ class SessionEventWatcher(val context: Context) {
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
         val startTimestamp = nextQueryStartTimestamp()
-        val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
+        val storedStart = lastUpdated?.toEpochMilli()
+        val sessions = sessionParser.parseUsageEventsSince(startTimestamp, storedStart)
         val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
 
         var eventsSent = 0
 
         for (session in sessions) {
             // Insert session as individual event
-            insertSessionAsEvent(session)
+            val storedData = lastStoredData.takeIf { session.startTime == storedStart }
+            insertSessionAsEvent(session, storedData)
             eventsSent++
         }
         
@@ -135,11 +145,11 @@ class SessionEventWatcher(val context: Context) {
     /**
      * Insert a single session as an individual event (not a heartbeat)
      */
-    private fun insertSessionAsEvent(session: AppSession) {
+    private fun insertSessionAsEvent(session: AppSession, storedData: JSONObject? = null) {
         val ri = rustInterface() ?: return
         val startInstant = DateTimeUtils.toInstant(java.util.Date(session.startTime))
         val duration = session.durationSeconds
-        val data = session.toEventData()
+        val data = storedData ?: session.toEventData()
 
         // Use insertEvent method to insert as discrete event
         // This prevents merging behavior and treats each session as a separate event

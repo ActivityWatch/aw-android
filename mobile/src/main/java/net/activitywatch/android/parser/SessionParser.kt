@@ -93,14 +93,16 @@ class SessionParser(private val context: Context) {
      * Unlike the period/day parsers, this also returns the still-open foreground session,
      * ending now, so time in the current app counts before the user leaves it.
      */
-    fun parseUsageEventsSince(lastUpdateTimestamp: Long): List<AppSession> {
+    fun parseUsageEventsSince(lastUpdateTimestamp: Long, storedSessionStart: Long? = null): List<AppSession> {
         val currentTime = System.currentTimeMillis()
         val usageEvents = usageStatsManager.queryEvents(lastUpdateTimestamp, currentTime)
         val rawEvents = extractRawEvents(usageEvents)
 
         Log.d(TAG, "Processing ${rawEvents.size} events since $lastUpdateTimestamp")
 
-        return parseEventsIntoSessions(rawEvents, currentTime, openSessionEnd = currentTime)
+        return parseEventsIntoSessions(
+            rawEvents, currentTime, openSessionEnd = currentTime, storedSessionStart = storedSessionStart
+        )
     }
 
     /**
@@ -187,11 +189,16 @@ class SessionParser(private val context: Context) {
      * there. Incremental ingest passes the current time: the next run re-reads from that
      * session's start and emits it again with a later end, and the server merges it into the
      * stored event (same start and data) instead of inserting a duplicate.
+     *
+     * [storedSessionStart] is the start of the session already stored (possibly while it was
+     * still open). That session is capped at the maximum duration instead of being dropped:
+     * dropping it would leave its earlier, shorter stored value in place for good.
      */
     private fun parseEventsIntoSessions(
         events: List<UsageEvent>,
         periodEnd: Long,
-        openSessionEnd: Long? = null
+        openSessionEnd: Long? = null,
+        storedSessionStart: Long? = null
     ): List<AppSession> {
         val sessions = mutableListOf<AppSession>()
 
@@ -201,9 +208,14 @@ class SessionParser(private val context: Context) {
         var openClassName = ""
         var openStart = 0L
 
-        fun closeSession(endTime: Long) {
+        fun closeSession(sessionEnd: Long) {
             val pkg = openPackage ?: return
             openPackage = null
+            val endTime = if (openStart == storedSessionStart) {
+                minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
+            } else {
+                sessionEnd
+            }
             val duration = endTime - openStart
             if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
                 val appName = SessionUtils.getAppName(context, pkg)
