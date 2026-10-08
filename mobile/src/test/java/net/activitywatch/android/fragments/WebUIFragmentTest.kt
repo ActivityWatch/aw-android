@@ -274,6 +274,35 @@ class WebUIFragmentTest {
         assertEquals(listOf("/api/0/export" to "aw-bucket-export.json"), received)
     }
 
+    @Test
+    fun `shared exports with the same filename don't overwrite each other`() {
+        val cache = createTempDir()
+        val sharedRoot = File(cache, SHARED_EXPORTS_DIR)
+        val first = cachedExport(File(cache, "a").apply { mkdirs() }, "aw-bucket-export.json", "one")
+        val second = cachedExport(File(cache, "b").apply { mkdirs() }, "aw-bucket-export.json", "two")
+
+        val firstShared = moveExportForSharing(sharedRoot, first)!!
+        val secondShared = moveExportForSharing(sharedRoot, second)!!
+
+        assertEquals("aw-bucket-export.json", firstShared.name)
+        assertEquals("one", firstShared.readText())
+        assertEquals("two", secondShared.readText())
+        assertFalse(first.cacheFile.exists())
+    }
+
+    @Test
+    fun `sharing an export removes shared exports older than a day`() {
+        val cache = createTempDir()
+        val sharedRoot = File(cache, SHARED_EXPORTS_DIR)
+        val old = File(sharedRoot, "old").apply { mkdirs() }
+        File(old, "stale.json").writeText("stale")
+        val now = old.lastModified() + SHARED_EXPORT_MAX_AGE_MS + 1
+
+        moveExportForSharing(sharedRoot, cachedExport(cache, "fresh.json", "fresh"), now)
+
+        assertFalse(old.exists())
+    }
+
     private fun cachedExport(dir: File, name: String, content: String): PendingExport {
         return PendingExport(name, "application/json", File(dir, name).also { it.writeText(content) })
     }
