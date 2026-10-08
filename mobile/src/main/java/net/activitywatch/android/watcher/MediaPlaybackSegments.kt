@@ -20,16 +20,17 @@ internal val MEDIA_SEGMENT_MAX_LENGTH: Duration = Duration.ofMinutes(5)
  *
  * Not thread-safe; callers serialize access.
  */
-internal class MediaPlaybackSegments(
+internal class MediaPlaybackSegments<P>(
     private val emit: (start: Instant, durationSeconds: Double, data: JSONObject) -> Unit,
 ) {
     private class Segment(val key: String, val data: JSONObject, val start: Instant)
 
-    private val open = HashMap<String, Segment>()
-    private val lastStateKeys = HashMap<String, String>()
+    // Keyed by player (one media session), not by app: an app can run several sessions.
+    private val open = HashMap<P, Segment>()
+    private val lastStateKeys = HashMap<P, String>()
 
     /** Returns true when this observation is a change worth logging. */
-    fun observe(player: String, key: String, data: JSONObject, playing: Boolean, now: Instant): Boolean {
+    fun observe(player: P, key: String, data: JSONObject, playing: Boolean, now: Instant): Boolean {
         val segment = open[player]
         if (playing) {
             if (segment != null && segment.key == key) {
@@ -54,8 +55,11 @@ internal class MediaPlaybackSegments(
         return true
     }
 
-    /** Writes and forgets the player's open segment, e.g. when its session is destroyed. */
-    fun end(player: String, now: Instant) {
+    /**
+     * Writes and forgets the player's open segment: its session went away, or it reported
+     * something that isn't recognisable playback (no metadata, an unknown state).
+     */
+    fun end(player: P, now: Instant) {
         open.remove(player)?.let { flush(it, now) }
         lastStateKeys.remove(player)
     }

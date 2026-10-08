@@ -9,7 +9,7 @@ class MediaPlaybackSegmentsTest {
     private data class Emitted(val start: Long, val seconds: Double, val title: String)
 
     private val emitted = mutableListOf<Emitted>()
-    private val segments = MediaPlaybackSegments { start, seconds, data ->
+    private val segments = MediaPlaybackSegments<String> { start, seconds, data ->
         emitted += Emitted(start.epochSecond, seconds, data.getString("title"))
     }
 

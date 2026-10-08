@@ -54,9 +54,9 @@ class MediaWatcher : NotificationListenerService() {
     // access these maps concurrently; CHM prevents ConcurrentModificationException.
     private val activeControllers = ConcurrentHashMap<MediaSession.Token, MediaController>()
     private val activeCallbacks = ConcurrentHashMap<MediaSession.Token, MediaController.Callback>()
-    // Guarded by itself: playback changes arrive on the handler thread, but the initial
-    // session scan and teardown run on the main thread.
-    private val segments = MediaPlaybackSegments { start, durationSeconds, data ->
+    // Only touched on handlerThread: callbacks, polling, the session scan and the final
+    // writes all run there, so writes never block the service's main thread.
+    private val segments = MediaPlaybackSegments<MediaSession.Token> { start, durationSeconds, data ->
         ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
     }
 
@@ -98,7 +98,7 @@ class MediaWatcher : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "MediaWatcher listener connected")
-        registerActiveSessionListener()
+        handler?.post { registerActiveSessionListener() }
         pollingRunnable?.let { handler?.postDelayed(it, POLL_INTERVAL_MS) }
     }
 
@@ -106,14 +106,13 @@ class MediaWatcher : NotificationListenerService() {
         super.onListenerDisconnected()
         Log.i(TAG, "MediaWatcher listener disconnected")
         unregisterAllCallbacks()
-        handler?.removeCallbacksAndMessages(null)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "MediaWatcher destroyed")
         unregisterAllCallbacks()
-        handler?.removeCallbacksAndMessages(null)
+        // quitSafely still runs the final writes unregisterAllCallbacks just posted.
         handlerThread.quitSafely()
     }
 
@@ -160,7 +159,10 @@ class MediaWatcher : NotificationListenerService() {
 
         // Remove callbacks for sessions that are no longer active
         val staleTokens = activeControllers.keys - currentTokens
+        val now = Instant.now()
         for (token in staleTokens) {
+            // An inactive session no longer reports state, so close its playback now.
+            segments.end(token, now)
             val controller = activeControllers.remove(token)
             val callback = activeCallbacks.remove(token)
             if (controller != null && callback != null) {
@@ -196,10 +198,17 @@ class MediaWatcher : NotificationListenerService() {
     private fun createMediaCallback(controller: MediaController): MediaController.Callback {
         return object : MediaController.Callback() {
             override fun onPlaybackStateChanged(state: PlaybackState?) {
-                val metadata = controller.metadata ?: return
-                if (state != null) {
-                    handlePlaybackChange(controller, state, metadata)
+                if (state == null) return
+                val metadata = controller.metadata
+                if (metadata == null) {
+                    // Some players clear metadata when they pause or stop. Nothing can be
+                    // logged without it, but playback has still ended.
+                    if (state.state != PlaybackState.STATE_PLAYING) {
+                        segments.end(controller.sessionToken, Instant.now())
+                    }
+                    return
                 }
+                handlePlaybackChange(controller, state, metadata)
             }
 
             override fun onMetadataChanged(metadata: MediaMetadata?) {
@@ -213,7 +222,7 @@ class MediaWatcher : NotificationListenerService() {
                 val token = controller.sessionToken
                 activeControllers.remove(token)
                 activeCallbacks.remove(token)?.let { controller.unregisterCallback(it) }
-                controller.packageName?.let { synchronized(segments) { segments.end(it, Instant.now()) } }
+                segments.end(token, Instant.now())
                 Log.d(TAG, "Session destroyed for ${controller.packageName}")
             }
         }
@@ -228,6 +237,7 @@ class MediaWatcher : NotificationListenerService() {
         metadata: MediaMetadata
     ) {
         val packageName = controller.packageName ?: return
+        val token = controller.sessionToken
 
         val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
         val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
@@ -239,11 +249,19 @@ class MediaWatcher : NotificationListenerService() {
             PlaybackState.STATE_PAUSED -> "paused"
             PlaybackState.STATE_STOPPED -> "stopped"
             PlaybackState.STATE_BUFFERING -> "buffering"
-            else -> return // Ignore transitional states (none, connecting, etc.)
+            else -> {
+                // Transitional states (none, connecting, etc.) aren't logged, but they
+                // aren't playback either.
+                segments.end(token, Instant.now())
+                return
+            }
         }
 
-        // Skip events with no useful metadata
-        if (title.isEmpty() && artist.isEmpty()) return
+        // Skip events with no useful metadata, ending any playback they replace.
+        if (title.isEmpty() && artist.isEmpty()) {
+            segments.end(token, Instant.now())
+            return
+        }
 
         // Resolve app name from package
         val appName = try {
@@ -266,10 +284,9 @@ class MediaWatcher : NotificationListenerService() {
             put("state", playbackState)
         }
 
-        val eventKey = "$packageName|$title|$artist|$playbackState"
-        val changed = synchronized(segments) {
-            segments.observe(packageName, eventKey, data, playbackState == "playing", Instant.now())
-        }
+        // Everything written to the event, so a segment never outlives the data it records.
+        val eventKey = "$packageName|$title|$artist|$album|$playbackState"
+        val changed = segments.observe(token, eventKey, data, playbackState == "playing", Instant.now())
         if (changed) {
             Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
         }
@@ -298,7 +315,11 @@ class MediaWatcher : NotificationListenerService() {
         }
         activeControllers.clear()
         activeCallbacks.clear()
-        // Write whatever is still playing so it isn't lost with the listener.
-        synchronized(segments) { segments.endAll(Instant.now()) }
+
+        // Drop queued polls and callbacks so nothing reopens a segment, then write whatever
+        // is still playing on the handler thread, ending at the time of disconnect.
+        handler?.removeCallbacksAndMessages(null)
+        val now = Instant.now()
+        handler?.post { segments.endAll(now) }
     }
 }
