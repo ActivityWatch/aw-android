@@ -31,9 +31,7 @@ class MediaWatcher : NotificationListenerService() {
         private const val TAG = "MediaWatcher"
         private const val BUCKET_ID = "aw-watcher-android-media"
         private const val BUCKET_TYPE = "media.playback"
-        // Heartbeat pulsetime: merge events within 60s (same track playing continuously)
-        private const val PULSETIME = 60.0
-        // How often to poll active media sessions to send heartbeats
+        // How often to poll active media sessions (also bounds how late a segment is written)
         private const val POLL_INTERVAL_MS = 15000L
 
         fun isNotificationAccessGranted(context: android.content.Context): Boolean {
@@ -56,7 +54,11 @@ class MediaWatcher : NotificationListenerService() {
     // access these maps concurrently; CHM prevents ConcurrentModificationException.
     private val activeControllers = ConcurrentHashMap<MediaSession.Token, MediaController>()
     private val activeCallbacks = ConcurrentHashMap<MediaSession.Token, MediaController.Callback>()
-    private val lastEventKeys = ConcurrentHashMap<String, String>()
+    // Guarded by itself: playback changes arrive on the handler thread, but the initial
+    // session scan and teardown run on the main thread.
+    private val segments = MediaPlaybackSegments { start, durationSeconds, data ->
+        ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
+    }
 
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
@@ -211,7 +213,7 @@ class MediaWatcher : NotificationListenerService() {
                 val token = controller.sessionToken
                 activeControllers.remove(token)
                 activeCallbacks.remove(token)?.let { controller.unregisterCallback(it) }
-                controller.packageName?.let { lastEventKeys.remove(it) }
+                controller.packageName?.let { synchronized(segments) { segments.end(it, Instant.now()) } }
                 Log.d(TAG, "Session destroyed for ${controller.packageName}")
             }
         }
@@ -264,18 +266,13 @@ class MediaWatcher : NotificationListenerService() {
             put("state", playbackState)
         }
 
-        // Deduplicate: don't send identical heartbeats
         val eventKey = "$packageName|$title|$artist|$playbackState"
-        val lastKey = lastEventKeys[packageName]
-        if (eventKey == lastKey && playbackState == "playing") {
-            // Same track still playing — let heartbeat merging handle it
-            ri?.heartbeatHelper(BUCKET_ID, Instant.now(), 0.0, data, PULSETIME)
-            return
+        val changed = synchronized(segments) {
+            segments.observe(packageName, eventKey, data, playbackState == "playing", Instant.now())
         }
-        lastEventKeys[packageName] = eventKey
-
-        Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
-        ri?.heartbeatHelper(BUCKET_ID, Instant.now(), 0.0, data, PULSETIME)
+        if (changed) {
+            Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
+        }
     }
 
     private fun pollActiveSessions() {
@@ -301,6 +298,7 @@ class MediaWatcher : NotificationListenerService() {
         }
         activeControllers.clear()
         activeCallbacks.clear()
-        lastEventKeys.clear()
+        // Write whatever is still playing so it isn't lost with the listener.
+        synchronized(segments) { segments.endAll(Instant.now()) }
     }
 }
