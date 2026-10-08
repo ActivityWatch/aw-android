@@ -41,9 +41,12 @@ class SessionEventWatcher(val context: Context) {
         private val lock = java.util.concurrent.locks.ReentrantLock()
     }
 
-    // queryEvents uses an inclusive lower bound, so replaying the last stored
-    // session's start timestamp would duplicate that session on every run.
-    private fun nextQueryStartTimestamp(): Long = (lastUpdated?.toEpochMilli()?.plus(1L)) ?: 0L
+    // Resume from the last stored session's start, inclusive. The parser emits the
+    // still-open foreground session ending "now", so that event must be read again on
+    // the next run to extend it. Re-emitting it is safe: it has the same start and data
+    // as the stored event, and insertEvent's heartbeat (pulsetime 0) merges it into that
+    // event, keeping the later end, rather than inserting a duplicate.
+    private fun nextQueryStartTimestamp(): Long = lastUpdated?.toEpochMilli() ?: 0L
 
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")

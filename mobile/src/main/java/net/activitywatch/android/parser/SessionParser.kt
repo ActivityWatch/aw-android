@@ -88,11 +88,19 @@ class SessionParser(private val context: Context) {
     }
 
     /**
-     * Parse usage events since a specific timestamp (for incremental updates)
+     * Parse usage events since a specific timestamp (for incremental updates).
+     *
+     * Unlike the period/day parsers, this also returns the still-open foreground session,
+     * ending now, so time in the current app counts before the user leaves it.
      */
     fun parseUsageEventsSince(lastUpdateTimestamp: Long): List<AppSession> {
         val currentTime = System.currentTimeMillis()
-        return parseUsageEventsForPeriod(lastUpdateTimestamp, currentTime)
+        val usageEvents = usageStatsManager.queryEvents(lastUpdateTimestamp, currentTime)
+        val rawEvents = extractRawEvents(usageEvents)
+
+        Log.d(TAG, "Processing ${rawEvents.size} events since $lastUpdateTimestamp")
+
+        return parseEventsIntoSessions(rawEvents, currentTime, openSessionEnd = currentTime)
     }
 
     /**
@@ -175,14 +183,15 @@ class SessionParser(private val context: Context) {
      * avoids the overlapping-session double-counting that strict RESUME->PAUSE pair-matching
      * produced when events for different apps interleaved.
      *
-     * The trailing still-open session is intentionally NOT emitted: its duration isn't known until
-     * it ends, and emitting it with an arbitrary end would either overcount or, combined with the
-     * lastUpdated+1ms incremental cursor, risk duplicating it on the next run. It is captured on a
-     * later run once its PAUSE (or the next app's RESUME) arrives.
+     * The trailing still-open session is emitted only when [openSessionEnd] is given, ending
+     * there. Incremental ingest passes the current time: the next run re-reads from that
+     * session's start and emits it again with a later end, and the server merges it into the
+     * stored event (same start and data) instead of inserting a duplicate.
      */
     private fun parseEventsIntoSessions(
         events: List<UsageEvent>,
-        periodEnd: Long
+        periodEnd: Long,
+        openSessionEnd: Long? = null
     ): List<AppSession> {
         val sessions = mutableListOf<AppSession>()
 
@@ -231,6 +240,10 @@ class SessionParser(private val context: Context) {
                     }
                 }
             }
+        }
+
+        if (openSessionEnd != null) {
+            closeSession(openSessionEnd)
         }
 
         Log.d(TAG, "Created ${sessions.size} sessions")
