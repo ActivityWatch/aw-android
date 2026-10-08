@@ -52,7 +52,8 @@ class WebWatcher : AccessibilityService() {
     private val sessionTracker = BrowserSessionTracker()
     private val titleGate = TitleLookupGate()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var titleFollowUpPending = false
+    // The scheduled follow-up lookup and the browser it is for.
+    private var titleFollowUp: Pair<String, Runnable>? = null
 
     // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
     // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
@@ -162,21 +163,27 @@ class WebWatcher : AccessibilityService() {
 
     // Runs a lookup that was skipped by the gate once it is allowed, so a title that
     // arrives on a skipped event (with the page quiet afterwards) is still captured.
+    // One follow-up at a time: a pending one for the same browser already covers this
+    // event, and one for a browser the user has left is replaced.
     private fun scheduleTitleLookup(browser: String, delayMs: Long) {
-        if (titleFollowUpPending) return
-        titleFollowUpPending = true
-        mainHandler.postDelayed({
-            titleFollowUpPending = false
-            if (sessionTracker.currentBrowser != browser) return@postDelayed
-            if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@postDelayed
-            val root = rootInActiveWindow ?: return@postDelayed
+        titleFollowUp?.let { (pendingBrowser, pending) ->
+            if (pendingBrowser == browser) return
+            mainHandler.removeCallbacks(pending)
+        }
+        val followUp = Runnable {
+            titleFollowUp = null
+            if (sessionTracker.currentBrowser != browser) return@Runnable
+            if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@Runnable
+            val root = rootInActiveWindow ?: return@Runnable
             try {
                 // A fresh tree: the skipped event's nodes have been recycled by now.
                 if (root.packageName?.toString() == browser) lookUpTitle(root)
             } finally {
                 root.recycle()
             }
-        }, delayMs)
+        }
+        titleFollowUp = browser to followUp
+        mainHandler.postDelayed(followUp, delayMs)
     }
 
     private fun lookUpTitle(from: AccessibilityNodeInfo) {
