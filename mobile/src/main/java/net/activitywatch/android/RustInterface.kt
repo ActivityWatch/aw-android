@@ -63,6 +63,10 @@ class RustInterface(context: Context? = null) {
     }
 
     companion object {
+        // Written on the main thread (server exit) and by the starting thread, and polled
+        // by BackgroundService's hostname-rewrite thread; without @Volatile that poll may
+        // never observe the server exiting.
+        @Volatile
         var serverStarted = false
     }
 
