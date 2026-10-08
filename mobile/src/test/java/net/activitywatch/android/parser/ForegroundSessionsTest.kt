@@ -39,4 +39,49 @@ class ForegroundSessionsTest {
             sessions,
         )
     }
+
+    @Test
+    fun sameAppResumingAgainKeepsTheOriginalStart() {
+        val sessions = parse(
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat"),
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 30_000L, "chat"),
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 60_000L, "chat"),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
+    }
+
+    @Test
+    fun anotherAppResumingEndsTheSessionWithoutAPause() {
+        val sessions = parse(
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat"),
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 60_000L, "mail"),
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 90_000L, "mail"),
+            // chat's PAUSE arrives late; it must not end or extend anything.
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 95_000L, "chat"),
+        )
+        assertEquals(
+            listOf(Triple("chat", 0L, 60_000L), Triple("mail", 60_000L, 90_000L)),
+            sessions,
+        )
+    }
+
+    @Test
+    fun stalePauseFromAnotherAppDoesNotEndTheSession() {
+        val sessions = parse(
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat"),
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 10_000L, "mail"),
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 60_000L, "chat"),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
+    }
+
+    @Test
+    fun trailingOpenSessionIsNotEmitted() {
+        val sessions = parse(
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat"),
+            event(UsageEvents.Event.ACTIVITY_PAUSED, 60_000L, "chat"),
+            event(UsageEvents.Event.ACTIVITY_RESUMED, 70_000L, "mail"),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
+    }
 }
