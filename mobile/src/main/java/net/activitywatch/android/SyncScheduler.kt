@@ -108,6 +108,8 @@ class SyncScheduler(private val context: Context) {
 
     private fun performSync() {
         Log.i(TAG, "Performing automatic sync...")
+        // Recorded when the pass starts too, so an alarm delivered while it runs sees it.
+        prefs.setHandlerPassAt(System.currentTimeMillis())
 
         syncInterface.syncBothAsync { success, message ->
             if (success) {
