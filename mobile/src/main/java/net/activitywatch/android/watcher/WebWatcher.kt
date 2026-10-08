@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -45,6 +46,11 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+
+    // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
+    // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
+    // the createBucketHelper ANRs (aw-android#261). One thread keeps events in order.
+    private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "WebWatcher-writer") }
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -198,10 +204,18 @@ class WebWatcher : AccessibilityService() {
             .put("incognito", false) // TODO
 
         Log.i(TAG, "Registered event: $data")
-        ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        writer.execute {
+            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        }
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        // Lets already-queued events finish writing.
+        writer.shutdown()
+        super.onDestroy()
+    }
 
     companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
