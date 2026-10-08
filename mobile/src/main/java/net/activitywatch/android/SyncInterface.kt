@@ -408,9 +408,9 @@ class SyncInterface(context: Context) {
             throw IOException("Configured SAF directory is not accessible")
         }
 
-        val counts = intArrayOf(0, 0) // [copied, skipped]
+        val counts = intArrayOf(0, 0, 0) // [copied, skipped, unchanged]
         mirrorDirectory(File(syncDir), safDir, counts)
-        Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
+        Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} unchanged=${counts[2]} → $uriStr")
         if (cancelRequested) {
             throw IOException("SAF mirror cancelled")
         }
@@ -432,6 +432,9 @@ class SyncInterface(context: Context) {
      */
     private fun mirrorDirectory(sourceDir: File, destDir: DocumentFile, counts: IntArray) {
         val entries = sourceDir.listFiles() ?: return
+        // One listing per directory. DocumentFile.findFile() re-lists the directory and
+        // queries every child's name on each call, which made each entry cost a full scan.
+        val destEntries = destDir.listFiles().associateBy { it.name }
 
         for (entry in entries) {
             if (cancelRequested) {
@@ -442,7 +445,7 @@ class SyncInterface(context: Context) {
                 if (entry.isDirectory) {
                     // Reuse an existing subdirectory if present; otherwise create it. A
                     // non-directory of the same name cannot be mirrored into.
-                    val existing = destDir.findFile(entry.name)
+                    val existing = destEntries[entry.name]
                     val subDir = when {
                         existing != null && existing.isDirectory -> existing
                         existing != null -> {
@@ -465,10 +468,20 @@ class SyncInterface(context: Context) {
                     // directory URI fails, which would silently leave the database
                     // uncopied. The directory branch above rejects the mirror case, so
                     // this keeps the two symmetric.
-                    val existingFile = destDir.findFile(entry.name)
+                    val existingFile = destEntries[entry.name]
                     if (existingFile != null && existingFile.isDirectory) {
                         Log.w(TAG, "SAF entry ${entry.name} is a directory; cannot write a file there")
                         counts[1]++
+                        continue
+                    }
+                    if (existingFile != null && safMirrorIsUpToDate(
+                            sourceLength = entry.length(),
+                            sourceModified = entry.lastModified(),
+                            destLength = existingFile.length(),
+                            destModified = existingFile.lastModified(),
+                        )
+                    ) {
+                        counts[2]++
                         continue
                     }
                     val dest = existingFile
@@ -570,6 +583,20 @@ class SyncInterface(context: Context) {
         return doc.delete()
     }
 }
+
+/**
+ * Whether a mirrored file already matches its source and can be left alone.
+ *
+ * The copy was written after the source last changed and has the same length, so it holds
+ * the source's current content. An interrupted copy is shorter (the destination is
+ * truncated before writing) and is copied again.
+ */
+internal fun safMirrorIsUpToDate(
+    sourceLength: Long,
+    sourceModified: Long,
+    destLength: Long,
+    destModified: Long,
+): Boolean = sourceModified > 0 && destLength == sourceLength && destModified >= sourceModified
 
 internal fun existingAwSyncDirectory(context: Context): File? {
     val preferred = File(context.getExternalFilesDir(null) ?: context.filesDir, "sync")
