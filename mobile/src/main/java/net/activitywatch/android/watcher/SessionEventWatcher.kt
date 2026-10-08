@@ -10,9 +10,6 @@ import net.activitywatch.android.utils.SessionUtils
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Locale
 import kotlinx.coroutines.*
 
 const val SESSION_BUCKET_ID = "aw-watcher-android"
@@ -32,7 +29,6 @@ class SessionEventWatcher(val context: Context) {
         ) { RustInterface(context.applicationContext) }
     }
     private val sessionParser = SessionParser(context)
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
 
     var lastUpdated: Instant? = null
 
@@ -84,12 +80,11 @@ class SessionEventWatcher(val context: Context) {
 
     private fun eventStart(event: JSONObject): Instant? {
         val timestampString = event.getString("timestamp")
-        return try {
-            DateTimeUtils.toInstant(isoFormatter.parse(timestampString))
-        } catch (e: ParseException) {
-            Log.e(TAG, "Unable to parse timestamp: $timestampString")
-            null
-        }
+        return parseAwTimestamp(timestampString)
+            ?: run {
+                Log.e(TAG, "Unable to parse timestamp: $timestampString")
+                null
+            }
     }
 
     /**
