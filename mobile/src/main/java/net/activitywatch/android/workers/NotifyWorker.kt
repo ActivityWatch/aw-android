@@ -109,6 +109,12 @@ internal fun parseStartOfDayHour(response: String): Int {
 // Include thresholds in the pref key so state resets when configuration changes.
 // A lowered threshold mid-day would otherwise be silently skipped because the old
 // triggered value is higher than all new thresholds.
+// Keys recording thresholds already fired on a logical day other than [dayKey]. Only the
+// current day's keys are ever read again, so older ones can be dropped; without this the
+// preferences file gained keys every day and SharedPreferences loads it whole.
+internal fun staleTriggeredKeys(keys: Collection<String>, dayKey: String): List<String> =
+    keys.filter { it.startsWith("triggered_") && !it.endsWith("_$dayKey") }
+
 internal fun alertConfigHash(alert: CategoryAlert): Int =
     (alert.thresholdMinutes.toString() + alert.positive.toString())
         .hashCode().and(0x3FFFFFFF)
@@ -217,6 +223,11 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val dayKey = logicalDate.toString()
+
+        val stale = staleTriggeredKeys(prefs.all.keys, dayKey)
+        if (stale.isNotEmpty()) {
+            prefs.edit().apply { stale.forEach { remove(it) } }.apply()
+        }
 
         for (alert in alerts) {
             val seconds = categorySeconds[alert.category] ?: 0.0

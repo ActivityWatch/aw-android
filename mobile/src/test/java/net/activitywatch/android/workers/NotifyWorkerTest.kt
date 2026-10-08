@@ -224,4 +224,20 @@ class NotifyWorkerTest {
     fun parseCategorySeconds_returnsEmptyForEmptyResult() {
         assertEquals(emptyMap<String?, Double>(), parseCategorySeconds("[]"))
     }
+
+    @Test
+    fun staleTriggeredKeys_keepsOnlyTheCurrentDay() {
+        val keys = listOf(
+            "triggered_Work_123_2026-10-07",
+            "triggered_null_456_2026-10-07",
+            "triggered_Work_123_2026-10-08",
+            "triggered_Work_789_2026-10-08",
+            "unrelated_key",
+        )
+
+        assertEquals(
+            listOf("triggered_Work_123_2026-10-07", "triggered_null_456_2026-10-07"),
+            staleTriggeredKeys(keys, "2026-10-08"),
+        )
+    }
 }
