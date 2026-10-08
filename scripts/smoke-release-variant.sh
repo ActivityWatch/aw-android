@@ -93,7 +93,6 @@ pids_launch=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')
 UI_DUMP=${LOGCAT_OUT%.log}-ui.xml
 mkdir -p "$(dirname "$UI_DUMP")"
 complete_onboarding() {
-    local bounds x1 y1 x2 y2
     # If the screen slept or the keyguard returned during a slow install, the
     # dump shows that instead of the app and no button is ever found. One #313
     # run did 17 dumps and 0 taps; the cause was invisible, hence the saved dump.
@@ -102,11 +101,21 @@ complete_onboarding() {
     adb shell uiautomator dump /sdcard/smoke-ui.xml >/dev/null 2>&1 || true
     # Keep the last dump next to the logcat so a failure shows what was on screen.
     adb shell cat /sdcard/smoke-ui.xml 2>/dev/null > "$UI_DUMP" || true
-    bounds=$(tr '>' '\n' < "$UI_DUMP" \
-        | grep 'resource-id="[^"]*nextButton"' \
+    # CI emulators often raise "System UI isn't responding" during first boot;
+    # the dialog covers the app for the whole deadline (aw-android#331). Tap
+    # Wait so the next dump can see the app again.
+    if tap_center "$(tr '>' '\n' < "$UI_DUMP" | grep 'resource-id="android:id/aerr_wait"')"; then
+        echo "  dismissed system ANR dialog ($(grep -o 'text="[^"]*responding"' "$UI_DUMP" | head -n 1))"
+        return 1
+    fi
+    tap_center "$(tr '>' '\n' < "$UI_DUMP" | grep 'resource-id="[^"]*nextButton"')"
+}
+# Tap the centre of the first node in $1 that has bounds="[x1,y1][x2,y2]".
+tap_center() {
+    local bounds x1 y1 x2 y2
+    bounds=$(printf '%s\n' "$1" \
         | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -n 1)
     [ -n "$bounds" ] || return 1
-    # Bounds are [x1,y1][x2,y2]; tap the centre of the next/finish button.
     read -r x1 y1 x2 y2 < <(printf '%s' "$bounds" | grep -o '[0-9][0-9]*' | tr '\n' ' ')
     adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
 }
