@@ -642,12 +642,14 @@ class SyncInterface(context: Context) {
 
         val safHostnameDir = safDir.findFile(hostname)?.takeIf { it.isDirectory } ?: return
         val safDeviceDir = safHostnameDir.findFile(deviceId)?.takeIf { it.isDirectory } ?: return
+        if (cancelRequested) throw IOException("SAF mirror cancelled")
         val safFiles =
             safDeviceDir.listFiles().filter { !it.isDirectory && it.name != null }.associateBy {
                 it.name!!
             }
         val stale = SafMirrorCleanup.staleDatabaseFiles(localFileNames, safFiles.keys)
         for (name in stale.sorted()) {
+            if (cancelRequested) throw IOException("SAF mirror cancelled")
             if (safFiles.getValue(name).delete()) {
                 Log.i(TAG, "Removed stale SAF database file '$name'")
             } else {
