@@ -21,6 +21,9 @@ internal class BrowserSessionTracker(
     private var lastBrowser: String? = null
     private var lastWindowTitle: String? = null
 
+    // Whether the current page's title has been seen since the url last changed.
+    val hasTitle: Boolean get() = lastWindowTitle != null
+
     // Returns the just-completed session (previous url/browser/title) when the url or
     // browser changes, so the caller can log it. We wait for the url to change before
     // logging so we have a chance to receive the page title, which often only arrives
