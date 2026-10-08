@@ -103,9 +103,13 @@ complete_onboarding() {
     adb shell cat /sdcard/smoke-ui.xml 2>/dev/null > "$UI_DUMP" || true
     # CI emulators often raise "System UI isn't responding" during first boot;
     # the dialog covers the app for the whole deadline (aw-android#331). Tap
-    # Wait so the next dump can see the app again.
-    if tap_center "$(tr '>' '\n' < "$UI_DUMP" | grep 'resource-id="android:id/aerr_wait"')"; then
-        echo "  dismissed system ANR dialog ($(grep -o 'text="[^"]*responding"' "$UI_DUMP" | head -n 1))"
+    # Wait so the next dump can see the app again. An ANR naming the app itself
+    # is a real failure and is left on screen.
+    local anr
+    anr=$(grep -o 'text="[^"]*responding"' "$UI_DUMP" | head -n 1) || true
+    if [ -n "$anr" ] && ! printf '%s' "$anr" | grep -q "ActivityWatch" \
+        && tap_center "$(tr '>' '\n' < "$UI_DUMP" | grep 'resource-id="android:id/aerr_wait"')"; then
+        echo "  dismissed system ANR dialog ($anr)"
         return 1
     fi
     tap_center "$(tr '>' '\n' < "$UI_DUMP" | grep 'resource-id="[^"]*nextButton"')"
