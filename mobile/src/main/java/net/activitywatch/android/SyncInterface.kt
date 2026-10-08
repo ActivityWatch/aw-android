@@ -486,6 +486,7 @@ class SyncInterface(context: Context) {
         // partial mirror could drop data the local copy still holds. If the
         // local legacy folder could not be renamed, it is deleted here each run
         // after being mirrored, so the Syncthing-visible fork stays gone.
+        deleteStaleSafDatabaseFiles(safDir)
         deleteStaleSafHostnameDirs(safDir)
     }
 
@@ -591,10 +592,7 @@ class SyncInterface(context: Context) {
 
     private fun migrateLegacySyncFolders(): SanitizedHostnameMigration.MigrationResult {
         val current = getDeviceName()
-        val deviceId =
-            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
-                it.isNotEmpty()
-            }
+        val deviceId = localDeviceId()
         val result =
             SanitizedHostnameMigration.migrateSyncFolders(
                 File(syncDir),
@@ -612,6 +610,52 @@ class SyncInterface(context: Context) {
         return result
     }
 
+    /**
+     * Remove database files that the additive SAF mirror left behind in this device's directory.
+     *
+     * The hostname and device-id lookups deliberately descend to exactly one locally owned
+     * directory. Peer hostname and device-id directories are never enumerated or mutated.
+     */
+    private fun deleteStaleSafDatabaseFiles(safDir: DocumentFile) {
+        val hostname = getDeviceName()
+        val deviceId = localDeviceId()
+        if (deviceId == null) {
+            Log.w(TAG, "Leaving stale SAF databases; local device id unavailable")
+            return
+        }
+        if (!SanitizedHostnameMigration.isSafeDirName(hostname) ||
+            !SanitizedHostnameMigration.isSafeDirName(deviceId)
+        ) {
+            Log.w(TAG, "Leaving stale SAF databases; unsafe own-device directory name")
+            return
+        }
+
+        val localDeviceDir = File(File(syncDir, hostname), deviceId)
+        if (!localDeviceDir.isDirectory) {
+            Log.w(TAG, "Leaving stale SAF databases; local own-device directory unavailable")
+            return
+        }
+        val localEntries =
+            localDeviceDir.listFiles()
+                ?: throw IOException("Could not list local own-device sync directory")
+        val localFileNames = localEntries.filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
+
+        val safHostnameDir = safDir.findFile(hostname)?.takeIf { it.isDirectory } ?: return
+        val safDeviceDir = safHostnameDir.findFile(deviceId)?.takeIf { it.isDirectory } ?: return
+        val safFiles =
+            safDeviceDir.listFiles().filter { !it.isDirectory && it.name != null }.associateBy {
+                it.name!!
+            }
+        val stale = SafMirrorCleanup.staleDatabaseFiles(localFileNames, safFiles.keys)
+        for (name in stale.sorted()) {
+            if (safFiles.getValue(name).delete()) {
+                Log.i(TAG, "Removed stale SAF database file '$name'")
+            } else {
+                throw IOException("Could not remove stale SAF database file '$name'")
+            }
+        }
+    }
+
     private fun deleteStaleSafHostnameDirs(safDir: DocumentFile) {
         val current = getDeviceName()
         val legacy =
@@ -620,10 +664,7 @@ class SyncInterface(context: Context) {
                 rawDeviceName(appContext),
                 android.os.Build.MODEL,
             )
-        val deviceId =
-            File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
-                it.isNotEmpty()
-            }
+        val deviceId = localDeviceId()
         for (name in legacy) {
             val stale = safDir.findFile(name) ?: continue
             if (!stale.isDirectory) continue
@@ -659,6 +700,11 @@ class SyncInterface(context: Context) {
         }
         return doc.delete()
     }
+
+    private fun localDeviceId(): String? =
+        File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
+            it.isNotEmpty()
+        }
 }
 
 private const val SAF_MIRROR_MANIFEST = "saf_mirror_manifest.json"
