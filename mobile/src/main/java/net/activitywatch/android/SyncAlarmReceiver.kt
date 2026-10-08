@@ -23,8 +23,8 @@ class SyncAlarmReceiver : BroadcastReceiver() {
                     SyncScheduler.cancelAlarm(context)
                     return
                 }
-                val lastHandlerSyncAt = AWPreferences(context).getHandlerSyncCompletedAt()
-                if (alarmSyncIsRedundant(lastHandlerSyncAt, System.currentTimeMillis())) {
+                val lastHandlerPassAt = AWPreferences(context).getHandlerPassAt()
+                if (alarmSyncIsRedundant(lastHandlerPassAt, System.currentTimeMillis())) {
                     Log.i(TAG, "Synced recently (scheduler is running); skipping fallback sync")
                     return
                 }

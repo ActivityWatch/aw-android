@@ -20,10 +20,10 @@ internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
 // SYNC_INTERVAL_MS. While the Handler chain is alive its last pass is always less than
 // one interval old, so the alarm only syncs once the chain's last pass is a full interval
 // old, i.e. the chain has stopped. Only the chain's own passes count
-// ([AWPreferences.getHandlerSyncCompletedAt]): counting the fallback's passes would make
-// it skip every other alarm once the chain is gone.
-internal fun alarmSyncIsRedundant(lastHandlerSyncAt: Long?, now: Long): Boolean =
-    lastHandlerSyncAt != null && now - lastHandlerSyncAt in 0 until SYNC_INTERVAL_MS
+// ([AWPreferences.getHandlerPassAt]): counting the fallback's syncs would make it skip
+// every other alarm once the chain is gone.
+internal fun alarmSyncIsRedundant(lastHandlerPassAt: Long?, now: Long): Boolean =
+    lastHandlerPassAt != null && now - lastHandlerPassAt in 0 until SYNC_INTERVAL_MS
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
@@ -116,10 +116,10 @@ class SyncScheduler(private val context: Context) {
                 Log.w(TAG, "Automatic sync failed: $message")
             }
             // Schedule next sync only after this one completes, preventing overlapping JNI calls.
-            // A skipped call (another sync in flight) didn't sync, so it doesn't count.
-            if (!message.startsWith("skipped")) {
-                prefs.setHandlerSyncCompletedAt(System.currentTimeMillis())
-            }
+            // Recorded even when this pass was skipped because the fallback was already
+            // syncing: the chain is alive and has its next pass scheduled, so the next alarm
+            // must not run a sync just before it.
+            prefs.setHandlerPassAt(System.currentTimeMillis())
             if (isRunning) {
                 val nextRunAt = System.currentTimeMillis() + SYNC_INTERVAL_MS
                 Log.i(TAG, "Scheduling next sync in 15 minutes")
