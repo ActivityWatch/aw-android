@@ -50,6 +50,10 @@ class WebWatcher : AccessibilityService() {
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
         "com.android.chrome" -> extractTextByViewId(event, "com.android.chrome:id/url_bar")
+        // Brave is Chromium-based and exposes the same url_bar view id as Chrome.
+        // Other Chromium-derived browsers (Vivaldi: com.vivaldi.browser, Kiwi:
+        // com.kiwibrowser.browser) likely follow the same pattern.
+        "com.brave.browser" -> extractTextByViewId(event, "com.brave.browser:id/url_bar")
         "org.mozilla.firefox" ->
             // Compose toolbar (current)
             extractFirefoxUrl(event)
@@ -206,6 +210,7 @@ class WebWatcher : AccessibilityService() {
     companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
+            "com.brave.browser",
             "org.mozilla.firefox",
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
