@@ -17,10 +17,11 @@ private const val TAG = "SyncScheduler"
 internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
 
 // The in-process Handler chain and the AlarmManager fallback both run every
-// SYNC_INTERVAL_MS. While the Handler chain is alive it has synced within the last
-// interval, so the alarm only needs to sync when the last pass is older than this.
+// SYNC_INTERVAL_MS. While the Handler chain is alive its last pass is always less than
+// one interval old, so the alarm only syncs once that pass is a full interval old, i.e.
+// the chain has stopped. A dead chain is then covered within two alarm intervals.
 internal fun alarmSyncIsRedundant(lastCompletedAt: Long?, now: Long): Boolean =
-    lastCompletedAt != null && now - lastCompletedAt in 0 until SYNC_INTERVAL_MS / 2
+    lastCompletedAt != null && now - lastCompletedAt in 0 until SYNC_INTERVAL_MS
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {

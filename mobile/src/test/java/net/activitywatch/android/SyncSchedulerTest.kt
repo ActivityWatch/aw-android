@@ -13,6 +13,15 @@ class SyncSchedulerTest {
     }
 
     @Test
+    fun alarmSkipsWhileTheHandlerChainIsOnSchedule() {
+        // The Handler syncs at minute 1 and then every 15 minutes; the alarm first fires
+        // near minute 15, when that sync is about 14 minutes old.
+        val minute = 60_000L
+        val handlerSync = now + 1 * minute
+        assertTrue(alarmSyncIsRedundant(handlerSync, now + 15 * minute))
+    }
+
+    @Test
     fun alarmSyncsWhenLastPassIsStaleOrMissing() {
         assertFalse(alarmSyncIsRedundant(null, now))
         assertFalse(alarmSyncIsRedundant(now - SYNC_INTERVAL_MS, now))
