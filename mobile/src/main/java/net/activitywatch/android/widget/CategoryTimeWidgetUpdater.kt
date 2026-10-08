@@ -82,9 +82,7 @@ object CategoryTimeWidgetUpdater {
             
             Log.d(TAG, "Updating ${appWidgetIds.size} widget instances")
             
-            if (appWidgetIds.isNotEmpty()) {
-                updateWidgets(context, appWidgetManager, appWidgetIds)
-            }
+            updateWidgets(context, appWidgetManager, appWidgetIds)
         }
 
         /**
@@ -96,6 +94,9 @@ object CategoryTimeWidgetUpdater {
             appWidgetManager: AppWidgetManager,
             appWidgetIds: IntArray
         ) {
+            // A queued refresh can arrive after the last widget was removed.
+            if (appWidgetIds.isEmpty()) return
+
             Log.d(TAG, "Updating widgets ${appWidgetIds.joinToString()}")
 
             val views = RemoteViews(context.packageName, R.layout.widget_category_time)
