@@ -15,6 +15,12 @@ private const val TAG = "SyncScheduler"
 // internal (not private): SyncSettingsActivity reads this to render "next sync at" without
 // duplicating the interval or requiring a data-model change.
 internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
+
+// The in-process Handler chain and the AlarmManager fallback both run every
+// SYNC_INTERVAL_MS. While the Handler chain is alive it has synced within the last
+// interval, so the alarm only needs to sync when the last pass is older than this.
+internal fun alarmSyncIsRedundant(lastCompletedAt: Long?, now: Long): Boolean =
+    lastCompletedAt != null && now - lastCompletedAt in 0 until SYNC_INTERVAL_MS / 2
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
@@ -50,6 +56,9 @@ class SyncScheduler(private val context: Context) {
 
                 // Handler and AlarmManager calls are thread-safe; post from IO is fine.
                 val firstRunAt = System.currentTimeMillis() + 60 * 1000L
+                // A sync from before a stop()/start() may still be in flight and repost
+                // syncRunnable when it completes; removing first keeps a single chain.
+                handler.removeCallbacks(syncRunnable)
                 handler.postDelayed(syncRunnable, 60 * 1000L)
                 prefs.setSchedulerNextRunAt(firstRunAt)
                 scheduleAlarm()
@@ -107,6 +116,7 @@ class SyncScheduler(private val context: Context) {
             if (isRunning) {
                 val nextRunAt = System.currentTimeMillis() + SYNC_INTERVAL_MS
                 Log.i(TAG, "Scheduling next sync in 15 minutes")
+                handler.removeCallbacks(syncRunnable)
                 handler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
                 prefs.setSchedulerNextRunAt(nextRunAt)
             }

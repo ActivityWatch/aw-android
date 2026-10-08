@@ -4,11 +4,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import net.activitywatch.android.workers.SyncWorker
 
 private const val TAG = "SyncAlarmReceiver"
+private const val SYNC_WORK_NAME = "SyncWorker"
 
 class SyncAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -21,8 +23,16 @@ class SyncAlarmReceiver : BroadcastReceiver() {
                     SyncScheduler.cancelAlarm(context)
                     return
                 }
+                val lastCompletedAt = AWPreferences(context).getLastSyncStatus()?.completedAt
+                if (alarmSyncIsRedundant(lastCompletedAt, System.currentTimeMillis())) {
+                    Log.i(TAG, "Synced recently (scheduler is running); skipping fallback sync")
+                    return
+                }
                 Log.i(TAG, "Enqueuing scheduled sync...")
-                WorkManager.getInstance(context).enqueue(
+                // KEEP: a worker still running from the previous alarm covers this one.
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    SYNC_WORK_NAME,
+                    ExistingWorkPolicy.KEEP,
                     OneTimeWorkRequestBuilder<SyncWorker>().build()
                 )
             }
