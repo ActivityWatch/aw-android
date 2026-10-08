@@ -13,6 +13,7 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "SyncInterface"
@@ -297,66 +298,75 @@ class SyncInterface(context: Context) {
         activeExecutor = executor
         val handler = Handler(Looper.getMainLooper())
 
-        executor.execute {
-            Log.i(TAG, "Starting sync operation: $operation")
-            // Native-sync report kept for the catch path: when mirroring fails after
-            // a successful sync, the failure status must still carry the report
-            // (counts/warnings) instead of erasing what the pass actually did.
-            var nativeStatus: SyncStatus? = null
-            try {
-                ensureLegacyFoldersMigrated()
-                val response = syncFn()
-                val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())
-                nativeStatus = status
-                val success = status.success
-                val message = if (success) {
-                    status.summary ?: "sync completed"
-                } else {
-                    status.error ?: "sync failed"
-                }
+        // cancel() can land between publishing activeExecutor and this submission. The
+        // executor is then already shut down, the task never runs, and shutdownNow()
+        // reported nothing to clear, so report the failure here: the callback is what
+        // releases syncInFlight.
+        try {
+            executor.execute {
+                Log.i(TAG, "Starting sync operation: $operation")
+                // Native-sync report kept for the catch path: when mirroring fails after
+                // a successful sync, the failure status must still carry the report
+                // (counts/warnings) instead of erasing what the pass actually did.
+                var nativeStatus: SyncStatus? = null
+                try {
+                    ensureLegacyFoldersMigrated()
+                    val response = syncFn()
+                    val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())
+                    nativeStatus = status
+                    val success = status.success
+                    val message = if (success) {
+                        status.summary ?: "sync completed"
+                    } else {
+                        status.error ?: "sync failed"
+                    }
 
-                // Single choke point for status persistence: every sync operation runs
-                // through here, and this is the only place that holds the SyncReport
-                // returned across the JNI boundary. Persisting per-caller (as the full-sync
-                // path used to) is what left pull/push runs unrecorded.
-                //
-                // A configured SAF directory is part of a successful Android sync, so for
-                // full syncs the persist happens only AFTER mirroring completes: the
-                // settings UI must never show a completed sync while the mirror is still
-                // running. Non-mirroring operations persist immediately as before.
-                Log.i(TAG, "$operation completed: success=$success, message=$message")
-                if (success && mirrorBeforeCallback) {
-                    mirrorSyncFilesToSafDir()
+                    // Single choke point for status persistence: every sync operation runs
+                    // through here, and this is the only place that holds the SyncReport
+                    // returned across the JNI boundary. Persisting per-caller (as the full-sync
+                    // path used to) is what left pull/push runs unrecorded.
+                    //
+                    // A configured SAF directory is part of a successful Android sync, so for
+                    // full syncs the persist happens only AFTER mirroring completes: the
+                    // settings UI must never show a completed sync while the mirror is still
+                    // running. Non-mirroring operations persist immediately as before.
+                    Log.i(TAG, "$operation completed: success=$success, message=$message")
+                    if (success && mirrorBeforeCallback) {
+                        mirrorSyncFilesToSafDir()
+                    }
+                    persistSyncStatus(status)
+                    handler.post { callback(success, message) }
+                } catch (e: Exception) {
+                    val native = nativeStatus
+                    val status = if (native != null && native.success) {
+                        // The native sync itself completed; this failure came from the
+                        // post-sync step (mirroring, or delivering the callback), so keep
+                        // its report.
+                        val step = if (mirrorBeforeCallback) "SAF mirroring failed" else "post-sync step failed"
+                        native.copy(
+                            completedAt = System.currentTimeMillis(),
+                            success = false,
+                            error = SyncStatus.normalizeError("$step: ${e.message}"),
+                        )
+                    } else {
+                        SyncStatus(
+                            completedAt = System.currentTimeMillis(),
+                            success = false,
+                            error = SyncStatus.normalizeError("Exception: ${e.message}"),
+                        )
+                    }
+                    persistSyncStatus(status)
+                    handler.post {
+                        Log.e(TAG, "$operation failed", e)
+                        callback(false, status.error ?: "sync failed")
+                    }
+                } finally {
+                    executor.shutdown()
                 }
-                persistSyncStatus(status)
-                handler.post { callback(success, message) }
-            } catch (e: Exception) {
-                val native = nativeStatus
-                val status = if (native != null && native.success) {
-                    // The native sync itself completed; this failure came from the
-                    // post-sync step (mirroring, or delivering the callback), so keep
-                    // its report.
-                    val step = if (mirrorBeforeCallback) "SAF mirroring failed" else "post-sync step failed"
-                    native.copy(
-                        completedAt = System.currentTimeMillis(),
-                        success = false,
-                        error = SyncStatus.normalizeError("$step: ${e.message}"),
-                    )
-                } else {
-                    SyncStatus(
-                        completedAt = System.currentTimeMillis(),
-                        success = false,
-                        error = SyncStatus.normalizeError("Exception: ${e.message}"),
-                    )
-                }
-                persistSyncStatus(status)
-                handler.post {
-                    Log.e(TAG, "$operation failed", e)
-                    callback(false, status.error ?: "sync failed")
-                }
-            } finally {
-                executor.shutdown()
             }
+        } catch (e: RejectedExecutionException) {
+            Log.i(TAG, "$operation cancelled before it started")
+            handler.post { callback(false, "sync cancelled") }
         }
     }
 
