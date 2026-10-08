@@ -60,6 +60,10 @@ class MediaWatcher : NotificationListenerService() {
         ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
     }
 
+    // Handler thread only. False between teardown and the next session scan, so a callback
+    // or poll already queued when the listener disconnected can't reopen a segment.
+    private var connected = false
+
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
     private var pollingRunnable: Runnable? = null
@@ -105,14 +109,14 @@ class MediaWatcher : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         Log.i(TAG, "MediaWatcher listener disconnected")
-        unregisterAllCallbacks()
+        disconnect()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "MediaWatcher destroyed")
-        unregisterAllCallbacks()
-        // quitSafely still runs the final writes unregisterAllCallbacks just posted.
+        disconnect()
+        // quitSafely still runs the teardown disconnect() just posted.
         handlerThread.quitSafely()
     }
 
@@ -130,6 +134,7 @@ class MediaWatcher : NotificationListenerService() {
      * This is called once on service creation and handles all session lifecycle.
      */
     private fun registerActiveSessionListener() {
+        connected = true
         val componentName = ComponentName(this, MediaWatcher::class.java)
         try {
             val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -153,7 +158,7 @@ class MediaWatcher : NotificationListenerService() {
      * Registers callbacks for new sessions and cleans up stale ones.
      */
     private fun onActiveSessionsChanged(controllers: List<MediaController>?) {
-        if (controllers == null) return
+        if (controllers == null || !connected) return
 
         val currentTokens = controllers.map { it.sessionToken }.toSet()
 
@@ -236,6 +241,7 @@ class MediaWatcher : NotificationListenerService() {
         state: PlaybackState,
         metadata: MediaMetadata
     ) {
+        if (!connected) return
         val packageName = controller.packageName ?: return
         val token = controller.sessionToken
 
@@ -302,7 +308,18 @@ class MediaWatcher : NotificationListenerService() {
         }
     }
 
-    private fun unregisterAllCallbacks() {
+    // Called on the main thread. Teardown runs on the handler thread, after any session scan
+    // already running there, so a scan can never register callbacks after it.
+    private fun disconnect() {
+        // Drops queued polls, callbacks and a session scan that hasn't started yet.
+        handler?.removeCallbacksAndMessages(null)
+        val now = Instant.now()
+        handler?.post { unregisterAllCallbacks(now) }
+    }
+
+    // Handler thread only. Ends at [disconnectedAt] whatever is still playing.
+    private fun unregisterAllCallbacks(disconnectedAt: Instant) {
+        connected = false
         // Remove the active sessions listener to prevent leaks
         activeSessionsListener?.let { listener ->
             sessionManager?.removeOnActiveSessionsChangedListener(listener)
@@ -315,11 +332,6 @@ class MediaWatcher : NotificationListenerService() {
         }
         activeControllers.clear()
         activeCallbacks.clear()
-
-        // Drop queued polls and callbacks so nothing reopens a segment, then write whatever
-        // is still playing on the handler thread, ending at the time of disconnect.
-        handler?.removeCallbacksAndMessages(null)
-        val now = Instant.now()
-        handler?.post { segments.endAll(now) }
+        segments.endAll(disconnectedAt)
     }
 }
