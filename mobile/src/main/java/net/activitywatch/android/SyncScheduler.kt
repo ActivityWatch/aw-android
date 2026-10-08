@@ -18,10 +18,12 @@ internal const val SYNC_INTERVAL_MS = 15 * 60 * 1000L
 
 // The in-process Handler chain and the AlarmManager fallback both run every
 // SYNC_INTERVAL_MS. While the Handler chain is alive its last pass is always less than
-// one interval old, so the alarm only syncs once that pass is a full interval old, i.e.
-// the chain has stopped. A dead chain is then covered within two alarm intervals.
-internal fun alarmSyncIsRedundant(lastCompletedAt: Long?, now: Long): Boolean =
-    lastCompletedAt != null && now - lastCompletedAt in 0 until SYNC_INTERVAL_MS
+// one interval old, so the alarm only syncs once the chain's last pass is a full interval
+// old, i.e. the chain has stopped. Only the chain's own passes count
+// ([AWPreferences.getHandlerSyncCompletedAt]): counting the fallback's passes would make
+// it skip every other alarm once the chain is gone.
+internal fun alarmSyncIsRedundant(lastHandlerSyncAt: Long?, now: Long): Boolean =
+    lastHandlerSyncAt != null && now - lastHandlerSyncAt in 0 until SYNC_INTERVAL_MS
 private const val ACTION_SYNC_ALARM = "net.activitywatch.android.SYNC_ALARM"
 
 class SyncScheduler(private val context: Context) {
@@ -114,6 +116,10 @@ class SyncScheduler(private val context: Context) {
                 Log.w(TAG, "Automatic sync failed: $message")
             }
             // Schedule next sync only after this one completes, preventing overlapping JNI calls.
+            // A skipped call (another sync in flight) didn't sync, so it doesn't count.
+            if (!message.startsWith("skipped")) {
+                prefs.setHandlerSyncCompletedAt(System.currentTimeMillis())
+            }
             if (isRunning) {
                 val nextRunAt = System.currentTimeMillis() + SYNC_INTERVAL_MS
                 Log.i(TAG, "Scheduling next sync in 15 minutes")
