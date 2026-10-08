@@ -100,15 +100,17 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Processing session events...")
 
         // Create bucket for session events
-        ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
-        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
+        ri.createBucketsHelper(
+            mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
+        )
 
         lastUpdated = getLastEventTime()
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
         val startTimestamp = nextQueryStartTimestamp()
-        val sessions = sessionParser.parseUsageEventsSince(startTimestamp)
-        val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
+        val batch = sessionParser.parseSessionsAndUnlocksSince(startTimestamp, startTimestamp)
+        val sessions = batch.sessions
+        val unlockTimestamps = batch.unlockTimestamps
 
         var eventsSent = 0
 

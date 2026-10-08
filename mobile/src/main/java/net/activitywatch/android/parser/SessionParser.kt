@@ -87,12 +87,41 @@ class SessionParser(private val context: Context) {
         return parseEventsIntoSessions(rawEvents, endTimestamp)
     }
 
+    class IngestBatch(val sessions: List<AppSession>, val unlockTimestamps: List<Long>)
+
     /**
-     * Parse usage events since a specific timestamp (for incremental updates)
+     * Sessions since [sessionsSince] and unlock (KEYGUARD_HIDDEN) timestamps since
+     * [unlocksSince], for incremental ingest, from a single pass over the usage events.
      */
-    fun parseUsageEventsSince(lastUpdateTimestamp: Long): List<AppSession> {
+    fun parseSessionsAndUnlocksSince(sessionsSince: Long, unlocksSince: Long): IngestBatch {
         val currentTime = System.currentTimeMillis()
-        return parseUsageEventsForPeriod(lastUpdateTimestamp, currentTime)
+        val usageEvents = usageStatsManager.queryEvents(minOf(sessionsSince, unlocksSince), currentTime)
+        val rawEvents = mutableListOf<UsageEvent>()
+        val unlockTimestamps = mutableListOf<Long>()
+
+        val event = UsageEvents.Event()
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                if (event.timeStamp >= unlocksSince) unlockTimestamps.add(event.timeStamp)
+            } else if (isRelevantEvent(event) && event.timeStamp >= sessionsSince) {
+                rawEvents.add(
+                    UsageEvent(
+                        eventType = event.eventType,
+                        timeStamp = event.timeStamp,
+                        packageName = event.packageName ?: "",
+                        className = event.className ?: ""
+                    )
+                )
+            }
+        }
+
+        Log.d(TAG, "Processing ${rawEvents.size} events and ${unlockTimestamps.size} unlocks")
+
+        return IngestBatch(
+            sessions = parseEventsIntoSessions(rawEvents.sortedBy { it.timeStamp }, currentTime),
+            unlockTimestamps = unlockTimestamps.sorted()
+        )
     }
 
     /**
@@ -111,14 +140,6 @@ class SessionParser(private val context: Context) {
         }
 
         return unlockTimestamps.sorted()
-    }
-
-    /**
-     * Parse unlock events since a specific timestamp
-     */
-    fun parseUnlockEventsSince(lastUpdateTimestamp: Long): List<Long> {
-        val currentTime = System.currentTimeMillis()
-        return parseUnlockEventsForPeriod(lastUpdateTimestamp, currentTime)
     }
 
     /**
@@ -185,6 +206,8 @@ class SessionParser(private val context: Context) {
         periodEnd: Long
     ): List<AppSession> {
         val sessions = mutableListOf<AppSession>()
+        // One PackageManager binder call per app rather than per session.
+        val appNames = HashMap<String, String>()
 
         Log.d(TAG, "Parsing ${events.size} events into sessions (foreground state machine)")
 
@@ -197,7 +220,7 @@ class SessionParser(private val context: Context) {
             openPackage = null
             val duration = endTime - openStart
             if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
-                val appName = SessionUtils.getAppName(context, pkg)
+                val appName = appNames.getOrPut(pkg) { SessionUtils.getAppName(context, pkg) }
                 sessions.add(
                     AppSession(
                         packageName = pkg,

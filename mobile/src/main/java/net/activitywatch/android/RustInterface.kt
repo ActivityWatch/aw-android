@@ -120,20 +120,28 @@ class RustInterface(context: Context? = null) {
     }
 
     fun createBucketHelper(bucket_id: String, type: String, client: String = "aw-android") {
+        createBucketsHelper(mapOf(bucket_id to type), client)
+    }
+
+    /** Creates any of [buckets] (id to type) that don't exist yet, listing buckets once. */
+    fun createBucketsHelper(buckets: Map<String, String>, client: String = "aw-android") {
         val context =
             appContext
                 ?: throw IllegalStateException(
                     "Context is required but was not provided during initialization"
                 )
         val hostname = getDeviceName(context)
-        if (bucket_id in getBucketsJSON().keys().asSequence()) {
-            Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
-        } else {
-            val msg =
-                createBucket(
-                    """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
-                )
-            Log.w(TAG, msg)
+        val existing = getBucketsJSON().keys().asSequence().toSet()
+        for ((bucket_id, type) in buckets) {
+            if (bucket_id in existing) {
+                Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
+            } else {
+                val msg =
+                    createBucket(
+                        """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
+                    )
+                Log.w(TAG, msg)
+            }
         }
     }
 
