@@ -1,6 +1,7 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.os.SystemClock
 import android.util.Log
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
@@ -45,6 +46,7 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+    private var lastTitleLookup = 0L
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -119,9 +121,11 @@ class WebWatcher : AccessibilityService() {
                     } else {
                         handleUrl(newUrl, newBrowser = browser)
                     }
-                    findWebView(source)?.let { webView ->
-                        handleWindowTitle(webView.text.toString())
-                        if (webView !== source) webView.recycle()
+                    if (shouldLookUpTitle(browser)) {
+                        findWebView(source)?.let { webView ->
+                            handleWindowTitle(webView.text.toString())
+                            if (webView !== source) webView.recycle()
+                        }
                     }
                 } finally {
                     source.recycle()
@@ -136,6 +140,20 @@ class WebWatcher : AccessibilityService() {
 
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
+
+    // findWebView walks the event's subtree, up to MAX_TRAVERSAL_NODES binder calls on this
+    // (main) thread, and content-change events arrive up to every 100ms while a page is
+    // open. Look the title up at most every TITLE_LOOKUP_MS while it is still unknown, and
+    // every TITLE_RECHECK_MS once found so in-page title changes are still picked up.
+    private fun shouldLookUpTitle(browser: String): Boolean {
+        // See findWebView: the lookup never matches Firefox.
+        if (browser == "org.mozilla.firefox") return false
+        val now = SystemClock.elapsedRealtime()
+        val interval = if (sessionTracker.hasTitle) TITLE_RECHECK_MS else TITLE_LOOKUP_MS
+        if (now - lastTitleLookup < interval) return false
+        lastTitleLookup = now
+        return true
+    }
 
     // TODO(maintainer): this never finds a match for Firefox, so its page title is never
     // captured (logged events show title:""). Confirmed live on-device (2026-07-01, Fenix,
@@ -204,6 +222,9 @@ class WebWatcher : AccessibilityService() {
     override fun onInterrupt() {}
 
     companion object {
+        private const val TITLE_LOOKUP_MS = 500L
+        private const val TITLE_RECHECK_MS = 5_000L
+
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",
