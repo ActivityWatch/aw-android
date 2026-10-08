@@ -271,14 +271,20 @@ class SyncInterface(context: Context) {
      *    at most the file currently being copied.
      * 2. [ExecutorService.shutdownNow] sends an interrupt to the executor thread, causing
      *    any blocking I/O to throw [java.io.InterruptedIOException] promptly.
-     * 3. [syncInFlight] is cleared so that a future sync is not permanently blocked.
-     *    This is necessary because [shutdownNow] can remove a queued-but-not-started
-     *    executor task before its completion callback has a chance to clear the guard.
+     * 3. If [shutdownNow] removed a queued-but-not-started task, [syncInFlight] is cleared
+     *    so that a future sync is not permanently blocked: that task's completion callback,
+     *    which normally clears the guard, will never run.
+     *
+     * A task that has already started keeps the guard until it finishes. Interrupting its
+     * thread does not stop the native `syncBoth` call, so clearing the guard then would let
+     * a second sync start while the first is still writing.
      */
     fun cancel() {
         cancelRequested = true
-        activeExecutor?.shutdownNow()
-        syncInFlight.set(false)
+        val notStarted = activeExecutor?.shutdownNow().orEmpty()
+        if (notStarted.isNotEmpty()) {
+            syncInFlight.set(false)
+        }
     }
 
     private fun performSyncAsync(
