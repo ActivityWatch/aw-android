@@ -226,18 +226,29 @@ class NotifyWorkerTest {
     }
 
     @Test
-    fun staleTriggeredKeys_keepsOnlyTheCurrentDay() {
+    fun staleTriggeredKeys_dropsOnlyDaysOutsideTheRetentionWindow() {
         val keys = listOf(
+            "triggered_Work_123_2026-10-05",
+            "triggered_null_456_2026-10-05",
+            "triggered_Work_123_2026-10-06",
             "triggered_Work_123_2026-10-07",
-            "triggered_null_456_2026-10-07",
-            "triggered_Work_123_2026-10-08",
             "triggered_Work_789_2026-10-08",
+            "triggered_Work_789_not-a-date",
             "unrelated_key",
         )
 
         assertEquals(
-            listOf("triggered_Work_123_2026-10-07", "triggered_null_456_2026-10-07"),
-            staleTriggeredKeys(keys, "2026-10-08"),
+            listOf("triggered_Work_123_2026-10-05", "triggered_null_456_2026-10-05"),
+            staleTriggeredKeys(keys, LocalDate.of(2026, 10, 8)),
         )
+    }
+
+    @Test
+    fun staleTriggeredKeys_keepsYesterdayWhenTheLogicalDayMovesBack() {
+        // A run at 05:00 with startOfDay 04:00 is on 10-08. If startOfDay then moves to
+        // 06:00, the next run's logical day is 10-07 again, and 10-07's fired thresholds
+        // must still be recorded.
+        val firedYesterday = "triggered_Work_123_2026-10-07"
+        assertEquals(emptyList<String>(), staleTriggeredKeys(listOf(firedYesterday), LocalDate.of(2026, 10, 8)))
     }
 }
