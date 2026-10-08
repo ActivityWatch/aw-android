@@ -182,8 +182,6 @@ internal data class PendingExport(
     val mimeType: String,
     val cacheFile: File,
 ) {
-    fun readContent(): String = cacheFile.readText(StandardCharsets.UTF_8)
-
     fun deleteCache() {
         if (cacheFile.exists() && !cacheFile.delete()) {
             Log.w(TAG, "Failed to delete export cache ${cacheFile.name}")
@@ -705,9 +703,7 @@ class WebUIFragment : Fragment() {
         } catch (e: Exception) {
             Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
             exportQueue.completeInFlight()
-            shareExport(next)
-            next.deleteCache()
-            launchNextExportPicker()
+            shareExport(next) { launchNextExportPicker() }
         }
     }
 
@@ -739,21 +735,44 @@ class WebUIFragment : Fragment() {
         launchNextExportPicker()
     }
 
-    private fun shareExport(pending: PendingExport) {
-        val ctx = context ?: return
-        val externalDir = ctx.getExternalFilesDir(null) ?: run {
+    // Copies the cached export to a shareable file and opens the share sheet, then deletes
+    // the cache and calls [onDone] on the UI thread. The copy streams on a background
+    // thread: exports can be very large, and reading one into a String on the UI thread is
+    // what the streamed save path (#304) avoids.
+    private fun shareExport(pending: PendingExport, onDone: () -> Unit) {
+        val ctx = context?.applicationContext
+        val externalDir = ctx?.getExternalFilesDir(null)
+        if (ctx == null || externalDir == null) {
             Log.e(TAG, "External files directory unavailable")
             showExportToast(getString(R.string.export_save_failed), long = true)
+            pending.deleteCache()
+            onDone()
             return
         }
         val file = File(externalDir, pending.filename)
-        try {
-            file.writeText(pending.readContent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write export file: ${e.message}")
-            showExportToast(getString(R.string.export_save_failed), long = true)
-            return
+        thread(name = "aw-export-share") {
+            val copied = try {
+                pending.cacheFile.copyTo(file, overwrite = true)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to write export file: ${e.message}")
+                false
+            } finally {
+                pending.deleteCache()
+            }
+            postToUi {
+                if (!isAdded) return@postToUi
+                if (copied) {
+                    startShareChooser(ctx, file, pending)
+                } else {
+                    showExportToast(getString(R.string.export_save_failed), long = true)
+                }
+                onDone()
+            }
         }
+    }
+
+    private fun startShareChooser(ctx: Context, file: File, pending: PendingExport) {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = pending.mimeType

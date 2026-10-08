@@ -186,8 +186,8 @@ class WebUIFragmentTest {
         assertEquals(first, restored.inFlight)
         assertEquals(first, restored.completeInFlight())
         assertEquals(second, restored.beginNext())
-        assertEquals("one", first.readContent())
-        assertEquals("two", second.readContent())
+        assertEquals("one", first.cacheFile.readText())
+        assertEquals("two", second.cacheFile.readText())
     }
 
     @Test
