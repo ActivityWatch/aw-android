@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import java.io.File
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 private const val TAG = "DatastoreStartup"
@@ -24,10 +23,6 @@ private const val TAG = "DatastoreStartup"
  * without a RustInterface instance, so it is never open while the rewrite runs.
  */
 internal object DatastoreStartup {
-    // Only main-thread callers are bounded, so a stuck rewrite can't ANR them. The rewrite
-    // is one small UPDATE on the buckets table, so this is never expected to elapse.
-    private const val MAIN_THREAD_WAIT_MS = 5_000L
-
     private val ready = CountDownLatch(1)
 
     fun start(context: Context) {
@@ -50,12 +45,17 @@ internal object DatastoreStartup {
         }
     }
 
+    /**
+     * Blocks until the rewrite has finished. There is deliberately no timeout: giving up
+     * would let the datastore open while Android SQLite still has sqlite.db, which is the
+     * crash this exists to prevent. The rewrite is one small UPDATE that only runs after a
+     * hostname change, and RustInterface should not be constructed on the main thread.
+     */
     fun awaitReady() {
-        if (!OffThreadInit.isAndroidMainThread()) {
-            ready.await()
-        } else if (!ready.await(MAIN_THREAD_WAIT_MS, TimeUnit.MILLISECONDS)) {
-            Log.w(TAG, "Hostname rewrite still running after ${MAIN_THREAD_WAIT_MS}ms; not waiting longer")
+        if (ready.count > 0 && OffThreadInit.isAndroidMainThread()) {
+            Log.w(TAG, "Main thread waiting for the bucket hostname rewrite")
         }
+        ready.await()
     }
 
     private fun rewriteBucketHostnames(context: Context, prefs: AWPreferences, current: String) {
