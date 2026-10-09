@@ -12,5 +12,7 @@ class AWApplication : Application() {
         // Without this, Theme.AppCompat.Light keeps the Activity in light mode and
         // WebView always sees prefers-color-scheme: light (aw-android#300).
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        // Before any component can construct a RustInterface; see DatastoreStartup.
+        DatastoreStartup.start(this)
     }
 }

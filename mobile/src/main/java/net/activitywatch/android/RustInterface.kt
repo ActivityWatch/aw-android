@@ -20,6 +20,10 @@ class RustInterface(context: Context? = null) {
     private val appContext: Context? = context?.applicationContext
 
     init {
+        // Never touch the datastore while the bucket-hostname rewrite has sqlite.db open
+        // through Android's SQLite (see DatastoreStartup).
+        DatastoreStartup.awaitReady()
+
         // NOTE: This doesn't work, probably because I can't get gradle to not strip symbols on
         // release builds
         Os.setenv("RUST_BACKTRACE", "1", true)
