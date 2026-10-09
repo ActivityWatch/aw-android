@@ -5,6 +5,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
@@ -56,7 +57,8 @@ class DelayedIndicatorTest {
             }
         workStarted.await()
         // Wait for the delayed banner to appear before cancelling the caller.
-        while (calls.isEmpty()) delay(1)
+        // Bounded so a missing banner fails the test instead of hanging the job.
+        withTimeout(5_000) { while (calls.isEmpty()) delay(1) }
         job.cancelAndJoin()
         assertEquals(listOf("show", "hide"), calls)
     }
