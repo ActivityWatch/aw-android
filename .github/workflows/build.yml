@@ -415,6 +415,18 @@ jobs:
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
+    # The runner exposes /dev/kvm but the runner user is not in the kvm group,
+    # so the emulator falls back to TCG software emulation ("ProbeKVM: This
+    # user doesn't have permissions to use KVM"). Under TCG the emulator
+    # intermittently goes `adb: device offline` after boot. Grant access so
+    # android-emulator-runner's `disable-linux-hw-accel: auto` picks KVM.
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+        ls -l /dev/kvm
+
     - name: Run Emulator and E2E tests
       uses: reactivecircus/android-emulator-runner@v2
       timeout-minutes: 30
@@ -502,6 +514,14 @@ jobs:
 
     - name: Build release variant (R8)
       run: ./gradlew :mobile:assembleStandardRelease -x lintVitalStandardRelease
+
+    # Same as test-e2e: without this the emulator runs under TCG.
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+        ls -l /dev/kvm
 
     - name: Run emulator and smoke the release variant
       uses: reactivecircus/android-emulator-runner@v2
