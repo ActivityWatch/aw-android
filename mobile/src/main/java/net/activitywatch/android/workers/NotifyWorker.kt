@@ -15,6 +15,8 @@ import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
+import net.activitywatch.android.watcher.SessionEventWatcher
+import net.activitywatch.android.watcher.UsageStatsWatcher
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -177,6 +179,8 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
             return Result.retry()
         }
 
+        ingestLatestUsage()
+
         return try {
             val zone = ZoneId.systemDefault()
             val startOfDayHour = parseStartOfDayHour(ri.getSetting("startOfDay"))
@@ -188,6 +192,18 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         } catch (e: Exception) {
             Log.e(TAG, "Error checking notification thresholds", e)
             Result.retry()
+        }
+    }
+
+    // Usage events otherwise reach the datastore only on the hourly (inexact) alarm, app
+    // open or widget refresh, so alerts were judged against data up to an hour old.
+    private fun ingestLatestUsage() {
+        if (!UsageStatsWatcher.isUsageAllowed(applicationContext)) return
+        try {
+            SessionEventWatcher(applicationContext).processEventsSinceLastUpdate()
+        } catch (e: Exception) {
+            // Still check thresholds against what is already stored.
+            Log.w(TAG, "Failed to ingest usage events before checking thresholds", e)
         }
     }
 
