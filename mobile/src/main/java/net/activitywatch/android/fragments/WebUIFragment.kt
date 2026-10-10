@@ -182,8 +182,6 @@ internal data class PendingExport(
     val mimeType: String,
     val cacheFile: File,
 ) {
-    fun readContent(): String = cacheFile.readText(StandardCharsets.UTF_8)
-
     fun deleteCache() {
         if (cacheFile.exists() && !cacheFile.delete()) {
             Log.w(TAG, "Failed to delete export cache ${cacheFile.name}")
@@ -277,6 +275,31 @@ internal fun readExportSnapshot(state: Bundle): ExportQueueSnapshot? {
 
 internal fun persistExportPayload(cacheDir: File, content: String): File {
     return persistExportStream(cacheDir, content.byteInputStream(StandardCharsets.UTF_8))
+}
+
+internal const val SHARED_EXPORTS_DIR = "shared-exports"
+
+// Shared copies are only needed until the receiving app has read them.
+internal const val SHARED_EXPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000L
+
+/**
+ * Moves [pending]'s cache file to `<sharedRoot>/<unique>/<filename>` so it can be shared
+ * under its real name, and returns it (null if the move failed). Each share gets its own
+ * directory so exports with the same filename never overwrite each other. Directories
+ * older than [SHARED_EXPORT_MAX_AGE_MS] are removed first.
+ */
+internal fun moveExportForSharing(
+    sharedRoot: File,
+    pending: PendingExport,
+    now: Long = System.currentTimeMillis(),
+): File? {
+    sharedRoot.listFiles()?.forEach { dir ->
+        if (now - dir.lastModified() > SHARED_EXPORT_MAX_AGE_MS) dir.deleteRecursively()
+    }
+    val dir = File(sharedRoot, java.util.UUID.randomUUID().toString())
+    if (!dir.mkdirs()) return null
+    val target = File(dir, pending.filename)
+    return target.takeIf { pending.cacheFile.renameTo(it) }
 }
 
 internal fun persistExportStream(cacheDir: File, input: java.io.InputStream): File {
@@ -706,7 +729,6 @@ class WebUIFragment : Fragment() {
             Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
             exportQueue.completeInFlight()
             shareExport(next)
-            next.deleteCache()
             launchNextExportPicker()
         }
     }
@@ -739,21 +761,27 @@ class WebUIFragment : Fragment() {
         launchNextExportPicker()
     }
 
+    // Opens the share sheet for an export when the system file picker is unavailable.
+    // The cached export is moved, not copied, into a shareable location: a rename within
+    // cacheDir is instant, so this stays synchronous on the UI thread. That avoids reading
+    // large exports into memory (#304) and leaves no background work to race a second
+    // export or be lost if the activity is recreated.
     private fun shareExport(pending: PendingExport) {
-        val ctx = context ?: return
-        val externalDir = ctx.getExternalFilesDir(null) ?: run {
-            Log.e(TAG, "External files directory unavailable")
+        val ctx = context ?: run {
+            pending.deleteCache()
+            return
+        }
+        val file = moveExportForSharing(File(ctx.cacheDir, SHARED_EXPORTS_DIR), pending)
+        if (file == null) {
+            Log.e(TAG, "Failed to prepare ${pending.filename} for sharing")
+            pending.deleteCache()
             showExportToast(getString(R.string.export_save_failed), long = true)
             return
         }
-        val file = File(externalDir, pending.filename)
-        try {
-            file.writeText(pending.readContent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write export file: ${e.message}")
-            showExportToast(getString(R.string.export_save_failed), long = true)
-            return
-        }
+        startShareChooser(ctx, file, pending)
+    }
+
+    private fun startShareChooser(ctx: Context, file: File, pending: PendingExport) {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = pending.mimeType
