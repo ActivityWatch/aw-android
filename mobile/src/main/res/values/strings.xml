@@ -12,16 +12,16 @@
     <string name="open_in_browser">Open in browser</string>
     <string name="importing_usage_history">Importing usage history… the dashboard may be incomplete until it finishes.</string>
     <string name="title_activity_buckets">BucketsActivity</string>
-    <string name="welcome_title_text">Welcome, early user!</string>
+    <string name="welcome_title_text">Welcome to ActivityWatch!</string>
     <string name="welcome_text">
-        "Thanks for trying out ActivityWatch for Android!"
-        "It\'s not quite as matured as ActivityWatch on other platforms, but it\'s a great step in the right direction and we think it's ready enough to put out there!"
+        "Thanks for using ActivityWatch for Android!"
+        "We\'ve made major improvements, including support for cross-device synchronization."
 
-        "\n\n<b>To get started</b>, open the drawer menu in the top left and click on "Activity".
+        "\n\n<b>To get started</b>:"
+        "\n• Open the drawer menu and tap "Activity" to see your events"
+        "\n• Go to <b>Sync Settings</b> to sync data across your devices"
 
-        "\n\n<b>The next step for us</b> is to get cross-device synchronization in place, but it might take a while since we really want to get it right."
-
-        "\n<b>If you\'re new to ActivityWatch</b>, you should also check out the <a href='https://activitywatch.net/'>desktop version of ActivityWatch</a>."
+        "\n\n<b>Need help?</b> Check out the <a href='https://docs.activitywatch.net/'>ActivityWatch documentation</a> or report issues on <a href='https://github.com/ActivityWatch/aw-android/issues'>GitHub</a>."
     </string>
     <string name="button_log_text">Click me to log data!</string>
     <string name="accessibility_service_description">Allows ActivityWatch to read the URL and title from your browser.</string>
