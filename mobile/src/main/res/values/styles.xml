@@ -16,6 +16,17 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
     </style>
+    <!-- Light-only theme for native screens that pin their background to
+         chrome_light via applySafeWindowInsets(). DayNight would resolve
+         text colour attributes (textColorSecondary, textAppearanceListItem …)
+         to white in night mode while the background stays white → unreadable.
+         Theme.AppCompat.Light.NoActionBar already disables the window action
+         bar, so no extra item overrides are needed. -->
+    <style name="AppTheme.LightOnly" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
     <style name="AppTheme.AppBarOverlay" parent="ThemeOverlay.AppCompat.Light"/>
     <style name="AppTheme.PopupOverlay" parent="ThemeOverlay.AppCompat.Light"/>
 
