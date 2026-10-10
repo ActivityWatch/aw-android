@@ -408,9 +408,14 @@ class SyncInterface(context: Context) {
             throw IOException("Configured SAF directory is not accessible")
         }
 
-        val counts = intArrayOf(0, 0) // [copied, skipped]
-        mirrorDirectory(File(syncDir), safDir, counts)
-        Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} → $uriStr")
+        val counts = intArrayOf(0, 0, 0) // [copied, skipped, unchanged]
+        val manifestFile = File(appContext.filesDir, SAF_MIRROR_MANIFEST)
+        val previous = loadSafMirrorManifest(manifestFile, uriStr)
+        val written = HashMap<String, SafMirrorStamp>()
+        mirrorDirectory(File(syncDir), safDir, "", previous, written, counts)
+        // Saved before the error checks below so a partial pass still records what it wrote.
+        saveSafMirrorManifest(manifestFile, uriStr, written)
+        Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} unchanged=${counts[2]} → $uriStr")
         if (cancelRequested) {
             throw IOException("SAF mirror cancelled")
         }
@@ -430,8 +435,18 @@ class SyncInterface(context: Context) {
      * Recursively mirror [sourceDir] into [destDir], creating subdirectories as needed so the
      * `<device_id>/` layout aw-sync produces is reproduced verbatim in the SAF tree.
      */
-    private fun mirrorDirectory(sourceDir: File, destDir: DocumentFile, counts: IntArray) {
+    private fun mirrorDirectory(
+        sourceDir: File,
+        destDir: DocumentFile,
+        relativeDir: String,
+        previous: Map<String, SafMirrorStamp>,
+        written: MutableMap<String, SafMirrorStamp>,
+        counts: IntArray,
+    ) {
         val entries = sourceDir.listFiles() ?: return
+        // One listing per directory. DocumentFile.findFile() re-lists the directory and
+        // queries every child's name on each call, which made each entry cost a full scan.
+        val destEntries = destDir.listFiles().associateBy { it.name }
 
         for (entry in entries) {
             if (cancelRequested) {
@@ -442,7 +457,7 @@ class SyncInterface(context: Context) {
                 if (entry.isDirectory) {
                     // Reuse an existing subdirectory if present; otherwise create it. A
                     // non-directory of the same name cannot be mirrored into.
-                    val existing = destDir.findFile(entry.name)
+                    val existing = destEntries[entry.name]
                     val subDir = when {
                         existing != null && existing.isDirectory -> existing
                         existing != null -> {
@@ -457,7 +472,7 @@ class SyncInterface(context: Context) {
                         counts[1]++
                         continue
                     }
-                    mirrorDirectory(entry, subDir, counts)
+                    mirrorDirectory(entry, subDir, "$relativeDir${entry.name}/", previous, written, counts)
                 } else {
                     // Reuse an existing file if present; otherwise create a new one. A
                     // same-named DIRECTORY must be rejected rather than written into: an
@@ -465,11 +480,25 @@ class SyncInterface(context: Context) {
                     // directory URI fails, which would silently leave the database
                     // uncopied. The directory branch above rejects the mirror case, so
                     // this keeps the two symmetric.
-                    val existingFile = destDir.findFile(entry.name)
+                    val existingFile = destEntries[entry.name]
                     if (existingFile != null && existingFile.isDirectory) {
                         Log.w(TAG, "SAF entry ${entry.name} is a directory; cannot write a file there")
                         counts[1]++
                         continue
+                    }
+                    val relativePath = relativeDir + entry.name
+                    // Read before copying: a source changed mid-copy then differs next run.
+                    val sourceLength = entry.length()
+                    val sourceModified = entry.lastModified()
+                    if (existingFile != null) {
+                        val current = SafMirrorStamp(
+                            sourceLength, sourceModified, existingFile.length(), existingFile.lastModified()
+                        )
+                        if (safMirrorIsUpToDate(previous[relativePath], current)) {
+                            written[relativePath] = current
+                            counts[2]++
+                            continue
+                        }
                     }
                     val dest = existingFile
                         ?: destDir.createFile("application/octet-stream", entry.name)
@@ -486,6 +515,9 @@ class SyncInterface(context: Context) {
                     }
                     out.use { FileInputStream(entry).use { inp -> inp.copyTo(it) } }
                     counts[0]++
+                    // Queried again: the provider assigns the copy's size and timestamp.
+                    written[relativePath] =
+                        SafMirrorStamp(sourceLength, sourceModified, dest.length(), dest.lastModified())
                 }
             } catch (e: IOException) {
                 Log.w(TAG, "Failed to copy ${entry.name} to SAF dir: ${e.message}")
@@ -568,6 +600,62 @@ class SyncInterface(context: Context) {
             }
         }
         return doc.delete()
+    }
+}
+
+private const val SAF_MIRROR_MANIFEST = "saf_mirror_manifest.json"
+
+/** Size and modification time of a source file and its SAF copy. */
+internal data class SafMirrorStamp(
+    val sourceLength: Long,
+    val sourceModified: Long,
+    val destLength: Long,
+    val destModified: Long,
+) {
+    fun encode(): String = "$sourceLength,$sourceModified,$destLength,$destModified"
+
+    companion object {
+        fun decode(value: String): SafMirrorStamp? {
+            val parts = value.split(",").mapNotNull { it.toLongOrNull() }
+            return if (parts.size == 4) SafMirrorStamp(parts[0], parts[1], parts[2], parts[3]) else null
+        }
+    }
+}
+
+/**
+ * Whether a mirrored file can be left alone: neither the source nor the SAF copy has
+ * changed since this app wrote that copy ([written], recorded right after the write).
+ *
+ * A same-sized copy with a newer timestamp is not enough on its own. The SAF folder is
+ * shared with other tools, which can put a different file there, so only a copy this app
+ * wrote and nothing has modified since is trusted to hold the source's content.
+ */
+internal fun safMirrorIsUpToDate(written: SafMirrorStamp?, current: SafMirrorStamp): Boolean =
+    written != null && current.sourceModified > 0 && current.destModified > 0 && written == current
+
+/** Stamps from the last mirror into [treeUri]; empty if it was for another folder. */
+internal fun loadSafMirrorManifest(file: File, treeUri: String): Map<String, SafMirrorStamp> {
+    return try {
+        if (!file.isFile) return emptyMap()
+        val json = JSONObject(file.readText())
+        if (json.optString("tree") != treeUri) return emptyMap()
+        val files = json.optJSONObject("files") ?: return emptyMap()
+        files.keys().asSequence()
+            .mapNotNull { path -> SafMirrorStamp.decode(files.optString(path))?.let { path to it } }
+            .toMap()
+    } catch (e: Exception) {
+        // A missing or unreadable manifest only costs one full copy.
+        emptyMap()
+    }
+}
+
+internal fun saveSafMirrorManifest(file: File, treeUri: String, stamps: Map<String, SafMirrorStamp>) {
+    val files = JSONObject()
+    stamps.forEach { (path, stamp) -> files.put(path, stamp.encode()) }
+    try {
+        file.writeText(JSONObject().put("tree", treeUri).put("files", files).toString())
+    } catch (e: IOException) {
+        Log.w(TAG, "Could not save SAF mirror manifest: ${e.message}")
     }
 }
 
