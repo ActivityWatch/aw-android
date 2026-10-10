@@ -88,12 +88,20 @@ internal fun formatNextSyncStatus(
  * transferred everything — the failure mode of a boolean-only status.
  */
 internal fun formatSyncDetail(status: SyncStatus, isPushOnlyDevice: Boolean = false): String {
-    val peers = status.peersImported + status.peersSkipped + status.peersFailed
+    val peerCount = status.peersImported + status.peersSkipped + status.peersFailed
     val parts = mutableListOf("pulled ${status.eventsPulled}, pushed ${status.eventsPushed}")
-    if (peers > 0) {
-        var peerText = "peers ${status.peersImported}/$peers imported"
+    if (peerCount > 0) {
+        var peerText = "peers ${status.peersImported}/$peerCount imported"
         if (status.peersSkipped > 0) peerText += ", ${status.peersSkipped} skipped"
         if (status.peersFailed > 0) peerText += ", ${status.peersFailed} failed"
+        // Append per-peer hostnames when available (requires aw-server-rust >= SyncReport JNI).
+        // Show all imported peers; for failed peers prefix "!" to distinguish without extra prose.
+        val importedHosts = status.peers.filter { it.outcome == "imported" }.map { it.hostname }
+        val failedHosts = status.peers.filter { it.outcome == "failed" }.map { "!${it.hostname}" }
+        val namedHosts = importedHosts + failedHosts
+        if (namedHosts.isNotEmpty()) {
+            peerText += " (${namedHosts.joinToString(", ")})"
+        }
         parts += peerText
     }
     val line = parts.joinToString(" · ")

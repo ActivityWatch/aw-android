@@ -7,6 +7,7 @@ import android.os.Looper
 import android.system.Os
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -16,6 +17,17 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "SyncInterface"
+
+/**
+ * Per-peer summary from a single sync pass. Carries only the fields needed for
+ * the UI: hostname (human-readable device name) and outcome kind. Full detail
+ * (buckets, path) stays in the Rust layer.
+ */
+data class SyncPeer(
+    val hostname: String,
+    // "imported", "skipped", or "failed" — the "kind" field from PeerOutcome
+    val outcome: String,
+)
 
 data class SyncStatus(
     val completedAt: Long,
@@ -38,6 +50,9 @@ data class SyncStatus(
     val peersSkipped: Int = 0,
     val peersFailed: Int = 0,
     val warnings: List<String> = emptyList(),
+    // Per-peer breakdown from the "peers" array in the JNI response. Empty for
+    // older native libs that pre-date the SyncReport JNI output.
+    val peers: List<SyncPeer> = emptyList(),
 ) {
     companion object {
         const val MAX_ERROR_CHARS = 500
@@ -87,6 +102,15 @@ data class SyncStatus(
                     .take(MAX_WARNINGS)
             } ?: emptyList()
 
+            val peers = json.optJSONArray("peers")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    val peer = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val hostname = peer.optString("hostname", "").ifBlank { return@mapNotNull null }
+                    val outcome = peer.optJSONObject("outcome")?.optString("kind", "") ?: ""
+                    SyncPeer(hostname = hostname, outcome = outcome)
+                }
+            } ?: emptyList()
+
             return SyncStatus(
                 completedAt = completedAt,
                 success = success,
@@ -105,7 +129,41 @@ data class SyncStatus(
                 peersSkipped = json.optInt("peers_skipped", 0).coerceAtLeast(0),
                 peersFailed = json.optInt("peers_failed", 0).coerceAtLeast(0),
                 warnings = warnings,
+                peers = peers,
             )
+        }
+
+        /**
+         * SharedPreferences encoding for [peers]. Null means "store nothing"
+         * (empty list). Decode never throws: a corrupt prefs value becomes
+         * empty rather than crashing the settings screen.
+         */
+        fun encodePeers(peers: List<SyncPeer>): String? {
+            if (peers.isEmpty()) return null
+            val arr = JSONArray()
+            for (peer in peers) {
+                arr.put(
+                    JSONObject()
+                        .put("hostname", peer.hostname)
+                        .put("outcome", peer.outcome),
+                )
+            }
+            return arr.toString()
+        }
+
+        fun decodePeers(raw: String?): List<SyncPeer> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return try {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).mapNotNull { i ->
+                    val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val hostname = obj.optString("hostname", "").ifBlank { return@mapNotNull null }
+                    val outcome = obj.optString("outcome", "")
+                    SyncPeer(hostname = hostname, outcome = outcome)
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
     }
 }
