@@ -1,0 +1,7 @@
+- fix(startup): rewrite bucket hostnames before anything opens the datastore (#354)
+- fix(server): make startServerTask() single-instance guard atomic (#324)
+- feat(sync): surface per-peer hostnames in sync report UI (#303)
+- fix(sync): stop syncing twice per interval (#340)
+- fix(web-watcher): write browser events off the accessibility main thread (#344)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.3b1
