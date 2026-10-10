@@ -127,6 +127,7 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'androidx.webkit:webkit:1.12.1'
 
     implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.4.9'

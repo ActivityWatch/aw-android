@@ -27,6 +27,7 @@ import com.google.android.material.navigation.NavigationView
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import net.activitywatch.android.databinding.ActivityMainBinding
+import net.activitywatch.android.fragments.NativeAction
 import net.activitywatch.android.fragments.TestFragment
 import net.activitywatch.android.fragments.WebUIFragment
 import net.activitywatch.android.watcher.UsageStatsWatcher
@@ -53,15 +54,21 @@ internal fun initialWebUiUrl(
 internal fun shouldOpenActivityViewImmediately(openActivityView: Boolean, isResumed: Boolean): Boolean =
     openActivityView && isResumed
 
-internal enum class BackAction { CLOSE_DRAWER, WEBVIEW_BACK, FINISH }
+internal enum class BackAction { CLOSE_DRAWER, CLOSE_WEB_MENU, WEBVIEW_BACK, FINISH }
 
 /**
- * Back (button or gesture) closes the drawer first, then walks the embedded web UI's
- * history, and only finishes the activity when there is nowhere left to go
+ * Back (button or gesture) closes the drawer first, then the web UI's own menu
+ * (reported over the native bridge), then walks the embedded web UI's history,
+ * and only finishes the activity when there is nowhere left to go
  * (ActivityWatch/aw-android#321 item 6).
  */
-internal fun backAction(drawerOpen: Boolean, webViewCanGoBack: Boolean): BackAction = when {
+internal fun backAction(
+    drawerOpen: Boolean,
+    webViewCanGoBack: Boolean,
+    webMenuOpen: Boolean = false,
+): BackAction = when {
     drawerOpen -> BackAction.CLOSE_DRAWER
+    webMenuOpen -> BackAction.CLOSE_WEB_MENU
     webViewCanGoBack -> BackAction.WEBVIEW_BACK
     else -> BackAction.FINISH
 }
@@ -119,6 +126,14 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
     override fun onFragmentInteraction(item: Uri) {
         Log.w(TAG, "URI onInteraction listener not implemented")
+    }
+
+    override fun onNativeAction(action: NativeAction) {
+        when (action) {
+            NativeAction.SYNC_SETTINGS -> startActivity(Intent(this, SyncSettingsActivity::class.java))
+            NativeAction.AUTH_SETTINGS -> startActivity(Intent(this, AuthSettingsActivity::class.java))
+            NativeAction.OPEN_IN_BROWSER -> openDashboardInBrowser()
+        }
     }
 
     override fun onWebUiColorSchemeChanged(dark: Boolean) {
@@ -199,8 +214,10 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                 when (backAction(
                     drawerOpen = binding.drawerLayout.isDrawerOpen(GravityCompat.START),
                     webViewCanGoBack = webUi?.canGoBack() == true,
+                    webMenuOpen = webUi?.isWebMenuOpen() == true,
                 )) {
                     BackAction.CLOSE_DRAWER -> binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    BackAction.CLOSE_WEB_MENU -> webUi?.closeWebMenu()
                     BackAction.WEBVIEW_BACK -> webUi?.goBack()
                     BackAction.FINISH -> finish()
                 }

@@ -28,8 +28,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import net.activitywatch.android.ANDROID_THEME_HOOK_JS
 import net.activitywatch.android.R
+import net.activitywatch.android.baseURL
 import net.activitywatch.android.ensureDashboardApiKey
 import org.json.JSONObject
 import java.io.File
@@ -404,6 +409,8 @@ class WebUIFragment : Fragment() {
     }
     private val exportQueue = ExportSaveQueue()
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val webMenuState = WebMenuState()
+    private var nativeBridgeReply: JavaScriptReplyProxy? = null
 
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
@@ -460,6 +467,8 @@ class WebUIFragment : Fragment() {
         class MyWebViewClient : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 reloadPolicy.onPageStarted()
+                webMenuState.onPageStarted()
+                nativeBridgeReply = null
             }
 
             override fun onReceivedError(
@@ -537,6 +546,7 @@ class WebUIFragment : Fragment() {
             WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl),
             "Android",
         )
+        installNativeBridge(myWebView)
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
@@ -565,6 +575,54 @@ class WebUIFragment : Fragment() {
         }
     }
 
+    /**
+     * Expose native-only menu actions to the embedded web UI (see NativeBridge.kt).
+     * Without WebMessageListener support the page simply never sees the bridge,
+     * and the native drawer remains the way to reach these actions.
+     */
+    private fun installNativeBridge(target: WebView) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            Log.i(TAG, "WebMessageListener unsupported; native menu bridge disabled")
+            return
+        }
+        val originRule = nativeBridgeOriginRule(baseURL) ?: return
+        WebViewCompat.addWebMessageListener(
+            target,
+            NATIVE_BRIDGE_JS_OBJECT,
+            setOf(originRule),
+        ) { _, message, sourceOrigin, isMainFrame, replyProxy ->
+            onNativeBridgeMessage(message, sourceOrigin.toString(), isMainFrame, replyProxy)
+        }
+    }
+
+    // WebMessageListener callbacks run on the UI thread.
+    private fun onNativeBridgeMessage(
+        message: WebMessageCompat,
+        sourceOrigin: String,
+        isMainFrame: Boolean,
+        replyProxy: JavaScriptReplyProxy,
+    ) {
+        if (!isTrustedNativeBridgeMessage(sourceOrigin, isMainFrame, baseURL)) {
+            Log.w(TAG, "Ignoring native bridge message from untrusted frame: $sourceOrigin main=$isMainFrame")
+            return
+        }
+        nativeBridgeReply = replyProxy
+        when (val parsed = parseNativeBridgeMessage(message.data)) {
+            NativeBridgeMessage.Hello -> replyProxy.postMessage(nativeCapabilitiesMessage())
+            is NativeBridgeMessage.Action -> if (isAdded) listener?.onNativeAction(parsed.action)
+            is NativeBridgeMessage.Menu -> webMenuState.onMenuMessage(parsed.open)
+            null -> Log.w(TAG, "Ignoring malformed native bridge message")
+        }
+    }
+
+    fun isWebMenuOpen(): Boolean = webMenuState.open
+
+    fun closeWebMenu() {
+        if (webMenuState.requestClose()) {
+            nativeBridgeReply?.postMessage(nativeCloseMenuMessage())
+        }
+    }
+
     fun canGoBack(): Boolean = webView?.canGoBack() == true
 
     fun goBack() {
@@ -576,6 +634,8 @@ class WebUIFragment : Fragment() {
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         webView = null
+        nativeBridgeReply = null
+        webMenuState.onPageStarted()
         super.onDestroyView()
     }
 
@@ -822,6 +882,7 @@ class WebUIFragment : Fragment() {
         // TODO: Update argument type and name
         fun onFragmentInteraction(uri: Uri)
         fun onWebUiColorSchemeChanged(dark: Boolean) {}
+        fun onNativeAction(action: NativeAction) {}
     }
 
     companion object {
