@@ -322,8 +322,29 @@ class SyncSettingsActivityTest {
 
     @Test
     fun formatSyncStatus_pushOnlyDevice_suppressesZeroPeersWarning() {
-        // aw-server-rust#687 "zero peers" warning is desktop-only; Android is push-only
-        // until sync v2, so the warning must be filtered and replaced by a push-only note.
+        // aw-server-rust emits "Zero peers" (capital Z); the filter must match case-insensitively.
+        assertEquals(
+            "Last sync succeeded at 2026-09-01 01:30\n" +
+                "pulled 0, pushed 0\n" +
+                "Push-only on this device (pull arrives with sync v2)",
+            formatSyncStatus(
+                SyncStatus(
+                    completedAt = 1_788_226_200_000L,
+                    success = true,
+                    hasReport = true,
+                    warnings = listOf(
+                        "Zero peers in a configured sync dir is usually a layout or setup problem",
+                    ),
+                ),
+                dateFormat,
+                isPushOnlyDevice = true,
+            ),
+        )
+    }
+
+    @Test
+    fun formatSyncStatus_pushOnlyDevice_suppressesZeroPeersWarning_lowercase() {
+        // Lowercase variant still suppressed (defensive: filter is case-insensitive).
         assertEquals(
             "Last sync succeeded at 2026-09-01 01:30\n" +
                 "pulled 0, pushed 0\n" +
@@ -357,7 +378,7 @@ class SyncSettingsActivityTest {
                     success = true,
                     hasReport = true,
                     warnings = listOf(
-                        "zero peers in a configured sync dir is usually a layout or setup problem",
+                        "Zero peers in a configured sync dir is usually a layout or setup problem",
                         "push aborted after pull failure",
                     ),
                 ),

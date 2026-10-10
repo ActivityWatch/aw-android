@@ -200,12 +200,19 @@ class NativeWindowInsetsTest {
      */
     private fun tapViewCenter(scenario: ActivityScenario<*>, viewId: Int, what: String) {
         val bounds = android.graphics.Rect()
+        val rootLocation = IntArray(2)
         device.waitForIdle()
         scenario.onActivity { activity ->
             val view = activity.findViewById<View>(viewId)
             assertNotNull("$what must exist", view)
             assertTrue("$what must be laid out on screen", view.getGlobalVisibleRect(bounds))
             assertTrue("$what must have a tappable area", bounds.width() > 0 && bounds.height() > 0)
+
+            // getGlobalVisibleRect() is expressed in the root view's coordinate space,
+            // while UiDevice.click() expects physical screen coordinates. The two differ
+            // when a native window is inset below the status bar.
+            activity.window.decorView.getLocationOnScreen(rootLocation)
+            bounds.offset(rootLocation[0], rootLocation[1])
         }
         assertTrue("$what tap must be injected", device.click(bounds.centerX(), bounds.centerY()))
     }
@@ -237,7 +244,7 @@ class NativeWindowInsetsTest {
         prefs: AWPreferences,
         expected: Boolean,
         maxAttempts: Int = 3,
-        pollMs: Long = 2000L,
+        pollMs: Long = 5000L,
     ) {
         var tapped = false
         repeat(maxAttempts) { attempt ->
@@ -249,9 +256,10 @@ class NativeWindowInsetsTest {
                 if (prefs.isSyncEnabled() == expected) return
             }
             // Wait until the view is enabled and its bounds are stable across two samples.
+            // 4s: the activity can take longer to settle on a loaded software-emulated runner.
             val bounds = android.graphics.Rect()
             val prevBounds = android.graphics.Rect()
-            val stableDeadline = SystemClock.uptimeMillis() + 2000L
+            val stableDeadline = SystemClock.uptimeMillis() + 4000L
             var ready = false
             while (SystemClock.uptimeMillis() < stableDeadline) {
                 var isEnabled = false

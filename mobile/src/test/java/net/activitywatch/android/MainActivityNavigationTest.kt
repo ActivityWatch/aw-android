@@ -57,6 +57,22 @@ class MainActivityNavigationTest {
     }
 
     @Test
+    fun back_closesOpenDrawerBeforeAnythingElse() {
+        assertEquals(BackAction.CLOSE_DRAWER, backAction(drawerOpen = true, webViewCanGoBack = true))
+        assertEquals(BackAction.CLOSE_DRAWER, backAction(drawerOpen = true, webViewCanGoBack = false))
+    }
+
+    @Test
+    fun back_walksWebViewHistoryBeforeFinishing() {
+        assertEquals(BackAction.WEBVIEW_BACK, backAction(drawerOpen = false, webViewCanGoBack = true))
+    }
+
+    @Test
+    fun back_finishesOnlyWhenNothingLeftToGoBackTo() {
+        assertEquals(BackAction.FINISH, backAction(drawerOpen = false, webViewCanGoBack = false))
+    }
+
+    @Test
     fun nativeHomeResetsChrome_webUiKeepsPageReports() {
         assertTrue(shouldResetChromeForNativeDestination(isWebUiDestination = false))
         assertFalse(shouldResetChromeForNativeDestination(isWebUiDestination = true))
