@@ -22,6 +22,7 @@ import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
 import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
+import org.threeten.bp.format.DateTimeParseException
 
 private const val TAG = "NotifyWorker"
 private const val CHANNEL_ID = "aw_notify_channel"
@@ -109,6 +110,27 @@ internal fun parseStartOfDayHour(response: String): Int {
 // Include thresholds in the pref key so state resets when configuration changes.
 // A lowered threshold mid-day would otherwise be silently skipped because the old
 // triggered value is higher than all new thresholds.
+// Logical days of fired-threshold keys kept before [logicalDate]. Moving startOfDay later
+// (e.g. 04:00 -> 06:00) can move the logical day back by one, and those keys must still
+// be there so already-fired alerts don't fire again.
+internal const val TRIGGERED_KEY_RETENTION_DAYS = 2L
+
+// Keys recording thresholds fired on a logical day older than the retention window.
+// Without pruning the preferences file gained keys every day, and SharedPreferences
+// loads it whole. Keys whose date can't be parsed are left alone.
+internal fun staleTriggeredKeys(keys: Collection<String>, logicalDate: LocalDate): List<String> {
+    val oldestKept = logicalDate.minusDays(TRIGGERED_KEY_RETENTION_DAYS)
+    return keys.filter { key ->
+        if (!key.startsWith("triggered_")) return@filter false
+        val date = try {
+            LocalDate.parse(key.substringAfterLast('_'))
+        } catch (e: DateTimeParseException) {
+            return@filter false
+        }
+        date.isBefore(oldestKept)
+    }
+}
+
 internal fun alertConfigHash(alert: CategoryAlert): Int =
     (alert.thresholdMinutes.toString() + alert.positive.toString())
         .hashCode().and(0x3FFFFFFF)
@@ -217,6 +239,11 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val dayKey = logicalDate.toString()
+
+        val stale = staleTriggeredKeys(prefs.all.keys, logicalDate)
+        if (stale.isNotEmpty()) {
+            prefs.edit().apply { stale.forEach { remove(it) } }.apply()
+        }
 
         for (alert in alerts) {
             val seconds = categorySeconds[alert.category] ?: 0.0
