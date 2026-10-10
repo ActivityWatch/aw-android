@@ -1,6 +1,8 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
@@ -45,6 +47,10 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+    private val titleGate = TitleLookupGate()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    // The scheduled follow-up lookup and the browser it is for.
+    private var titleFollowUp: Pair<String, Runnable>? = null
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -119,9 +125,10 @@ class WebWatcher : AccessibilityService() {
                     } else {
                         handleUrl(newUrl, newBrowser = browser)
                     }
-                    findWebView(source)?.let { webView ->
-                        handleWindowTitle(webView.text.toString())
-                        if (webView !== source) webView.recycle()
+                    when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
+                        null -> {}
+                        0L -> lookUpTitle(source)
+                        else -> scheduleTitleLookup(browser, delay)
                     }
                 } finally {
                     source.recycle()
@@ -136,6 +143,38 @@ class WebWatcher : AccessibilityService() {
 
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
+
+    // Runs a lookup that was skipped by the gate once it is allowed, so a title that
+    // arrives on a skipped event (with the page quiet afterwards) is still captured.
+    // One follow-up at a time: a pending one for the same browser already covers this
+    // event, and one for a browser the user has left is replaced.
+    private fun scheduleTitleLookup(browser: String, delayMs: Long) {
+        titleFollowUp?.let { (pendingBrowser, pending) ->
+            if (pendingBrowser == browser) return
+            mainHandler.removeCallbacks(pending)
+        }
+        val followUp = Runnable {
+            titleFollowUp = null
+            if (sessionTracker.currentBrowser != browser) return@Runnable
+            if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@Runnable
+            val root = rootInActiveWindow ?: return@Runnable
+            try {
+                // A fresh tree: the skipped event's nodes have been recycled by now.
+                if (root.packageName?.toString() == browser) lookUpTitle(root)
+            } finally {
+                root.recycle()
+            }
+        }
+        titleFollowUp = browser to followUp
+        mainHandler.postDelayed(followUp, delayMs)
+    }
+
+    private fun lookUpTitle(from: AccessibilityNodeInfo) {
+        findWebView(from)?.let { webView ->
+            handleWindowTitle(webView.text.toString())
+            if (webView !== from) webView.recycle()
+        }
+    }
 
     // TODO(maintainer): this never finds a match for Firefox, so its page title is never
     // captured (logged events show title:""). Confirmed live on-device (2026-07-01, Fenix,
@@ -202,6 +241,11 @@ class WebWatcher : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
 
     companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
