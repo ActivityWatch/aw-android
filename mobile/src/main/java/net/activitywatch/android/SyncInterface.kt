@@ -206,9 +206,26 @@ class SyncInterface(context: Context) {
     private external fun syncPull(port: Int, hostname: String): String
     private external fun syncPush(port: Int, hostname: String): String
     private external fun syncBoth(port: Int, hostname: String): String
+    private external fun resetStaging(hostname: String): String
     external fun getSyncDir(): String
     
     private fun getDeviceName(): String = deviceHostname(appContext)
+
+    // Must run on the sync executor while syncInFlight is held, so it can never
+    // race a push writing the same staging db.
+    private fun resetStagingOnce(hostname: String) {
+        val prefs = AWPreferences(appContext)
+        when (val result = StagingReset.runOnce(
+            isDone = { prefs.isStagingResetDone(hostname) },
+            markDone = { prefs.setStagingResetDone(hostname) },
+            reset = { resetStaging(hostname) },
+        )) {
+            StagingReset.Result.AlreadyDone -> Unit
+            StagingReset.Result.Done -> Log.i(TAG, "Staging reset done for $hostname")
+            is StagingReset.Result.Failed ->
+                Log.w(TAG, "Staging reset failed for $hostname, will retry next sync: ${result.reason}")
+        }
+    }
     
     // Async wrapper for syncPullAll
     fun syncPullAllAsync(callback: (Boolean, String) -> Unit) {
@@ -256,6 +273,7 @@ class SyncInterface(context: Context) {
             },
             mirrorBeforeCallback
         ) {
+            resetStagingOnce(hostname)
             syncBoth(BuildConfig.SERVER_PORT, hostname)
         }
     }
