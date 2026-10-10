@@ -50,7 +50,10 @@ class BackgroundService : Service() {
 
 
     private lateinit var syncScheduler: SyncScheduler
-    private lateinit var rustInterface: RustInterface
+    // RustInterface construction loads libaw_server.so and calls the JNI initialize,
+    // which can take seconds; doing it in onCreate blocked the main thread (the class of
+    // hang fixed for the watchers in #262). Every use is already on an IO coroutine.
+    private lateinit var rustInterface: OffThreadInit<RustInterface>
 
     // Becomes true after the first full onStartCommand() completes (server started,
     // workers scheduled, etc.). Guards against ACTION_SYNC_ENABLED_CHANGED skipping
@@ -93,7 +96,9 @@ class BackgroundService : Service() {
             stopSelf()
             return
         }
-        rustInterface = RustInterface(this)
+        rustInterface = OffThreadInit(threadName = "BackgroundService-init", logTag = TAG) {
+            RustInterface(applicationContext)
+        }
         syncScheduler = SyncScheduler(this)
     }
 
@@ -136,6 +141,9 @@ class BackgroundService : Service() {
         // (DatastoreStartup), because it must finish before *anything* opens the
         // datastore, not just the server.
         CoroutineScope(Dispatchers.IO).launch {
+            // Awaited outside the lock: construction does not open the database, so it
+            // need not be ordered against the migration.
+            val ri = awaitRustInterface() ?: return@launch
             synchronized(sanitizedMigrationLock) {
                 // onDestroy can run on the main thread as soon as onStartCommand
                 // returns, so the service may already be gone by the time this
@@ -151,8 +159,9 @@ class BackgroundService : Service() {
                 }
                 migrateSanitizedSyncFolders()
                 // Under the same lock as the migration so overlapping
-                // onStartCommand invocations can't interleave with it.
-                rustInterface.startServerTask()
+                // onStartCommand invocations and the deferred rewrite thread
+                // can never interleave with the server opening the database.
+                ri.startServerTask()
             }
         }
 
@@ -164,16 +173,17 @@ class BackgroundService : Service() {
         if ((needsHostnameMigration || needsWatcherBucketMigration) && !migrationsQueued) {
             migrationsQueued = true
             CoroutineScope(Dispatchers.IO).launch {
+                val ri = awaitRustInterface() ?: return@launch
                 if (needsHostnameMigration) {
-                    val hostname = rustInterface.getDeviceName(this@BackgroundService)
-                    val result = rustInterface.migrateHostname(hostname)
+                    val hostname = ri.getDeviceName(this@BackgroundService)
+                    val result = ri.migrateHostname(hostname)
                     Log.i(TAG, "Hostname migration result: $result")
                     if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
                         prefs.setHostnameMigrated()
                     }
                 }
                 if (needsWatcherBucketMigration) {
-                    migrateWatcherAndroidTestBuckets(prefs)
+                    migrateWatcherAndroidTestBuckets(prefs, ri)
                 }
             }
         }
@@ -228,7 +238,17 @@ class BackgroundService : Service() {
         }
     }
 
-    private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences) {
+    private fun awaitRustInterface(): RustInterface? =
+        try {
+            rustInterface.await()
+        } catch (e: Exception) {
+            // Previously this failure crashed the service in onCreate; log it and skip the
+            // work that needs the native library.
+            Log.e(TAG, "RustInterface failed to initialize", e)
+            null
+        }
+
+    private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences, rustInterface: RustInterface) {
         // Older production releases wrote activity into aw-watcher-android-test.
         // The JNI is the only caller of migrate_test_bucket_names(); shipping the
         // Rust function alone does nothing until this path runs.

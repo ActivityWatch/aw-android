@@ -15,6 +15,40 @@ import org.threeten.bp.Instant
 
 private const val TAG = "RustInterface"
 
+internal enum class PortProbe {
+    FREE,
+    IN_USE,
+    SOCKET_DENIED,
+}
+
+/**
+ * Check whether the local server can listen on [port] before handing it to Rust.
+ *
+ * A port held by another process throws [java.net.BindException]. Being unable
+ * to create a socket at all throws its parent [java.net.SocketException]
+ * instead: GrapheneOS's per-app Network permission makes `socket()` fail with
+ * EACCES (ActivityWatch/activitywatch#1003). Only the former used to be caught,
+ * so the latter escaped the IO coroutine in BackgroundService and killed the
+ * app at startup.
+ */
+internal fun probeServerPort(
+    port: Int,
+    open: (Int) -> java.io.Closeable = { java.net.ServerSocket(it) },
+    onDenied: (Exception) -> Unit = { Log.w(TAG, "Socket probe on port $port failed", it) },
+): PortProbe =
+    try {
+        open(port).close()
+        PortProbe.FREE
+    } catch (e: java.net.BindException) {
+        PortProbe.IN_USE
+    } catch (e: java.io.IOException) {
+        onDenied(e)
+        PortProbe.SOCKET_DENIED
+    } catch (e: SecurityException) {
+        onDenied(e)
+        PortProbe.SOCKET_DENIED
+    }
+
 class RustInterface(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
@@ -67,7 +101,9 @@ class RustInterface(context: Context? = null) {
     }
 
     companion object {
-        var serverStarted = false
+        // @Volatile so the check in startServerTask() is visible across threads
+        // without requiring callers to be inside a synchronized block.
+        @Volatile var serverStarted = false
     }
 
     private external fun initialize()
@@ -90,37 +126,59 @@ class RustInterface(context: Context? = null) {
     }
 
     fun startServerTask() {
-        if (!serverStarted) {
-            // check if the flavor's port is already in use
-            try {
-                val socket = java.net.ServerSocket(BuildConfig.SERVER_PORT)
-                socket.close()
-            } catch (e: java.net.BindException) {
-                Log.e(
-                    TAG,
-                    "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
-                )
+        // Synchronize the check-and-set so two concurrent onStartCommand invocations
+        // (e.g. BOOT_COMPLETED and a MainActivity launch racing on a fresh install)
+        // cannot both pass the !serverStarted guard before either sets the flag.
+        // @Volatile on serverStarted also makes the flag visible to callers that
+        // read it outside this lock (e.g. BackgroundService.migrateSanitizedHostnameIdentity).
+        // Lock on Companion, not `this`: serverStarted is shared by every RustInterface
+        // instance, so a per-instance lock would not stop two instances racing.
+        synchronized(Companion) {
+            if (serverStarted) {
+                Log.i(TAG, "Server already started, skipping")
                 return
             }
-
+            when (probeServerPort(BuildConfig.SERVER_PORT)) {
+                PortProbe.FREE -> {}
+                PortProbe.IN_USE -> {
+                    Log.e(
+                        TAG,
+                        "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
+                    )
+                    return
+                }
+                PortProbe.SOCKET_DENIED -> {
+                    Log.e(
+                        TAG,
+                        "Cannot open a socket on port ${BuildConfig.SERVER_PORT}; not starting the " +
+                            "server. On GrapheneOS, check that the app's Network permission is enabled."
+                    )
+                    return
+                }
+            }
             serverStarted = true
-            val executor = Executors.newSingleThreadExecutor()
-            val handler = Handler(Looper.getMainLooper())
-            executor.execute {
-                // will not block the UI thread
+        }
 
+        val executor = Executors.newSingleThreadExecutor()
+        val handler = Handler(Looper.getMainLooper())
+        executor.execute {
+            // will not block the UI thread
+            try {
                 // Start server
                 Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
                 startServer(BuildConfig.SERVER_PORT)
-
+            } finally {
+                // Reset unconditionally, including when startServer() throws
+                // (JNI/native failure): otherwise serverStarted stays true and
+                // startServerTask() never restarts the server until process death.
                 handler.post {
                     // will run on UI thread after the task is done
                     Log.i(TAG, "Server finished")
                     serverStarted = false
                 }
             }
-            Log.w(TAG, "Server started")
         }
+        Log.w(TAG, "Server started")
     }
 
     fun createBucketHelper(bucket_id: String, type: String, client: String = "aw-android") {

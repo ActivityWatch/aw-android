@@ -2,6 +2,9 @@ package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -45,6 +48,20 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+
+    // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
+    // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
+    // the createBucketHelper ANRs (aw-android#261). One thread keeps events in order.
+    // The queue is bounded so a long datastore stall can't grow it without limit; past
+    // MAX_PENDING_WRITES new events are dropped (and logged) rather than blocking this thread.
+    private val writer = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue(MAX_PENDING_WRITES),
+        { r -> Thread(r, "WebWatcher-writer") },
+        { _, executor ->
+            if (!executor.isShutdown) Log.w(TAG, "Datastore stalled; dropping a browser event")
+        },
+    )
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -198,12 +215,23 @@ class WebWatcher : AccessibilityService() {
             .put("incognito", false) // TODO
 
         Log.i(TAG, "Registered event: $data")
-        ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        writer.execute {
+            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        }
     }
 
     override fun onInterrupt() {}
 
+    override fun onDestroy() {
+        // Lets already-queued events finish writing.
+        writer.shutdown()
+        super.onDestroy()
+    }
+
     companion object {
+        // Each queued write is one completed page visit, so this covers a long stall.
+        private const val MAX_PENDING_WRITES = 256
+
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "org.mozilla.firefox",

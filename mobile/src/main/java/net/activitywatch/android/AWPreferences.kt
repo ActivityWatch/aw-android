@@ -119,6 +119,9 @@ class AWPreferences(context: Context) {
                 ?.split("\n")
                 ?.filter { it.isNotEmpty() }
                 ?: emptyList(),
+            peers = SyncStatus.decodePeers(
+                sharedPreferences.getString("lastSyncPeers", null),
+            ),
         )
     }
 
@@ -149,6 +152,12 @@ class AWPreferences(context: Context) {
         } else {
             editor.putString("lastSyncWarnings", status.warnings.joinToString("\n"))
         }
+        val peersEncoded = SyncStatus.encodePeers(status.peers)
+        if (peersEncoded == null) {
+            editor.remove("lastSyncPeers")
+        } else {
+            editor.putString("lastSyncPeers", peersEncoded)
+        }
         editor.apply()
         appContext.sendBroadcast(
             android.content.Intent(LAST_SYNC_STATUS_CHANGED_ACTION).setPackage(appContext.packageName)
@@ -165,6 +174,17 @@ class AWPreferences(context: Context) {
 
     fun setSchedulerNextRunAt(epochMs: Long) {
         sharedPreferences.edit().putLong("schedulerNextRunAt", epochMs).apply()
+    }
+
+    // When the in-process Handler chain last ran a pass (epoch-ms), or null: whether it
+    // synced or found a sync already in flight, it has scheduled its next pass. Only that
+    // chain records it. The AlarmManager fallback uses it to tell whether the chain is still
+    // on schedule, and its own syncs must not make the chain look alive.
+    fun getHandlerPassAt(): Long? =
+        sharedPreferences.getLong("handlerPassAt", 0L).takeIf { it > 0L }
+
+    fun setHandlerPassAt(epochMs: Long) {
+        sharedPreferences.edit().putLong("handlerPassAt", epochMs).apply()
     }
 
     // Dashboard authentication. Defaults to true so first-run gets a key generated
