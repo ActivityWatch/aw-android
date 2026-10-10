@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -14,6 +15,7 @@ import android.util.Log
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.CompoundButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -114,6 +116,10 @@ class SyncSettingsActivity : AppCompatActivity() {
     private lateinit var tvLastSyncStatus: TextView
     private lateinit var tvNextSyncStatus: TextView
     private lateinit var btnChooseDir: Button
+    private lateinit var rgAutoExport: RadioGroup
+    private lateinit var tvAutoExportStatus: TextView
+    private lateinit var btnChooseExportDir: Button
+    private var isUpdatingExportRadio = false
 
     // Guards against the switch listener firing when we set isChecked programmatically
     private var isUpdatingSwitch = false
@@ -165,11 +171,12 @@ class SyncSettingsActivity : AppCompatActivity() {
 
                 // New grant secured — now release a different old URI to stay within Android's
                 // bounded persisted-grant allowance. Reselecting the current directory must not
-                // release the grant we just took for that same URI.
+                // release the grant we just took for that same URI. Also guard the case where the
+                // export folder uses the same URI: releasing it here would break the export worker.
                 val oldUriStr = prefs.getSyncDirUri()
                 if (oldUriStr != null) {
                     val oldUri = Uri.parse(oldUriStr)
-                    if (oldUri != uri) {
+                    if (oldUri != uri && oldUriStr != prefs.getAutoExportDirUri()) {
                         try {
                             val releaseFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                             contentResolver.releasePersistableUriPermission(oldUri, releaseFlags)
@@ -183,6 +190,39 @@ class SyncSettingsActivity : AppCompatActivity() {
                 updateSyncDirStatus()
                 Toast.makeText(this, "Sync directory configured", Toast.LENGTH_SHORT).show()
             }
+        }
+
+    private val openExportDirTree =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+            val uri: Uri = result.data?.data ?: return@registerForActivityResult
+            val flags = (result.data?.flags ?: 0) and
+                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            if (flags != (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)) {
+                Toast.makeText(this, "Could not secure write access to selected folder", Toast.LENGTH_SHORT).show()
+                return@registerForActivityResult
+            }
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Could not take persistable permission: ${e.message}")
+                Toast.makeText(this, "Could not secure write access to selected folder", Toast.LENGTH_SHORT).show()
+                return@registerForActivityResult
+            }
+            // Release the previous export grant, unless it is the folder sync also uses.
+            val old = prefs.getAutoExportDirUri()
+            if (old != null && old != uri.toString() && old != prefs.getSyncDirUri()) {
+                try {
+                    contentResolver.releasePersistableUriPermission(
+                        Uri.parse(old),
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Could not release old export grant: ${e.message}")
+                }
+            }
+            prefs.setAutoExportDirUri(uri.toString())
+            updateAutoExportStatus()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -203,7 +243,32 @@ class SyncSettingsActivity : AppCompatActivity() {
         tvNextSyncStatus = findViewById(R.id.tv_next_sync_status)
         btnChooseDir = findViewById(R.id.btn_choose_sync_dir)
 
+        rgAutoExport = findViewById(R.id.rg_auto_export)
+        tvAutoExportStatus = findViewById(R.id.tv_auto_export_status)
+        btnChooseExportDir = findViewById(R.id.btn_choose_export_dir)
+
         refreshUI()
+
+        rgAutoExport.setOnCheckedChangeListener { _, checkedId ->
+            if (isUpdatingExportRadio) return@setOnCheckedChangeListener
+            val interval = when (checkedId) {
+                R.id.rb_auto_export_daily -> AutoExportInterval.DAILY
+                R.id.rb_auto_export_weekly -> AutoExportInterval.WEEKLY
+                else -> AutoExportInterval.OFF
+            }
+            if (interval != AutoExportInterval.OFF && prefs.getAutoExportDirUri() == null) {
+                Toast.makeText(this, "Choose an export folder first", Toast.LENGTH_SHORT).show()
+                refreshAutoExportRadio()
+                return@setOnCheckedChangeListener
+            }
+            prefs.setAutoExportInterval(interval)
+            AutoExportScheduler.apply(applicationContext, interval)
+            updateAutoExportStatus()
+        }
+
+        btnChooseExportDir.setOnClickListener {
+            openExportDirTree.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+        }
 
         switchSyncEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             if (isUpdatingSwitch) return@setOnCheckedChangeListener
@@ -226,6 +291,16 @@ class SyncSettingsActivity : AppCompatActivity() {
         }
     }
 
+    // Refreshes the export status text whenever the worker writes a new result, so the screen
+    // doesn't show a stale "last export" line while the screen is open.
+    private val exportResultListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // The worker records results via SharedPreferences on Dispatchers.IO, and listeners
+        // are invoked on the thread that performed the write. Touch the status view on the
+        // main thread to avoid CalledFromWrongThreadException when the worker finishes while
+        // this screen is open.
+        if (key == "autoExportLastResult") runOnUiThread { updateAutoExportStatus() }
+    }
+
     override fun onStart() {
         super.onStart()
         ContextCompat.registerReceiver(
@@ -236,6 +311,8 @@ class SyncSettingsActivity : AppCompatActivity() {
         )
         nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
         nextSyncRefreshHandler.postDelayed(nextSyncRefreshRunnable, NEXT_SYNC_REFRESH_INTERVAL_MS)
+        getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(exportResultListener)
     }
 
     override fun onResume() {
@@ -246,6 +323,8 @@ class SyncSettingsActivity : AppCompatActivity() {
     override fun onStop() {
         unregisterReceiver(syncStatusReceiver)
         nextSyncRefreshHandler.removeCallbacks(nextSyncRefreshRunnable)
+        getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(exportResultListener)
         super.onStop()
     }
 
@@ -256,6 +335,37 @@ class SyncSettingsActivity : AppCompatActivity() {
         updateSyncDirStatus()
         updateLastSyncStatus()
         updateNextSyncStatus()
+        refreshAutoExportRadio()
+        updateAutoExportStatus()
+    }
+
+    private fun refreshAutoExportRadio() {
+        isUpdatingExportRadio = true
+        rgAutoExport.check(
+            when (prefs.getAutoExportInterval()) {
+                AutoExportInterval.DAILY -> R.id.rb_auto_export_daily
+                AutoExportInterval.WEEKLY -> R.id.rb_auto_export_weekly
+                AutoExportInterval.OFF -> R.id.rb_auto_export_off
+            }
+        )
+        isUpdatingExportRadio = false
+    }
+
+    private fun updateAutoExportStatus() {
+        val uriStr = prefs.getAutoExportDirUri()
+        val folder = if (uriStr != null) {
+            "Folder: ${resolveDisplayName(Uri.parse(uriStr)) ?: uriStr}"
+        } else {
+            "No export folder chosen."
+        }
+        val last = prefs.getAutoExportLastResult()?.split("|", limit = 2)
+        val lastText = if (last != null && last.size == 2) {
+            val at = combinedDateTimeFormat().format(Date(last[0].toLongOrNull() ?: 0L))
+            if (last[1] == "ok") "\nLast export succeeded at $at" else "\nLast export failed at $at: ${last[1]}"
+        } else {
+            ""
+        }
+        tvAutoExportStatus.text = folder + lastText
     }
 
     private fun updateLastSyncStatus() {
