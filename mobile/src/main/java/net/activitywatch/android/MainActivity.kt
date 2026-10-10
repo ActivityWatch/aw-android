@@ -184,6 +184,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         usw.setupAlarm()
 
         binding.navView.setNavigationItemSelectedListener(this)
+        findViewById<View>(R.id.open_drawer_button).setOnClickListener {
+            binding.drawerLayout.openDrawer(GravityCompat.START)
+        }
 
         // Ensure API key exists in config before the server starts so it picks it up at init.
         dashboardApiKey = ensureDashboardApiKey(this)
