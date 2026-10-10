@@ -100,7 +100,7 @@ class WebWatcher : AccessibilityService() {
         if (!isKnownBrowser) {
             // for some browsers like Firefox event.packageName can be null (no extractor matched)
             // but we are still on the same window
-            if (windowChanged) {
+            if (windowChanged && !browserIsActiveWindow()) {
                 Log.i(TAG, "Window changed away from a tracked browser (new package: $packageName); ending session")
                 handleUrl(null, newBrowser = null)
             }
@@ -133,6 +133,19 @@ class WebWatcher : AccessibilityService() {
     }
 
     private fun windowChanged(windowId: Int): Boolean = windowId != lastWindowId
+
+    // Events from the keyboard, a popup or another overlay come from a different window
+    // while the user is still in the browser. Those windows never take focus, so the
+    // browser is still the active window and the session should continue. Switching to
+    // another browser is handled by that browser's own events.
+    private fun browserIsActiveWindow(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        try {
+            return root.packageName?.toString() in KNOWN_BROWSER_PACKAGES
+        } finally {
+            root.recycle()
+        }
+    }
 
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
