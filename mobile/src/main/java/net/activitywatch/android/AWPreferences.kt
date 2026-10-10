@@ -167,6 +167,13 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putLong("schedulerNextRunAt", epochMs).apply()
     }
 
+    // BrowserProbeMemory state for PackageManager-detected browsers, as its own JSON.
+    fun getBrowserProbeState(): String? = sharedPreferences.getString("browserProbeState", null)
+
+    fun setBrowserProbeState(json: String) {
+        sharedPreferences.edit().putString("browserProbeState", json).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the

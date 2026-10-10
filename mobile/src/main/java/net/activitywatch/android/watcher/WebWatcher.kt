@@ -1,11 +1,21 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Log
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import net.activitywatch.android.RustInterface
+import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
+import net.activitywatch.android.AWPreferences
 import org.json.JSONObject
 
 private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? {
@@ -28,6 +38,12 @@ class WebWatcher : AccessibilityService() {
     // rejects bare testTag names, so we traverse manually.
     private fun extractFirefoxUrl(event: AccessibilityEvent): String? {
         val root = rootInActiveWindow ?: return null
+        // In split screen the active window can be another browser; its URL bar would be
+        // logged under this event's package (and teach BrowserProbeMemory a wrong style).
+        if (root.packageName != event.packageName) {
+            root.recycle()
+            return null
+        }
         try {
             val found = findNode(root) { it.viewIdResourceName == "ADDRESSBAR_URL_BOX" }
             val result = parseFirefoxAddressBarContentDescription(found?.contentDescription?.toString())
@@ -46,6 +62,33 @@ class WebWatcher : AccessibilityService() {
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
 
+    // Installed apps that can open https links, other than the built-in browsers. Looked
+    // up via PackageManager instead of scanning each app's accessibility tree, so events
+    // from non-browser apps stay a set lookup.
+    // Package -> versionCode, so a browser update re-learns its URL bar style.
+    @Volatile private var detectedBrowsers: Map<String, Long> = emptyMap()
+    private lateinit var probeMemory: BrowserProbeMemory
+    // PackageManager queries can be slow; the service thread must keep handling events.
+    // One thread keeps refreshes in order, so the newest result is published last.
+    private val detectionExecutor = Executors.newSingleThreadExecutor()
+
+    private val packageChangeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.d(TAG, "Package change (${intent.action} ${intent.data}), re-detecting browsers")
+            detectionExecutor.execute { refreshDetectedBrowsers() }
+        }
+    }
+
+    private fun extractChromiumUrl(packageName: String, event: AccessibilityEvent): String? =
+        extractTextByViewId(event, "$packageName:id/url_bar")
+
+    private fun extractGeckoUrl(packageName: String, event: AccessibilityEvent): String? =
+        // Compose toolbar (current)
+        extractFirefoxUrl(event)
+            // View-based toolbar (older Firefox versions)
+            ?: extractTextByViewId(event, "$packageName:id/url_bar_title")
+            ?: extractTextByViewId(event, "$packageName:id/mozac_browser_toolbar_url_view")
+
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
@@ -63,12 +106,54 @@ class WebWatcher : AccessibilityService() {
             extractTextByViewId(event, "com.opera.browser:id/url_field")
                 ?: extractTextByViewId(event, "com.opera.browser:id/address_field")
         "com.microsoft.emmx" -> extractTextByViewId(event, "com.microsoft.emmx:id/url_bar")
+        in detectedBrowsers -> probeMemory.extract(packageName, detectedBrowsers.getValue(packageName), System.currentTimeMillis()) {
+            when (it) {
+                UrlBarStyle.CHROMIUM -> extractChromiumUrl(packageName, event)
+                UrlBarStyle.GECKO -> extractGeckoUrl(packageName, event)
+            }
+        }
         else -> null
     }?.let(stripProtocol)
+
+    private fun refreshDetectedBrowsers() {
+        // A hostless https URI matches only generic handlers, not apps claiming their own
+        // domains (App Links). QUERY_ALL_PACKAGES makes every such app visible.
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://")).addCategory(Intent.CATEGORY_BROWSABLE)
+        val resolved = try {
+            packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
+        } catch (ex: RuntimeException) {
+            Log.e(TAG, "Failed to query browsers: ${ex.message}")
+            return
+        }
+        detectedBrowsers = selectDetectedBrowsers(resolved, KNOWN_BROWSER_PACKAGES, packageName)
+            .associateWith { versionCodeOf(it) }
+        probeMemory.retain(detectedBrowsers.keys)
+        Log.i(TAG, "Detected browsers without a dedicated extractor: ${detectedBrowsers.keys}")
+    }
+
+    private fun versionCodeOf(pkg: String): Long = try {
+        PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(pkg, 0))
+    } catch (ex: PackageManager.NameNotFoundException) {
+        -1L
+    }
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
+        val prefs = AWPreferences(this)
+        probeMemory = BrowserProbeMemory(prefs.getBrowserProbeState(), prefs::setBrowserProbeState)
+        detectionExecutor.execute { refreshDetectedBrowsers() }
+        ContextCompat.registerReceiver(
+            this,
+            packageChangeReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addDataScheme("package")
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // createBucketHelper() blocks on the datastore worker. Doing that on the
         // accessibility service's main thread produced "Executing service
         // WebWatcher" ANRs whenever the worker was busy (aw-android#261), so
@@ -92,7 +177,10 @@ class WebWatcher : AccessibilityService() {
         }
 
         val packageName = event.packageName?.toString()
-        val isKnownBrowser = packageName != null && packageName in KNOWN_BROWSER_PACKAGES
+        // A backed-off package is handled like any non-browser app, which also skips the
+        // WebView walk below.
+        val isKnownBrowser = packageName != null && (packageName in KNOWN_BROWSER_PACKAGES ||
+            detectedBrowsers[packageName]?.let { probeMemory.isActive(packageName, it, System.currentTimeMillis()) } == true)
 
         val windowChanged = windowChanged(event.windowId)
         lastWindowId = event.windowId
@@ -202,6 +290,12 @@ class WebWatcher : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        unregisterReceiver(packageChangeReceiver)
+        detectionExecutor.shutdown()
+        super.onDestroy()
+    }
 
     companion object {
         internal val KNOWN_BROWSER_PACKAGES = setOf(
