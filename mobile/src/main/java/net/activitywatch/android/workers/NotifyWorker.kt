@@ -80,19 +80,22 @@ private fun parseAlertArray(alerts: JSONArray, legacy: Boolean): List<CategoryAl
 
 internal fun alertsFromSetting(json: String): List<CategoryAlert> {
     val value = json.trim()
+    // Missing settings retain pre-migration behavior. Switching existing installs
+    // to opt-in needs a reachable enable control and an explicit migration notice.
     if (value.isEmpty() || value == "null") return DEFAULT_ALERTS
 
     return try {
         if (value.startsWith("[")) {
-            parseAlerts(value).takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+            parseAlerts(value)
         } else {
             val config = JSONObject(value)
-            val alertsArray = config.getJSONArray("alerts")
-            val alerts = parseAlertArray(alertsArray, legacy = false)
-            if (alertsArray.length() == 0) alerts else alerts.takeIf { it.isNotEmpty() } ?: DEFAULT_ALERTS
+            // Do not coerce strings/numbers into an opt-in decision. Missing is
+            // the legacy state; explicit false or an invalid flag fails closed.
+            if (config.has("enabled") && config.opt("enabled") != true) return emptyList()
+            parseAlertArray(config.getJSONArray("alerts"), legacy = false)
         }
     } catch (e: Exception) {
-        DEFAULT_ALERTS
+        emptyList()
     }
 }
 
@@ -161,28 +164,51 @@ internal fun parseCategorySeconds(jsonResult: String): Map<String?, Double> {
     return categories
 }
 
-class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+internal interface NotifyBackend {
+    fun checkServer()
+    fun getSetting(key: String): String
+    fun androidQuery(timeperiod: String): String
+}
+
+private class RustNotifyBackend(context: Context) : NotifyBackend {
+    private val ri = RustInterface(context)
+
+    override fun checkServer() { ri.getBucketsJSON() }
+    override fun getSetting(key: String): String = ri.getSetting(key)
+    override fun androidQuery(timeperiod: String): String = ri.androidQuery(timeperiod)
+}
+
+class NotifyWorker internal constructor(
+    context: Context,
+    params: WorkerParameters,
+    private val backend: NotifyBackend?,
+) : Worker(context, params) {
+    // WorkManager uses this public two-argument constructor in production.
+    constructor(context: Context, params: WorkerParameters) :
+        this(context, params, null)
 
     override fun doWork(): Result {
         Log.i(TAG, "Starting category time notification check")
         AndroidThreeTen.init(applicationContext)
-
-        val ri = RustInterface(applicationContext)
+        val backend = backend ?: RustNotifyBackend(applicationContext)
 
         // Check server availability before querying
         try {
-            ri.getBucketsJSON()
+            backend.checkServer()
         } catch (e: JSONException) {
             Log.w(TAG, "Server not reachable; retrying later")
             return Result.retry()
         }
 
         return try {
+            val alerts = alertsFromSetting(backend.getSetting("aw-notify"))
+            // Keep the periodic worker scheduled so enabling later takes effect,
+            // but never query activity or create notifications when disabled.
+            if (alerts.isEmpty()) return Result.success()
             val zone = ZoneId.systemDefault()
-            val startOfDayHour = parseStartOfDayHour(ri.getSetting("startOfDay"))
+            val startOfDayHour = parseStartOfDayHour(backend.getSetting("startOfDay"))
             val now = LocalDateTime.now(zone)
-            val categorySeconds = getCategorySecondsToday(ri, now, zone, startOfDayHour)
-            val alerts = alertsFromSetting(ri.getSetting("aw-notify"))
+            val categorySeconds = getCategorySecondsToday(backend, now, zone, startOfDayHour)
             checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour), alerts)
             Result.success()
         } catch (e: Exception) {
@@ -192,7 +218,7 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
     }
 
     private fun getCategorySecondsToday(
-        ri: RustInterface,
+        backend: NotifyBackend,
         now: LocalDateTime,
         zone: ZoneId,
         startOfDayHour: Int,
@@ -205,7 +231,7 @@ class NotifyWorker(context: Context, params: WorkerParameters) : Worker(context,
         val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
         Log.d(TAG, "Querying timeperiod: $timeperiod")
 
-        return parseCategorySeconds(ri.androidQuery(timeperiod))
+        return parseCategorySeconds(backend.androidQuery(timeperiod))
     }
 
     private fun checkAndNotify(
