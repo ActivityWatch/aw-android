@@ -167,6 +167,17 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putLong("schedulerNextRunAt", epochMs).apply()
     }
 
+    // When the in-process Handler chain last ran a pass (epoch-ms), or null: whether it
+    // synced or found a sync already in flight, it has scheduled its next pass. Only that
+    // chain records it. The AlarmManager fallback uses it to tell whether the chain is still
+    // on schedule, and its own syncs must not make the chain look alive.
+    fun getHandlerPassAt(): Long? =
+        sharedPreferences.getLong("handlerPassAt", 0L).takeIf { it > 0L }
+
+    fun setHandlerPassAt(epochMs: Long) {
+        sharedPreferences.edit().putLong("handlerPassAt", epochMs).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the
