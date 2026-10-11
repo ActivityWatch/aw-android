@@ -170,14 +170,24 @@ internal interface NotifyBackend {
     fun checkServer()
     fun getSetting(key: String): String
     fun androidQuery(timeperiod: String): String
+    fun ingestLatestUsage()
 }
 
 private class RustNotifyBackend(context: Context) : NotifyBackend {
+    private val appContext = context.applicationContext
     private val ri = RustInterface(context)
 
     override fun checkServer() { ri.getBucketsJSON() }
     override fun getSetting(key: String): String = ri.getSetting(key)
     override fun androidQuery(timeperiod: String): String = ri.androidQuery(timeperiod)
+
+    // Usage events otherwise reach the datastore only on the hourly (inexact) alarm, app
+    // open or widget refresh, so alerts were judged against data up to an hour old.
+    // processEventsSinceLastUpdate() skips if another ingestion run holds its lock.
+    override fun ingestLatestUsage() {
+        if (!UsageStatsWatcher.isUsageAllowed(appContext)) return
+        SessionEventWatcher(appContext).processEventsSinceLastUpdate()
+    }
 }
 
 class NotifyWorker internal constructor(
@@ -202,13 +212,17 @@ class NotifyWorker internal constructor(
             return Result.retry()
         }
 
-        ingestLatestUsage()
-
         return try {
             val alerts = alertsFromSetting(backend.getSetting("aw-notify"))
             // Keep the periodic worker scheduled so enabling later takes effect,
             // but never query activity or create notifications when disabled.
             if (alerts.isEmpty()) return Result.success()
+            try {
+                backend.ingestLatestUsage()
+            } catch (e: Exception) {
+                // Still check thresholds against what is already stored.
+                Log.w(TAG, "Failed to ingest usage events before checking thresholds", e)
+            }
             val zone = ZoneId.systemDefault()
             val startOfDayHour = parseStartOfDayHour(backend.getSetting("startOfDay"))
             val now = LocalDateTime.now(zone)
@@ -218,18 +232,6 @@ class NotifyWorker internal constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error checking notification thresholds", e)
             Result.retry()
-        }
-    }
-
-    // Usage events otherwise reach the datastore only on the hourly (inexact) alarm, app
-    // open or widget refresh, so alerts were judged against data up to an hour old.
-    private fun ingestLatestUsage() {
-        if (!UsageStatsWatcher.isUsageAllowed(applicationContext)) return
-        try {
-            SessionEventWatcher(applicationContext).processEventsSinceLastUpdate()
-        } catch (e: Exception) {
-            // Still check thresholds against what is already stored.
-            Log.w(TAG, "Failed to ingest usage events before checking thresholds", e)
         }
     }
 
