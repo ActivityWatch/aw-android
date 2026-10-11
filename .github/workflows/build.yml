@@ -319,12 +319,16 @@ jobs:
     # user-facing-changelog.py only runs inside the tag-gated Release workflow,
     # so its filter needs the same every-PR coverage: a regression there would
     # first surface as a bad Play Store changelog on a release.
+    #
+    # check-production-rollout.py likewise only runs in Release; its decision
+    # logic (which Play track states block a stable release) is tested here.
     - name: Assert Play-track resolver
       run: |
         bash scripts/assert-play-track.sh --self-test
         bash scripts/previous-release-tag.sh --self-test
         bash scripts/strip-research-suffix.sh --self-test
         python3 scripts/user-facing-changelog.py --self-test
+        python3 scripts/check-production-rollout.py --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4
@@ -563,6 +567,14 @@ jobs:
     needs: [build-apk, test, get-versionCode, test-release-smoke]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-research')  # skip research builds (GitHub release only)
     runs-on: ubuntu-latest
+    # One Play publish at a time, across all tags: the workflow-level group is
+    # per-ref, so two tag builds could otherwise each pass the rollout check
+    # below and then race their uploads. Never cancel an in-flight publish.
+    # (GitHub keeps one pending job per group, so a third concurrent tag build
+    # would cancel the queued one; it shows as cancelled, never as published.)
+    concurrency:
+      group: play-publish
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@v4
       with:
@@ -639,6 +651,35 @@ jobs:
           | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
                    -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
         rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+    - name: Set up Python
+      if: env.SUPPLY_TRACK == 'production'
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    # Same guard as the Release workflow, at the upload boundary: a hand-pushed
+    # tag never ran Release, and an earlier tag build may have started a staged
+    # rollout since Release checked. Play keeps one in-progress release per
+    # track, so uploading now would silently replace it. Fails closed. The
+    # override is the `allow_inprogress_rollout=true` line Release writes into
+    # the tag annotation. This build's own versionCode doesn't block (re-runs).
+    - name: Refuse to supersede an in-progress production rollout
+      if: env.SUPPLY_TRACK == 'production'
+      env:
+        TAG: ${{ github.ref_name }}
+        VERSION_CODE: ${{ needs.get-versionCode.outputs.versionCode }}
+      run: |
+        ARGS=(--own-version-code "$VERSION_CODE")
+        if git for-each-ref "refs/tags/${TAG}" --format='%(contents)' \
+            | grep -qx 'allow_inprogress_rollout=true'; then
+          echo "::warning::Tag ${TAG} carries allow_inprogress_rollout=true: a staged production rollout in progress (or an unreadable Play track) will not block this upload."
+          ARGS+=(--allow-inprogress)
+        fi
+        pip install --quiet google-auth requests || echo "::warning::pip install google-auth requests failed"
+        python3 scripts/check-production-rollout.py \
+          --credentials fastlane/api-8546008605074111507-287154-450dc77b365f.json \
+          "${ARGS[@]}"
 
     - name: Release with fastlane
       run: |
