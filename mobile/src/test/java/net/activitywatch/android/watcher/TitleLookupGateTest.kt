@@ -1,7 +1,9 @@
 package net.activitywatch.android.watcher
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TitleLookupGateTest {
@@ -44,5 +46,13 @@ class TitleLookupGateTest {
     @Test
     fun firefoxIsNeverLookedUp() {
         assertNull(gate.delayBeforeLookup(TitleLookupGate.FIREFOX_PACKAGE, hasTitle = false))
+    }
+
+    @Test
+    fun earlierFollowUpReplacesAPendingRecheck() {
+        // A 5s recheck for the old page must not hold back the new page's 500ms retry.
+        assertFalse(keepPendingTitleFollowUp(chrome, pendingDueAt = 5_000L, chrome, dueAt = 500L))
+        assertTrue(keepPendingTitleFollowUp(chrome, pendingDueAt = 500L, chrome, dueAt = 5_000L))
+        assertFalse(keepPendingTitleFollowUp("com.brave.browser", 500L, chrome, dueAt = 5_000L))
     }
 }

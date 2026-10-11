@@ -34,3 +34,14 @@ internal class TitleLookupGate(
         const val FIREFOX_PACKAGE = "org.mozilla.firefox"
     }
 }
+
+/**
+ * Whether a pending follow-up lookup already covers a new one for [browser] due at [dueAt]:
+ * only when it is for the same browser and runs no later.
+ */
+internal fun keepPendingTitleFollowUp(
+    pendingBrowser: String,
+    pendingDueAt: Long,
+    browser: String,
+    dueAt: Long,
+): Boolean = pendingBrowser == browser && pendingDueAt <= dueAt

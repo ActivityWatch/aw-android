@@ -3,6 +3,7 @@ package net.activitywatch.android.watcher
 import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -52,8 +53,9 @@ class WebWatcher : AccessibilityService() {
     private val sessionTracker = BrowserSessionTracker()
     private val titleGate = TitleLookupGate()
     private val mainHandler = Handler(Looper.getMainLooper())
-    // The scheduled follow-up lookup and the browser it is for.
-    private var titleFollowUp: Pair<String, Runnable>? = null
+    // The scheduled follow-up lookup, the browser it is for and when it runs (uptime ms).
+    private class TitleFollowUp(val browser: String, val dueAt: Long, val runnable: Runnable)
+    private var titleFollowUp: TitleFollowUp? = null
 
     // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
     // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
@@ -163,12 +165,14 @@ class WebWatcher : AccessibilityService() {
 
     // Runs a lookup that was skipped by the gate once it is allowed, so a title that
     // arrives on a skipped event (with the page quiet afterwards) is still captured.
-    // One follow-up at a time: a pending one for the same browser already covers this
-    // event, and one for a browser the user has left is replaced.
+    // One follow-up at a time: a pending one for the same browser that runs no later
+    // already covers this event. One that runs later (a 5s recheck while a new page needs
+    // its 500ms retry) or is for a browser the user has left is replaced.
     private fun scheduleTitleLookup(browser: String, delayMs: Long) {
-        titleFollowUp?.let { (pendingBrowser, pending) ->
-            if (pendingBrowser == browser) return
-            mainHandler.removeCallbacks(pending)
+        val dueAt = SystemClock.uptimeMillis() + delayMs
+        titleFollowUp?.let { pending ->
+            if (keepPendingTitleFollowUp(pending.browser, pending.dueAt, browser, dueAt)) return
+            mainHandler.removeCallbacks(pending.runnable)
         }
         val followUp = Runnable {
             titleFollowUp = null
@@ -182,8 +186,8 @@ class WebWatcher : AccessibilityService() {
                 root.recycle()
             }
         }
-        titleFollowUp = browser to followUp
-        mainHandler.postDelayed(followUp, delayMs)
+        titleFollowUp = TitleFollowUp(browser, dueAt, followUp)
+        mainHandler.postAtTime(followUp, dueAt)
     }
 
     private fun lookUpTitle(from: AccessibilityNodeInfo) {
