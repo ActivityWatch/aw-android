@@ -19,7 +19,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class NotifyWorkerExecutionTest {
-    private class FakeBackend(private val setting: String) : NotifyBackend {
+    private class FakeBackend(
+        private val setting: String,
+        private val failIngest: Boolean = false,
+    ) : NotifyBackend {
         val calls = mutableListOf<String>()
 
         override fun checkServer() {
@@ -34,6 +37,11 @@ class NotifyWorkerExecutionTest {
         override fun androidQuery(timeperiod: String): String {
             calls += "query"
             return """[{"cat_events":[{"duration":120,"data":{"${'$'}category":["Work"]}}]}]"""
+        }
+
+        override fun ingestLatestUsage() {
+            calls += "ingest"
+            if (failIngest) throw IllegalStateException("ingest failed")
         }
     }
 
@@ -92,7 +100,18 @@ class NotifyWorkerExecutionTest {
             """{"enabled":true,"alerts":[{"category":"Work","thresholds_minutes":[1]}]}"""
         )
         assertEquals(ListenableWorker.Result.success(), runWorker(backend))
-        assertEquals(listOf("server", "aw-notify", "startOfDay", "query"), backend.calls)
+        assertEquals(listOf("server", "aw-notify", "ingest", "startOfDay", "query"), backend.calls)
+        assertEquals(1, notificationCount())
+    }
+
+    @Test
+    fun ingestFailureStillChecksStoredData() {
+        val backend = FakeBackend(
+            """{"enabled":true,"alerts":[{"category":"Work","thresholds_minutes":[1]}]}""",
+            failIngest = true,
+        )
+        assertEquals(ListenableWorker.Result.success(), runWorker(backend))
+        assertEquals(listOf("server", "aw-notify", "ingest", "startOfDay", "query"), backend.calls)
         assertEquals(1, notificationCount())
     }
 }
