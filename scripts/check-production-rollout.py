@@ -82,9 +82,10 @@ def _fraction(release: dict) -> str:
 def decide(track: dict, own_version_code: str | None = None) -> Decision:
     """Pass/fail for the production track JSON returned by edits.tracks.get.
 
-    Only `inProgress` (a staged rollout) blocks. `completed` is the normal
-    state; `halted` is the explicit "stop" the rule asks for; `draft` has not
-    reached any users. All of those pass.
+    `inProgress` (a staged rollout) blocks. `completed` is the normal state;
+    `halted` is the explicit "stop" the rule asks for; `draft` has not reached
+    any users. Those three pass. Any other status (statusUnspecified, missing,
+    or new) blocks too: fail closed.
 
     `own_version_code` is the versionCode about to be uploaded (the Build
     workflow's pre-upload check): a staged rollout *of that same build* is a
@@ -120,7 +121,15 @@ def decide(track: dict, own_version_code: str | None = None) -> Decision:
         elif status == "draft":
             decision.notes.append(f"versionCode {codes} ('{name}'): draft (not serving users)")
         else:
-            decision.notes.append(f"versionCode {codes} ('{name}'): status '{status or 'unknown'}'")
+            # statusUnspecified, a missing status, or a value Play adds later:
+            # we can't tell it isn't staged, so fail closed like an API error.
+            decision.ok = False
+            decision.errors.append(
+                f"Play {TRACK} track has versionCode {codes}, release '{name}' with "
+                f"unrecognised status '{status or '(missing)'}', userFraction "
+                f"{_fraction(release)}; cannot rule out a staged rollout. Check it in "
+                "Play Console. " + REMEDY.format(code=codes)
+            )
     if not decision.notes and decision.ok:
         decision.notes.append(f"no releases on the {TRACK} track")
     return decision
@@ -234,6 +243,14 @@ def self_test() -> int:
         {"name": "0.14.3", "versionCodes": ["48"], "status": "draft"},
         {"name": "0.14.1", "versionCodes": ["42"], "status": "completed"}]}, 0,
         must_contain=("draft",))
+    for odd in ("statusUnspecified", "", "somethingNew"):
+        rel = {"name": "0.14.2", "versionCodes": ["46"], "userFraction": 0.5}
+        if odd:
+            rel["status"] = odd
+        expect(f"status {odd or '(missing)'} fails closed", {"releases": [rel]}, 1,
+               must_contain=("::error::", "versionCode 46", "unrecognised status"))
+        expect(f"status {odd or '(missing)'} + override warns", {"releases": [rel]}, 0,
+               allow=True, must_contain=("::warning::",))
     expect("empty track passes", {"track": "production"}, 0, must_contain=("no releases",))
     expect("override is a no-op when clean", {"releases": [
         {"name": "0.14.1", "versionCodes": ["42"], "status": "completed"}]}, 0, allow=True)
