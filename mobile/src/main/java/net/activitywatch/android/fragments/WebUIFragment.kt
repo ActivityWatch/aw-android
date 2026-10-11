@@ -31,6 +31,7 @@ import androidx.fragment.app.Fragment
 import net.activitywatch.android.ANDROID_THEME_HOOK_JS
 import net.activitywatch.android.R
 import net.activitywatch.android.ensureDashboardApiKey
+import net.activitywatch.android.initialWebViewBackgroundRes
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -456,6 +457,11 @@ class WebUIFragment : Fragment() {
 
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
         webView = myWebView
+        // Prevent white flash: set the background before the first frame loads.
+        // The JS theme hook corrects it after onPageFinished reads localStorage.theme.
+        myWebView.setBackgroundColor(
+            ContextCompat.getColor(view.context, initialWebViewBackgroundRes(resources.configuration)),
+        )
 
         class MyWebViewClient : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {

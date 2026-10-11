@@ -1,5 +1,7 @@
 package net.activitywatch.android
 
+import android.content.res.Configuration
+
 /**
  * Resolve aw-webui's stored theme (`light` / `dark` / `auto`) to a dark chrome
  * scheme. `auto` follows the stylesheet or `prefers-color-scheme`.
@@ -18,6 +20,16 @@ internal fun webUiSchemeIsDark(
         else -> darkStylesheetPresent || prefersDark
     }
 }
+
+/**
+ * Color resource for the WebView background to apply immediately on creation,
+ * before the page loads and [ANDROID_THEME_HOOK_JS] fires.
+ *
+ * Uses the system night mode as the best pre-load approximation. The JS hook
+ * corrects the colour after `onPageFinished` reads `localStorage.theme`.
+ */
+internal fun initialWebViewBackgroundRes(config: Configuration): Int =
+    if (isSystemNightMode(config)) R.color.chrome_dark else R.color.chrome_light
 
 /**
  * Observes aw-webui's `localStorage.theme` and the injected `/dark.css` link,
