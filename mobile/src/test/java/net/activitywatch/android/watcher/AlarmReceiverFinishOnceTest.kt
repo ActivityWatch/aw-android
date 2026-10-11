@@ -6,97 +6,74 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import net.activitywatch.android.widget.AsyncBroadcast
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Regression tests for the AlarmReceiver goAsync + finish pattern after applying FinishOnce.
- *
- * Without FinishOnce, an OEM pre-finishing the broadcast before the coroutine's `finally` block
- * causes `PendingResult.finish()` → `IllegalStateException("Broadcast already finished")`, which
- * escapes the coroutine and kills the process. This is the same crash class fixed for the widget
- * in ActivityWatch/aw-android#360.
- */
+/** Tests the completion path called by AlarmReceiver, not a copy of its coroutine. */
 class AlarmReceiverFinishOnceTest {
-
     private val uncaught = CopyOnWriteArrayList<Throwable>()
-    private val logged = CopyOnWriteArrayList<String>()
-    private val log: (String, Throwable?) -> Unit = { msg, _ -> logged.add(msg) }
+    private val logged = CopyOnWriteArrayList<Pair<String, Throwable?>>()
+    private val log: (String, Throwable?) -> Unit = { msg, error -> logged.add(msg to error) }
 
     private fun scope() = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e -> uncaught.add(e) }
     )
 
-    /**
-     * OEM pre-finishes the broadcast before the coroutine's finally block; without FinishOnce
-     * this would throw IllegalStateException and escape the coroutine.
-     */
+    /** Simulates the framework finishing first, so the receiver's finish attempt throws. */
     @Test
     fun oemDoubleFinish_doesNotEscapeCoroutine() = runBlocking {
         val finishCalls = AtomicInteger()
-        val finish = AsyncBroadcast.FinishOnce(
-            finish = {
-                finishCalls.incrementAndGet()
-                throw IllegalStateException("Broadcast already finished")
-            },
+        val alreadyFinished = java.util.concurrent.atomic.AtomicBoolean(false)
+        val pendingFinish = {
+            finishCalls.incrementAndGet()
+            check(alreadyFinished.compareAndSet(false, true)) { "Broadcast already finished" }
+        }
+        pendingFinish() // Framework/OEM finishes the broadcast before our coroutine completes.
+
+        launchAlarmHeartbeats(
+            finish = pendingFinish,
+            scope = scope(),
             log = log,
-        )
+            work = {},
+        ).join()
 
-        val job = scope().launch {
-            try {
-                // heartbeat work (no-op in test)
-            } catch (e: Exception) {
-                // logged in production
-            } finally {
-                finish.finish()
-            }
-        }
-        job.join()
-
-        assertEquals("finish() must be attempted exactly once", 1, finishCalls.get())
+        assertEquals("one framework finish and one receiver attempt", 2, finishCalls.get())
         assertTrue("IllegalStateException escaped the coroutine: $uncaught", uncaught.isEmpty())
-        assertTrue("missing 'already finished' log entry", logged.any { it.contains("already finished") })
+        assertTrue(logged.any { it.first.contains("already finished") && it.second is IllegalStateException })
     }
 
     @Test
-    fun normalHeartbeat_finishesExactlyOnce() = runBlocking {
-        val finishCalls = AtomicInteger()
-        val finish = AsyncBroadcast.FinishOnce({ finishCalls.incrementAndGet() }, log)
+    fun normalHeartbeat_finishesExactlyOnceAfterWork() = runBlocking {
+        val events = CopyOnWriteArrayList<String>()
+        launchAlarmHeartbeats(
+            finish = { events.add("finish"); Unit },
+            scope = scope(),
+            log = log,
+            work = { events.add("heartbeat") },
+        ).join()
 
-        val job = scope().launch {
-            try {
-                // heartbeat work succeeds
-            } finally {
-                finish.finish()
-            }
-        }
-        job.join()
-
-        assertEquals(1, finishCalls.get())
+        assertEquals(listOf("heartbeat", "finish"), events.toList())
         assertTrue(uncaught.isEmpty())
+        assertTrue(logged.isEmpty())
     }
 
     @Test
-    fun heartbeatException_stillFinishes() = runBlocking {
+    fun heartbeatException_stillFinishesAndLogsFailure() = runBlocking {
         val finishCalls = AtomicInteger()
-        val finish = AsyncBroadcast.FinishOnce({ finishCalls.incrementAndGet() }, log)
-
-        val job = scope().launch {
-            try {
-                throw RuntimeException("server unreachable")
-            } catch (e: Exception) {
-                // logged
-            } finally {
-                finish.finish()
-            }
-        }
-        job.join()
+        val failure = RuntimeException("server unreachable")
+        launchAlarmHeartbeats(
+            finish = { finishCalls.incrementAndGet(); Unit },
+            scope = scope(),
+            log = log,
+            work = { throw failure },
+        ).join()
 
         assertEquals(1, finishCalls.get())
         assertTrue(uncaught.isEmpty())
+        assertEquals(1, logged.size)
+        assertSame(failure, logged.single().second)
     }
 }
