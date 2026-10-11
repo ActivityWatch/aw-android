@@ -27,8 +27,15 @@ check fails too. --allow-inprogress turns both a staged rollout and an API
 failure into a warning; it exists for the rare case where superseding the
 staged release is intended.
 
+It runs twice: in the Release workflow before anything is bumped or tagged,
+and in the Build workflow immediately before the production upload (which
+also covers hand-pushed tags and two releases racing each other). There it
+passes --own-version-code, so re-running a publish whose own staged rollout
+already started is not blocked.
+
 Usage:
-  scripts/check-production-rollout.py --credentials fastlane/api-....json [--allow-inprogress]
+  scripts/check-production-rollout.py --credentials fastlane/api-....json \
+      [--allow-inprogress] [--own-version-code N]
   scripts/check-production-rollout.py --self-test
 
 Requires `google-auth` and `requests` (not needed for --self-test).
@@ -49,7 +56,8 @@ TRACK = "production"
 REMEDY = (
     "Complete it first (Actions -> Rollout, fraction 1.0, version_code {code}), "
     "or halt it in Play Console, or - only if superseding it is intended - "
-    "re-run Release with allow_inprogress_rollout=true."
+    "re-run Release with allow_inprogress_rollout=true (recorded in the tag "
+    "annotation, which the Build workflow's pre-upload check also honours)."
 )
 
 
@@ -71,19 +79,31 @@ def _fraction(release: dict) -> str:
     return f"{float(fraction):g} ({float(fraction) * 100:g}% of users)"
 
 
-def decide(track: dict) -> Decision:
+def decide(track: dict, own_version_code: str | None = None) -> Decision:
     """Pass/fail for the production track JSON returned by edits.tracks.get.
 
     Only `inProgress` (a staged rollout) blocks. `completed` is the normal
     state; `halted` is the explicit "stop" the rule asks for; `draft` has not
     reached any users. All of those pass.
+
+    `own_version_code` is the versionCode about to be uploaded (the Build
+    workflow's pre-upload check): a staged rollout *of that same build* is a
+    re-run of this publish, not a different release being replaced.
     """
     decision = Decision(ok=True)
     for release in track.get("releases") or []:
         status = release.get("status", "")
         name = release.get("name") or "(unnamed)"
         codes = _codes(release)
-        if status == "inProgress":
+        own = own_version_code is not None and own_version_code in [
+            str(c) for c in release.get("versionCodes") or []
+        ]
+        if status == "inProgress" and own:
+            decision.notes.append(
+                f"versionCode {codes} ('{name}'): in progress, but it is the build being "
+                "published (re-run), so nothing is replaced"
+            )
+        elif status == "inProgress":
             decision.ok = False
             decision.errors.append(
                 f"Play {TRACK} track has a staged rollout in progress: "
@@ -107,21 +127,30 @@ def decide(track: dict) -> Decision:
 
 
 def fetch_track(package: str, credentials: str) -> dict:
-    """edits.insert -> edits.tracks.get(production) -> edits.delete."""
+    """Authenticate with the service-account key, then read the track."""
     import requests
     from google.auth.transport.requests import Request
     from google.oauth2 import service_account
 
     creds = service_account.Credentials.from_service_account_file(credentials, scopes=[SCOPE])
     creds.refresh(Request())
-    headers = {"Authorization": f"Bearer {creds.token}"}
+    return read_track(requests, creds.token, package)
 
-    r = requests.post(f"{BASE}/applications/{package}/edits", headers=headers, timeout=30)
+
+def read_track(http, token: str, package: str) -> dict:
+    """edits.insert -> edits.tracks.get(production) -> edits.delete.
+
+    `http` is the `requests` module (or a stand-in with post/get/delete, for
+    the self-test).
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = http.post(f"{BASE}/applications/{package}/edits", headers=headers, timeout=30)
     if r.status_code >= 400:
         raise RuntimeError(f"edits.insert failed: HTTP {r.status_code}: {r.text[:300]}")
     edit_id = r.json()["id"]
     try:
-        r = requests.get(
+        r = http.get(
             f"{BASE}/applications/{package}/edits/{edit_id}/tracks/{TRACK}",
             headers=headers,
             timeout=30,
@@ -133,7 +162,7 @@ def fetch_track(package: str, credentials: str) -> dict:
         # Best-effort: an abandoned edit expires on its own, and a failed
         # cleanup must not mask the track state we just read.
         try:
-            requests.delete(
+            http.delete(
                 f"{BASE}/applications/{package}/edits/{edit_id}", headers=headers, timeout=30
             )
         except Exception:
@@ -144,7 +173,7 @@ def report(decision: Decision, allow_inprogress: bool) -> tuple[int, list[str]]:
     """Exit code and the lines to print (GitHub annotations) for a decision."""
     lines = [f"Play {TRACK} track: {note}" for note in decision.notes]
     if decision.ok:
-        lines.append(f"ok: no staged {TRACK} rollout in progress")
+        lines.append(f"ok: no other staged {TRACK} rollout in progress")
         return 0, lines
     if allow_inprogress:
         lines += [f"::warning::allow_inprogress_rollout=true - superseding. {e}" for e in decision.errors]
@@ -216,6 +245,60 @@ def self_test() -> int:
     if code != 0 or not lines[0].startswith("::warning::"):
         failures.append(f"API failure + override must warn: {code} {lines}")
 
+    own = {"releases": [
+        {"name": "0.14.3", "versionCodes": ["48"], "status": "inProgress", "userFraction": 0.1},
+        {"name": "0.14.1", "versionCodes": ["42"], "status": "completed"}]}
+    code, lines = report(decide(own, own_version_code="48"), False)
+    if code != 0:
+        failures.append(f"own in-progress build (re-run) must pass: {lines}")
+    code, lines = report(decide(own, own_version_code="49"), False)
+    if code != 1 or "versionCode 48" not in "\n".join(lines):
+        failures.append(f"another build's in-progress rollout must block: {lines}")
+
+    # The API path, with a stand-in for `requests`: call sequence, the edit is
+    # always deleted, and HTTP errors reach the fail-closed path in main().
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict) -> None:
+            self.status_code, self._payload, self.text = status_code, payload, str(payload)
+
+        def json(self) -> dict:
+            return self._payload
+
+    class FakeHttp:
+        def __init__(self, get_status: int, track: dict) -> None:
+            self.calls: list[tuple[str, str]] = []
+            self.get_status, self.track = get_status, track
+
+        def post(self, url, **kw):
+            self.calls.append(("POST", url))
+            return FakeResponse(200, {"id": "E1"})
+
+        def get(self, url, **kw):
+            self.calls.append(("GET", url))
+            return FakeResponse(self.get_status, self.track)
+
+        def delete(self, url, **kw):
+            self.calls.append(("DELETE", url))
+            return FakeResponse(204, {})
+
+    app = f"{BASE}/applications/{DEFAULT_PACKAGE}"
+    want_calls = [("POST", f"{app}/edits"), ("GET", f"{app}/edits/E1/tracks/{TRACK}"),
+                  ("DELETE", f"{app}/edits/E1")]
+    for get_status, want_code in ((200, 1), (403, 1)):
+        http = FakeHttp(get_status, staged)
+        fetch = lambda package, credentials, http=http: read_track(http, "t", package)
+        code = main(["--credentials", "unused.json"], fetch=fetch, quiet=True)
+        if http.calls != want_calls:
+            failures.append(f"GET {get_status}: calls {http.calls}, want {want_calls}")
+        if code != want_code:
+            failures.append(f"GET {get_status}: main() exit {code}, want {want_code}")
+    http = FakeHttp(200, staged)
+    fetch = lambda package, credentials: read_track(http, "t", package)
+    if main(["--credentials", "x", "--allow-inprogress"], fetch=fetch, quiet=True) != 0:
+        failures.append("main() with --allow-inprogress must pass")
+    if main(["--credentials", "x", "--own-version-code", "46"], fetch=fetch, quiet=True) != 0:
+        failures.append("main() with --own-version-code of the staged build must pass")
+
     for f in failures:
         print(f"FAIL {f}", file=sys.stderr)
     if failures:
@@ -225,7 +308,7 @@ def self_test() -> int:
     return 0
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], fetch=fetch_track, quiet: bool = False) -> int:
     if argv == ["--self-test"]:
         return self_test()
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -233,15 +316,19 @@ def main(argv: list[str]) -> int:
     p.add_argument("--package", default=DEFAULT_PACKAGE)
     p.add_argument("--allow-inprogress", action="store_true",
                    help="warn instead of failing on a staged rollout or an API error")
+    p.add_argument("--own-version-code",
+                   help="versionCode being published; its own staged rollout does not block")
     args = p.parse_args(argv)
 
     try:
-        track = fetch_track(args.package, args.credentials)
+        track = fetch(args.package, args.credentials)
     except Exception as exc:  # fail closed on anything: auth, network, JSON
         code, lines = report_failure(exc, args.allow_inprogress)
     else:
-        code, lines = report(decide(track), args.allow_inprogress)
+        code, lines = report(decide(track, args.own_version_code), args.allow_inprogress)
 
+    if quiet:
+        return code
     for line in lines:
         print(line)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")

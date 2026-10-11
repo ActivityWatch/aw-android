@@ -34,8 +34,11 @@ name: Release
 #     0.14.3 vs 0.14.1. Complete the previous rollout (Actions → Rollout,
 #     fraction 1.0) or halt it in Play Console first. If the Play API can't be
 #     read, the check fails closed. `allow_inprogress_rollout=true` overrides
-#     both, with a warning, for when superseding is intended. Pre-releases go
-#     to the internal track and are not checked.
+#     both, with a warning, for when superseding is intended; it is recorded in
+#     the tag annotation. The Build workflow re-runs the check right before the
+#     production upload (covering hand-pushed tags and overlapping releases)
+#     and honours the same annotation. Pre-releases go to the internal track
+#     and are not checked.
 
 on:
   workflow_dispatch:
@@ -291,6 +294,12 @@ jobs:
           git commit -m "chore: bump versionName to ${VERSION}, versionCode to ${VERSION_CODE}"
           # The Build workflow reads `rollout=` from the tag annotation to stage
           # the production rollout; pre-releases go to the internal track.
-          git tag -a "v${VERSION}" -m "Release v${VERSION}" -m "rollout=${{ inputs.rollout }}"
+          # `allow_inprogress_rollout=true` is carried the same way, so the
+          # Build workflow's pre-upload rollout check honours the override too.
+          TAG_ARGS=(-m "Release v${VERSION}" -m "rollout=${{ inputs.rollout }}")
+          if [ "${{ inputs.allow_inprogress_rollout }}" = "true" ]; then
+            TAG_ARGS+=(-m "allow_inprogress_rollout=true")
+          fi
+          git tag -a "v${VERSION}" "${TAG_ARGS[@]}"
           git push origin HEAD:master
           git push origin "v${VERSION}"
