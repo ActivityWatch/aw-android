@@ -150,7 +150,24 @@ class AsyncBroadcastTest {
         assertTrue("broadcast not finished", finished.await(2, TimeUnit.SECONDS))
         val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
         assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
+
+        // While that fallback is stuck, later failures don't start more of them.
+        val laterFallbacks = AtomicInteger()
+        AsyncBroadcast.launch(
+            finish = {},
+            budgetMs = 100,
+            fallbackBudgetMs = 100,
+            scope = scope(),
+            log = log,
+            onFailure = { laterFallbacks.incrementAndGet() },
+        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
+        assertEquals(0, laterFallbacks.get())
+
         release.countDown()
+        // The flag is process-wide: let it clear so other tests' fallbacks run.
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (AsyncBroadcast.isFallbackRunning && System.nanoTime() < deadline) Thread.sleep(10)
+        assertTrue(!AsyncBroadcast.isFallbackRunning)
         assertTrue(uncaught.isEmpty())
     }
 

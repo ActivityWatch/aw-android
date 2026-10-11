@@ -60,6 +60,15 @@ internal object AsyncBroadcast {
     /** Budget for [launch]'s `onFailure`, on top of the work budget (8 s + 1 s < 10 s). */
     const val FALLBACK_BUDGET_MS = 1_000L
 
+    /**
+     * True while a fallback is running. A fallback stuck in `updateAppWidget` outlives its
+     * await, so later failures skip theirs instead of piling more onto `Dispatchers.IO`;
+     * the fallback is best effort and the next pass renders anyway.
+     */
+    private val fallbackRunning = AtomicBoolean(false)
+
+    internal val isFallbackRunning: Boolean get() = fallbackRunning.get()
+
     /** Starts [work] in a coroutine that is not a child of the caller, for [launch]. */
     fun detached(
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -104,15 +113,21 @@ internal object AsyncBroadcast {
                 }
                 if (failure != null) {
                     log("Widget broadcast work failed", failure)
-                    val fallback = detached(workDispatcher) {
-                        try {
-                            onFailure(failure)
-                        } catch (e: Throwable) {
-                            log("Rendering the widget fallback failed", e)
+                    if (fallbackRunning.compareAndSet(false, true)) {
+                        val fallback = detached(workDispatcher) {
+                            try {
+                                onFailure(failure)
+                            } catch (e: Throwable) {
+                                log("Rendering the widget fallback failed", e)
+                            } finally {
+                                fallbackRunning.set(false)
+                            }
                         }
-                    }
-                    if (withTimeoutOrNull(fallbackBudgetMs) { fallback.await() } == null) {
-                        log("Widget fallback exceeded ${fallbackBudgetMs} ms", null)
+                        if (withTimeoutOrNull(fallbackBudgetMs) { fallback.await() } == null) {
+                            log("Widget fallback exceeded ${fallbackBudgetMs} ms", null)
+                        }
+                    } else {
+                        log("Previous widget fallback still running; skipping this one", null)
                     }
                 }
             } catch (e: Throwable) {
