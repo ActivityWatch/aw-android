@@ -13,7 +13,7 @@ import android.view.View
 import android.widget.RemoteViews
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
 import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
@@ -24,8 +24,9 @@ private const val UPDATE_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
 
 /**
  * Widget provider for displaying category time stats.
- * Updates are handled every 15 mins by the work manager and every 30 mins by
- * Android's widget update mechanism.
+ * Updates are handled every 5 mins by an AlarmManager alarm and every 30 mins by
+ * Android's widget update mechanism. Every broadcast's async work goes through
+ * [AsyncBroadcast], which finishes the PendingResult exactly once and never throws.
  */
 class CategoryTimeWidgetProvider : AppWidgetProvider() {
 
@@ -38,17 +39,10 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         // Restore the periodic alarm after reboot (Android calls onUpdate for existing widgets on boot).
         schedulePeriodicUpdates(context)
         val pendingResult = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                for (appWidgetId in appWidgetIds) {
-                    updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onUpdate", e)
-            } finally {
-                pendingResult.finish()
-            }
-        }
+        AsyncBroadcast.launch(
+            finish = { pendingResult?.finish() },
+            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+        ) { requestUpdate(context, refreshUsage = false) }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -68,35 +62,26 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
 
                 // goAsync() extends BroadcastReceiver lifetime past onReceive() return
                 val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        // Await event persistence before updating the widget
-                        UsageStatsWatcher(context).sendHeartbeatsSuspend()
-                        Log.d(TAG, "Usage events re-parsed; updating widgets")
-                        for (appWidgetId in appWidgetIds) {
-                            updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error re-parsing usage events", e)
-                    } finally {
-                        pendingResult.finish()
-                    }
-                }
+                AsyncBroadcast.launch(
+                    finish = { pendingResult?.finish() },
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+                ) { requestUpdate(context, refreshUsage = true) }
             }
             ACTION_PERIODIC_UPDATE -> {
                 Log.d(TAG, "Periodic update triggered by AlarmManager")
                 val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        CategoryTimeWidgetUpdater.updateAllWidgets(context)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during periodic update", e)
-                    } finally {
-                        // Reschedule the next exact alarm
-                        schedulePeriodicUpdates(context)
-                        pendingResult.finish()
-                    }
-                }
+                AsyncBroadcast.launch(
+                    finish = {
+                        // Reschedule the next exact alarm, even if this update failed
+                        try {
+                            schedulePeriodicUpdates(context)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Could not reschedule the periodic widget update", e)
+                        }
+                        pendingResult?.finish()
+                    },
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+                ) { requestUpdate(context, refreshUsage = false) }
             }
         }
     }
@@ -115,6 +100,38 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
 
     companion object {
         /**
+         * What a widget broadcast asks for. Every pass renders all current widget ids, so
+         * requests only differ in whether usage events are re-parsed first.
+         */
+        private data class WidgetRequest(val context: Context, val refreshUsage: Boolean)
+
+        /**
+         * Shared by every widget broadcast: one update pass at a time, so passes stuck in
+         * the datastore can't pile up, and requests that arrive meanwhile are merged into
+         * one follow-up pass instead of being dropped.
+         */
+        private val widgetUpdates = CoalescingWorker<WidgetRequest>(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            merge = { a, b -> a.copy(refreshUsage = a.refreshUsage || b.refreshUsage) },
+            process = { request ->
+                if (request.refreshUsage) {
+                    try {
+                        // Await event persistence before updating the widget
+                        UsageStatsWatcher(request.context).sendHeartbeatsSuspend()
+                        Log.d(TAG, "Usage events re-parsed; updating widgets")
+                    } catch (e: Exception) {
+                        // Still show whatever is already stored.
+                        Log.e(TAG, "Error re-parsing usage events", e)
+                    }
+                }
+                CategoryTimeWidgetUpdater.updateAllWidgets(request.context)
+            },
+        )
+
+        private fun requestUpdate(context: Context, refreshUsage: Boolean) =
+            widgetUpdates.submit(WidgetRequest(context.applicationContext, refreshUsage))
+
+        /**
          * Show loading state - show spinner
          */
         private fun showLoadingState(
@@ -126,18 +143,6 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_loading_indicator, View.VISIBLE)
             appWidgetManager.updateAppWidget(appWidgetId, views)
             Log.d(TAG, "Showing loading indicator for widget $appWidgetId")
-        }
-
-        /**
-         * Update widget data and set up tap-to-refresh on the whole widget
-         */
-        fun updateWidgetWithRefreshButton(
-            context: Context,
-            appWidgetManager: AppWidgetManager,
-            appWidgetId: Int
-        ) {
-            // updateSingleWidget handles data, click handler, and loading state
-            CategoryTimeWidgetUpdater.updateSingleWidget(context, appWidgetManager, appWidgetId)
         }
 
         private fun getUpdateIntent(context: Context): PendingIntent {
