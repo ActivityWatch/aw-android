@@ -42,7 +42,7 @@ class AsyncBroadcastTest {
             },
             scope = scope(),
             log = log,
-        ) {}
+        ) { AsyncBroadcast.detached {} }
         job.join()
 
         assertEquals(1, finishCalls.get())
@@ -60,7 +60,7 @@ class AsyncBroadcastTest {
             scope = scope(),
             log = log,
             onFailure = { failure.set(it) },
-        ) { ran.incrementAndGet() }.join()
+        ) { AsyncBroadcast.detached { ran.incrementAndGet() } }.join()
 
         assertEquals(1, ran.get())
         assertEquals(1, finishCalls.get())
@@ -78,8 +78,10 @@ class AsyncBroadcastTest {
             log = log,
             onFailure = { failure.set(it) },
         ) {
-            // e.g. System.loadLibrary failing, which is an Error, not an Exception
-            throw UnsatisfiedLinkError("no aw_server")
+            AsyncBroadcast.detached {
+                // e.g. System.loadLibrary failing, which is an Error, not an Exception
+                throw UnsatisfiedLinkError("no aw_server")
+            }
         }.join()
 
         assertTrue(failure.get() is UnsatisfiedLinkError)
@@ -95,7 +97,7 @@ class AsyncBroadcastTest {
             scope = scope(),
             log = log,
             onFailure = { throw IllegalArgumentException("widget removed") },
-        ) { error("datastore not ready") }.join()
+        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
 
         assertEquals(1, finishCalls.get())
         assertTrue(uncaught.isEmpty())
@@ -118,7 +120,7 @@ class AsyncBroadcastTest {
             log = log,
             onFailure = { failure.set(it) },
         ) {
-            release.await() // not cancellable, like a JNI call
+            AsyncBroadcast.detached { release.await() } // not cancellable, like a JNI call
         }
 
         assertTrue("broadcast not finished within budget", finished.await(2, TimeUnit.SECONDS))
@@ -143,7 +145,7 @@ class AsyncBroadcastTest {
             scope = scope(),
             log = log,
             onFailure = { release.await() },
-        ) { error("datastore not ready") }
+        ) { AsyncBroadcast.detached { error("datastore not ready") } }
 
         assertTrue("broadcast not finished", finished.await(2, TimeUnit.SECONDS))
         val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
@@ -152,43 +154,26 @@ class AsyncBroadcastTest {
         assertTrue(uncaught.isEmpty())
     }
 
-    /** Overrunning work that is stuck must not be started again by every later broadcast. */
+    /** A request queued behind stuck work is still waited for within the budget. */
     @Test
-    fun singleFlight_laterBroadcastsJoinStuckWork_insteadOfStartingMore() = runBlocking {
-        val singleFlight = AsyncBroadcast.SingleFlight()
+    fun workQueuedBehindStuckPass_stillFinishesOnTime() = runBlocking {
         val release = CountDownLatch(1)
-        val started = AtomicInteger()
+        val worker = CoalescingWorker<Int>(scope(), { a, b -> a + b }) { release.await() }
         val finishCalls = AtomicInteger()
+        val failures = CopyOnWriteArrayList<Throwable>()
         val jobs = (1..3).map {
             AsyncBroadcast.launch(
                 finish = { finishCalls.incrementAndGet() },
                 budgetMs = 100,
-                singleFlight = singleFlight,
                 scope = scope(),
                 log = log,
-            ) {
-                started.incrementAndGet()
-                release.await()
-            }
+                onFailure = { failures.add(it) },
+            ) { worker.submit(1) }
         }
         jobs.forEach { it.join() }
-        assertEquals(1, started.get())
         assertEquals(3, finishCalls.get())
-
-        // Once the stuck work ends, the next broadcast starts fresh work.
+        assertTrue(failures.all { it is TimeoutException })
         release.countDown()
-        val ran = AtomicInteger()
-        var attempts = 0
-        while (ran.get() == 0 && attempts++ < 50) {
-            AsyncBroadcast.launch(
-                finish = {},
-                budgetMs = 100,
-                singleFlight = singleFlight,
-                scope = scope(),
-                log = log,
-            ) { ran.incrementAndGet() }.join()
-        }
-        assertEquals(1, ran.get())
         assertTrue(uncaught.isEmpty())
     }
 

@@ -3,10 +3,8 @@ package net.activitywatch.android.widget
 import android.util.Log
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,35 +60,19 @@ internal object AsyncBroadcast {
     /** Budget for [launch]'s `onFailure`, on top of the work budget (8 s + 1 s < 10 s). */
     const val FALLBACK_BUDGET_MS = 1_000L
 
-    /**
-     * At most one detached work coroutine at a time. Work that overran its budget may be
-     * stuck in a non-cancellable call; starting another on every alarm would pile blocked
-     * jobs onto `Dispatchers.IO`. A broadcast that arrives meanwhile waits for the
-     * in-flight work instead of starting its own.
-     */
-    internal class SingleFlight {
-        private val current = AtomicReference<Deferred<Unit>?>(null)
-
-        fun start(scope: CoroutineScope, work: suspend () -> Unit): Deferred<Unit> {
-            while (true) {
-                val existing = current.get()
-                if (existing != null && existing.isActive) return existing
-                val next = scope.async(start = CoroutineStart.LAZY) { work() }
-                if (current.compareAndSet(existing, next)) {
-                    next.start()
-                    return next
-                }
-                next.cancel()
-            }
-        }
-    }
+    /** Starts [work] in a coroutine that is not a child of the caller, for [launch]. */
+    fun detached(
+        dispatcher: CoroutineDispatcher = Dispatchers.IO,
+        work: suspend () -> Unit,
+    ): Deferred<Unit> = CoroutineScope(SupervisorJob() + dispatcher).async { work() }
 
     /**
      * Launches [work] for a broadcast and finishes it through [finish] exactly once.
      *
-     * [work] runs in a detached coroutine on [workDispatcher], shared through [singleFlight],
-     * and the broadcast waits for it for at most [budgetMs]. Detached, because the widget's
-     * work blocks in calls that ignore coroutine cancellation (JNI into the Rust datastore,
+     * [work] starts (or queues) the actual work in a coroutine that is not a child of this one,
+     * e.g. with [detached] or a [CoalescingWorker], and the broadcast waits for the returned
+     * [Deferred] for at most [budgetMs]. Detached, because the widget's work blocks in calls
+     * that ignore coroutine cancellation (JNI into the Rust datastore,
      * `DatastoreStartup.awaitReady()`), so `withTimeout` around a child would still wait for
      * the child to return. Work that overruns keeps going and still renders its own result.
      *
@@ -104,26 +86,25 @@ internal object AsyncBroadcast {
         finish: () -> Unit,
         budgetMs: Long = DEFAULT_BUDGET_MS,
         fallbackBudgetMs: Long = FALLBACK_BUDGET_MS,
-        singleFlight: SingleFlight = SingleFlight(),
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         workDispatcher: CoroutineDispatcher = Dispatchers.IO,
         log: (String, Throwable?) -> Unit = ::logError,
         onFailure: (Throwable) -> Unit = {},
-        work: suspend () -> Unit,
+        work: () -> Deferred<Unit>,
     ): Job {
         val once = FinishOnce(finish, log)
         return scope.launch {
             try {
                 val failure: Throwable? = try {
-                    val detached = singleFlight.start(CoroutineScope(SupervisorJob() + workDispatcher), work)
-                    val done = withTimeoutOrNull(budgetMs) { detached.await() }
+                    val pending = work()
+                    val done = withTimeoutOrNull(budgetMs) { pending.await() }
                     if (done == null) TimeoutException("Widget update exceeded ${budgetMs} ms") else null
                 } catch (e: Throwable) {
                     e
                 }
                 if (failure != null) {
                     log("Widget broadcast work failed", failure)
-                    val fallback = CoroutineScope(SupervisorJob() + workDispatcher).async {
+                    val fallback = detached(workDispatcher) {
                         try {
                             onFailure(failure)
                         } catch (e: Throwable) {

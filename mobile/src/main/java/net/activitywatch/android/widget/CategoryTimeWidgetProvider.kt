@@ -11,6 +11,9 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
 
@@ -38,11 +41,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         AsyncBroadcast.launch(
             finish = { pendingResult?.finish() },
-            singleFlight = widgetWork,
-            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, appWidgetIds, it) },
-        ) {
-            CategoryTimeWidgetUpdater.updateWidgets(context, appWidgetManager, appWidgetIds)
-        }
+            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+        ) { requestUpdate(context, refreshUsage = false) }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -64,25 +64,13 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                 val pendingResult = goAsync()
                 AsyncBroadcast.launch(
                     finish = { pendingResult?.finish() },
-                    singleFlight = widgetWork,
-                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, appWidgetIds, it) },
-                ) {
-                    try {
-                        // Await event persistence before updating the widget
-                        UsageStatsWatcher(context).sendHeartbeatsSuspend()
-                        Log.d(TAG, "Usage events re-parsed; updating widgets")
-                    } catch (e: Exception) {
-                        // Still show whatever is already stored.
-                        Log.e(TAG, "Error re-parsing usage events", e)
-                    }
-                    CategoryTimeWidgetUpdater.updateWidgets(context, appWidgetManager, appWidgetIds)
-                }
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+                ) { requestUpdate(context, refreshUsage = true) }
             }
             ACTION_PERIODIC_UPDATE -> {
                 Log.d(TAG, "Periodic update triggered by AlarmManager")
                 val pendingResult = goAsync()
                 AsyncBroadcast.launch(
-                    singleFlight = widgetWork,
                     finish = {
                         // Reschedule the next exact alarm, even if this update failed
                         try {
@@ -92,16 +80,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                         }
                         pendingResult?.finish()
                     },
-                    onFailure = {
-                        val appWidgetManager = AppWidgetManager.getInstance(context)
-                        val ids = appWidgetManager.getAppWidgetIds(
-                            ComponentName(context, CategoryTimeWidgetProvider::class.java)
-                        )
-                        CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, ids, it)
-                    },
-                ) {
-                    CategoryTimeWidgetUpdater.updateAllWidgets(context)
-                }
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
+                ) { requestUpdate(context, refreshUsage = false) }
             }
         }
     }
@@ -119,8 +99,37 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        /** Shared by every widget broadcast, so overrunning updates can't pile up. */
-        private val widgetWork = AsyncBroadcast.SingleFlight()
+        /**
+         * What a widget broadcast asks for. Every pass renders all current widget ids, so
+         * requests only differ in whether usage events are re-parsed first.
+         */
+        private data class WidgetRequest(val context: Context, val refreshUsage: Boolean)
+
+        /**
+         * Shared by every widget broadcast: one update pass at a time, so passes stuck in
+         * the datastore can't pile up, and requests that arrive meanwhile are merged into
+         * one follow-up pass instead of being dropped.
+         */
+        private val widgetUpdates = CoalescingWorker<WidgetRequest>(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            merge = { a, b -> a.copy(refreshUsage = a.refreshUsage || b.refreshUsage) },
+            process = { request ->
+                if (request.refreshUsage) {
+                    try {
+                        // Await event persistence before updating the widget
+                        UsageStatsWatcher(request.context).sendHeartbeatsSuspend()
+                        Log.d(TAG, "Usage events re-parsed; updating widgets")
+                    } catch (e: Exception) {
+                        // Still show whatever is already stored.
+                        Log.e(TAG, "Error re-parsing usage events", e)
+                    }
+                }
+                CategoryTimeWidgetUpdater.updateAllWidgets(request.context)
+            },
+        )
+
+        private fun requestUpdate(context: Context, refreshUsage: Boolean) =
+            widgetUpdates.submit(WidgetRequest(context.applicationContext, refreshUsage))
 
         /**
          * Show loading state - show spinner

@@ -123,12 +123,11 @@ object CategoryTimeWidgetUpdater {
      * partial update that can't overwrite whatever the work renders. Any other failure means
      * the work has ended, so the "no data yet" state is rendered.
      */
-    fun onUpdateFailed(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray,
-        failure: Throwable
-    ) {
+    fun onUpdateFailed(context: Context, failure: Throwable) {
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        val appWidgetIds = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, CategoryTimeWidgetProvider::class.java)
+        )
         if (failure is TimeoutException) {
             for (appWidgetId in appWidgetIds) {
                 try {
