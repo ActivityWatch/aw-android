@@ -35,7 +35,7 @@ internal class BrowserSessionTracker(
     // after the page loads and/or the user interacts with it.
     fun handleUrl(newUrl: String?, newBrowser: String?, audible: Boolean = false): CompletedBrowserSession? {
         // Same page: nothing to log for the url, but playback may have started/stopped.
-        if (newUrl == lastUrl && newBrowser == lastBrowser) return handleAudible(audible)
+        if (newUrl == lastUrl && newBrowser == lastBrowser) return handleAudible(newBrowser, audible)
 
         val completed = completeCurrentSession()
 
@@ -50,9 +50,11 @@ internal class BrowserSessionTracker(
     // Splits the current session when its audible state flips, so the logged events carry
     // the right `audible` value for each stretch of time (like the desktop web watcher,
     // where a data change starts a new event). The url, browser and title carry over into
-    // the new session because it's still the same page.
-    fun handleAudible(audible: Boolean): CompletedBrowserSession? {
-        if (lastUrl == null || audible == lastAudible) return null
+    // the new session because it's still the same page. [browser] is the browser the audible
+    // state was read for; a different one (an event from a browser just switched to, before
+    // its url is known) must not change the current session.
+    fun handleAudible(browser: String?, audible: Boolean): CompletedBrowserSession? {
+        if (lastUrl == null || browser != lastBrowser || audible == lastAudible) return null
 
         val completed = completeCurrentSession()
 

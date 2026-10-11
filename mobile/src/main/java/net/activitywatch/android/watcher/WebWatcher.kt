@@ -254,7 +254,7 @@ class WebWatcher : AccessibilityService() {
                     handleUrl(null, newBrowser = null)
                 } else {
                     // Still on the previous url; only the audible state may have moved.
-                    handleAudible(audible)
+                    handleAudible(browser, audible)
                 }
             } else {
                 // Also covers the same-url case: the tracker splits on an audible change.
@@ -394,8 +394,8 @@ class WebWatcher : AccessibilityService() {
         sessionTracker.handleUrl(newUrl, newBrowser, audible)?.let { logBrowserEvent(it) }
     }
 
-    private fun handleAudible(audible: Boolean) {
-        sessionTracker.handleAudible(audible)?.let {
+    private fun handleAudible(browser: String, audible: Boolean) {
+        sessionTracker.handleAudible(browser, audible)?.let {
             Log.i(TAG, "Audible changed to $audible; splitting session")
             logBrowserEvent(it)
         }
