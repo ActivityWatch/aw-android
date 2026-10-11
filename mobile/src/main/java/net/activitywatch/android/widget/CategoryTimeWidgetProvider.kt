@@ -40,9 +40,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                for (appWidgetId in appWidgetIds) {
-                    updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
-                }
+                CategoryTimeWidgetUpdater.updateWidgets(context, appWidgetManager, appWidgetIds)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in onUpdate", e)
             } finally {
@@ -73,9 +71,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                         // Await event persistence before updating the widget
                         UsageStatsWatcher(context).sendHeartbeatsSuspend()
                         Log.d(TAG, "Usage events re-parsed; updating widgets")
-                        for (appWidgetId in appWidgetIds) {
-                            updateWidgetWithRefreshButton(context, appWidgetManager, appWidgetId)
-                        }
+                        CategoryTimeWidgetUpdater.updateWidgets(context, appWidgetManager, appWidgetIds)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error re-parsing usage events", e)
                     } finally {
@@ -126,18 +122,6 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_loading_indicator, View.VISIBLE)
             appWidgetManager.updateAppWidget(appWidgetId, views)
             Log.d(TAG, "Showing loading indicator for widget $appWidgetId")
-        }
-
-        /**
-         * Update widget data and set up tap-to-refresh on the whole widget
-         */
-        fun updateWidgetWithRefreshButton(
-            context: Context,
-            appWidgetManager: AppWidgetManager,
-            appWidgetId: Int
-        ) {
-            // updateSingleWidget handles data, click handler, and loading state
-            CategoryTimeWidgetUpdater.updateSingleWidget(context, appWidgetManager, appWidgetId)
         }
 
         private fun getUpdateIntent(context: Context): PendingIntent {
