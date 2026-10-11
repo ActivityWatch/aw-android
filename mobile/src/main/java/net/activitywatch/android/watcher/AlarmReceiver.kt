@@ -8,6 +8,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import net.activitywatch.android.widget.AsyncBroadcast
 
 private const val TAG = "AlarmReceiver"
 
@@ -40,13 +41,14 @@ class AlarmReceiver : BroadcastReceiver() {
             Log.w(TAG, "Action ${intent.action}, running sendHeartbeats")
             if (UsageStatsWatcher.isUsageAllowed(context)) {
                 val pendingResult = goAsync()
+                val finish = AsyncBroadcast.FinishOnce(pendingResult::finish)
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         usw.sendHeartbeatsSuspend()
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to send heartbeats from alarm", e)
                     } finally {
-                        pendingResult.finish()
+                        finish.finish()
                     }
                 }
             }
