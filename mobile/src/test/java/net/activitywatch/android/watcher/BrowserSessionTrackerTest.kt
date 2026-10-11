@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -152,7 +153,7 @@ class BrowserSessionTrackerTest {
         tracker.handleUrl("example.com", "chrome", audible = false)
         tracker.handleWindowTitle("Example Domain")
         clock.advanceSeconds(10)
-        val silent = tracker.handleAudible(true)
+        val silent = tracker.handleAudible("chrome", true)
         clock.advanceSeconds(20)
         val playing = tracker.handleUrl("example.org", "chrome")
 
@@ -200,18 +201,30 @@ class BrowserSessionTrackerTest {
         tracker.handleUrl("example.com", "chrome", audible = true)
         clock.advanceSeconds(5)
 
-        assertNull(tracker.handleAudible(true))
+        assertNull(tracker.handleAudible("chrome", true))
     }
 
     @Test
     fun `audible without an active session is ignored`() {
         val tracker = BrowserSessionTracker()
 
-        assertNull(tracker.handleAudible(true))
+        assertNull(tracker.handleAudible("chrome", true))
 
         // Ending a session (window changed away) also leaves nothing to split.
         tracker.handleUrl("example.com", "chrome")
         tracker.handleUrl(null, null)
-        assertNull(tracker.handleAudible(true))
+        assertNull(tracker.handleAudible("chrome", true))
+    }
+
+    @Test
+    fun `audible state from another browser does not touch the current session`() {
+        val tracker = BrowserSessionTracker()
+
+        tracker.handleUrl("example.com", "chrome", audible = false)
+
+        // Switched to a playing Firefox whose url isn't extractable yet.
+        assertNull(tracker.handleAudible("org.mozilla.firefox", true))
+        // Chrome's session is still silent, so a real change for it still splits.
+        assertNotNull(tracker.handleAudible("chrome", true))
     }
 }
