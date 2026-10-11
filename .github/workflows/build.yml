@@ -319,12 +319,16 @@ jobs:
     # user-facing-changelog.py only runs inside the tag-gated Release workflow,
     # so its filter needs the same every-PR coverage: a regression there would
     # first surface as a bad Play Store changelog on a release.
+    #
+    # check-production-rollout.py likewise only runs in Release; its decision
+    # logic (which Play track states block a stable release) is tested here.
     - name: Assert Play-track resolver
       run: |
         bash scripts/assert-play-track.sh --self-test
         bash scripts/previous-release-tag.sh --self-test
         bash scripts/strip-research-suffix.sh --self-test
         python3 scripts/user-facing-changelog.py --self-test
+        python3 scripts/check-production-rollout.py --self-test
 
     - name: Set up JDK
       uses: actions/setup-java@v4

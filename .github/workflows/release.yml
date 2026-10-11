@@ -26,6 +26,16 @@ name: Release
 #   - Stable releases start as a staged rollout (default 10%). The fraction is
 #     recorded in the tag annotation and read by the Build workflow's publish
 #     step. Widen it with Actions → Rollout after the first day looks clean.
+#   - A stable release refuses to start while the Play production track still
+#     has a staged rollout in progress (scripts/check-production-rollout.py).
+#     Play keeps one in-progress release per track, so a new staged release
+#     silently replaces the old one: on 2026-10-11, v0.14.3 at 50% replaced
+#     v0.14.2 (versionCode 46, stuck at 50%), and the comparison quietly became
+#     0.14.3 vs 0.14.1. Complete the previous rollout (Actions → Rollout,
+#     fraction 1.0) or halt it in Play Console first. If the Play API can't be
+#     read, the check fails closed. `allow_inprogress_rollout=true` overrides
+#     both, with a warning, for when superseding is intended. Pre-releases go
+#     to the internal track and are not checked.
 
 on:
   workflow_dispatch:
@@ -45,6 +55,11 @@ on:
         default: '0.1'
         type: choice
         options: ['0.1', '0.25', '0.5', '1.0']
+      allow_inprogress_rollout:
+        description: 'Stable only: start even if the Play production track has a staged rollout in progress (it will be replaced) or its state cannot be read'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   release:
@@ -87,6 +102,7 @@ jobs:
           fi
 
       - name: Release discipline gate
+        id: gate
         env:
           VERSION: ${{ inputs.version }}
           INSTALLED_ON_DEVICE: ${{ inputs.installed_on_device }}
@@ -116,9 +132,51 @@ jobs:
               exit 1
             fi
             echo "Stable release: initial production rollout ${ROLLOUT}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "stable=true" >> "$GITHUB_OUTPUT"
           else
             echo "Pre-release: internal track, no rollout gate."
+            echo "stable=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # Loaded before anything is bumped: the production-rollout check below
+      # needs the same service account, and it must fail before any commit/tag.
+      - uses: adnsio/setup-age-action@v1.2.0
+
+      - name: Load Fastlane secrets
+        env:
+          KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
+        run: |
+          printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+          cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
+            | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
+                     -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
+          rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
+
+      - name: Set up Python
+        if: steps.gate.outputs.stable == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Play keeps one in-progress release per track: a new staged production
+      # release would silently replace a rollout still in progress (v0.14.3
+      # replacing v0.14.2 at 50%, 2026-10-11). Fails closed if Play can't be read.
+      - name: Refuse to supersede an in-progress production rollout
+        if: steps.gate.outputs.stable == 'true'
+        env:
+          ALLOW_INPROGRESS_ROLLOUT: ${{ inputs.allow_inprogress_rollout }}
+        run: |
+          ARGS=()
+          if [ "$ALLOW_INPROGRESS_ROLLOUT" = "true" ]; then
+            echo "::warning::allow_inprogress_rollout=true: a staged production rollout in progress (or an unreadable Play track) will not block this release."
+            ARGS+=(--allow-inprogress)
+          fi
+          # Install failure falls through to the script, which fails closed
+          # (or warns with the override) when google-auth/requests are missing.
+          pip install --quiet google-auth requests || echo "::warning::pip install google-auth requests failed"
+          python3 scripts/check-production-rollout.py \
+            --credentials fastlane/api-8546008605074111507-287154-450dc77b365f.json \
+            "${ARGS[@]}"
 
       - name: Bump versionName in mobile/build.gradle
         run: |
@@ -140,18 +198,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
-
-      - uses: adnsio/setup-age-action@v1.2.0
-
-      - name: Load Fastlane secrets
-        env:
-          KEY_FASTLANE_API: ${{ secrets.KEY_FASTLANE_API }}
-        run: |
-          printf "$KEY_FASTLANE_API" > fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
-          cat fastlane/api-8546008605074111507-287154-450dc77b365f.json.age \
-            | age -d -i fastlane/api-8546008605074111507-287154-450dc77b365f.json.key \
-                     -o fastlane/api-8546008605074111507-287154-450dc77b365f.json
-          rm fastlane/api-8546008605074111507-287154-450dc77b365f.json.key
 
       - name: Update versionCode
         uses: Wandalen/wretry.action@v3.8.0_js_action
