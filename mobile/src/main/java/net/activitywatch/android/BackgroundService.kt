@@ -262,7 +262,13 @@ class BackgroundService : Service() {
             migrationSucceeded(result, WatcherAndroidBucketMigration.SUCCESS_PREFIX, "Watcher bucket")
             return
         }
-        val leftover = WatcherAndroidBucketMigration.legacyBucketIds(rustInterface.getBucketsJSON())
+        val buckets = try {
+            rustInterface.getBucketsJSON()
+        } catch (e: JSONException) {
+            Log.w(TAG, "Could not list buckets after watcher bucket migration; will retry on next start", e)
+            return
+        }
+        val leftover = WatcherAndroidBucketMigration.legacyBucketIds(buckets)
         if (WatcherAndroidBucketMigration.shouldMarkComplete(leftover)) {
             prefs.setWatcherAndroidBucketNamesMigrated()
         } else {
