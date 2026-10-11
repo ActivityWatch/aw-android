@@ -38,7 +38,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         AsyncBroadcast.launch(
             finish = { pendingResult?.finish() },
-            onFailure = { CategoryTimeWidgetUpdater.renderFallback(context, appWidgetManager, appWidgetIds) },
+            singleFlight = widgetWork,
+            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, appWidgetIds, it) },
         ) {
             CategoryTimeWidgetUpdater.updateWidgets(context, appWidgetManager, appWidgetIds)
         }
@@ -63,7 +64,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                 val pendingResult = goAsync()
                 AsyncBroadcast.launch(
                     finish = { pendingResult?.finish() },
-                    onFailure = { CategoryTimeWidgetUpdater.renderFallback(context, appWidgetManager, appWidgetIds) },
+                    singleFlight = widgetWork,
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, appWidgetIds, it) },
                 ) {
                     try {
                         // Await event persistence before updating the widget
@@ -80,6 +82,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                 Log.d(TAG, "Periodic update triggered by AlarmManager")
                 val pendingResult = goAsync()
                 AsyncBroadcast.launch(
+                    singleFlight = widgetWork,
                     finish = {
                         // Reschedule the next exact alarm, even if this update failed
                         try {
@@ -94,7 +97,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                         val ids = appWidgetManager.getAppWidgetIds(
                             ComponentName(context, CategoryTimeWidgetProvider::class.java)
                         )
-                        CategoryTimeWidgetUpdater.renderFallback(context, appWidgetManager, ids)
+                        CategoryTimeWidgetUpdater.onUpdateFailed(context, appWidgetManager, ids, it)
                     },
                 ) {
                     CategoryTimeWidgetUpdater.updateAllWidgets(context)
@@ -116,6 +119,9 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        /** Shared by every widget broadcast, so overrunning updates can't pile up. */
+        private val widgetWork = AsyncBroadcast.SingleFlight()
+
         /**
          * Show loading state - show spinner
          */

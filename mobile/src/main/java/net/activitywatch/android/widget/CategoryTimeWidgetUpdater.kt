@@ -18,6 +18,7 @@ import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import com.jakewharton.threetenabp.AndroidThreeTen
+import java.util.concurrent.TimeoutException
 import org.json.JSONArray
 import org.json.JSONObject
 import org.threeten.bp.LocalDate
@@ -115,8 +116,37 @@ object CategoryTimeWidgetUpdater {
     }
 
     /**
-     * Render the "no data yet" state, used when an update fails or overruns its budget.
-     * Does no datastore access, so it is safe to call when the datastore is the problem.
+     * Called when a widget broadcast's work failed or overran its budget.
+     *
+     * On a timeout the work is still running and will render data (or, if it fails, the
+     * "no data yet" state from [updateWidgets]), so only the loading spinner is hidden, via a
+     * partial update that can't overwrite whatever the work renders. Any other failure means
+     * the work has ended, so the "no data yet" state is rendered.
+     */
+    fun onUpdateFailed(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray,
+        failure: Throwable
+    ) {
+        if (failure is TimeoutException) {
+            for (appWidgetId in appWidgetIds) {
+                try {
+                    val views = RemoteViews(context.packageName, R.layout.widget_category_time)
+                    views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
+                    appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Could not hide the loading indicator on widget $appWidgetId", e)
+                }
+            }
+        } else {
+            renderFallback(context, appWidgetManager, appWidgetIds)
+        }
+    }
+
+    /**
+     * Render the "no data yet" state. Does no datastore access, so it is safe to call when
+     * the datastore is the problem.
      */
     fun renderFallback(
         context: Context,

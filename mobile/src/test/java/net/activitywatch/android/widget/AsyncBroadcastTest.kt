@@ -130,6 +130,68 @@ class AsyncBroadcastTest {
         assertTrue(uncaught.isEmpty())
     }
 
+    /** A fallback stuck in a slow `updateAppWidget` must not hold the broadcast open. */
+    @Test
+    fun blockedFallback_doesNotDelayFinish() = runBlocking {
+        val finished = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val start = System.nanoTime()
+        AsyncBroadcast.launch(
+            finish = { finished.countDown() },
+            budgetMs = 100,
+            fallbackBudgetMs = 100,
+            scope = scope(),
+            log = log,
+            onFailure = { release.await() },
+        ) { error("datastore not ready") }
+
+        assertTrue("broadcast not finished", finished.await(2, TimeUnit.SECONDS))
+        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+        assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
+        release.countDown()
+        assertTrue(uncaught.isEmpty())
+    }
+
+    /** Overrunning work that is stuck must not be started again by every later broadcast. */
+    @Test
+    fun singleFlight_laterBroadcastsJoinStuckWork_insteadOfStartingMore() = runBlocking {
+        val singleFlight = AsyncBroadcast.SingleFlight()
+        val release = CountDownLatch(1)
+        val started = AtomicInteger()
+        val finishCalls = AtomicInteger()
+        val jobs = (1..3).map {
+            AsyncBroadcast.launch(
+                finish = { finishCalls.incrementAndGet() },
+                budgetMs = 100,
+                singleFlight = singleFlight,
+                scope = scope(),
+                log = log,
+            ) {
+                started.incrementAndGet()
+                release.await()
+            }
+        }
+        jobs.forEach { it.join() }
+        assertEquals(1, started.get())
+        assertEquals(3, finishCalls.get())
+
+        // Once the stuck work ends, the next broadcast starts fresh work.
+        release.countDown()
+        val ran = AtomicInteger()
+        var attempts = 0
+        while (ran.get() == 0 && attempts++ < 50) {
+            AsyncBroadcast.launch(
+                finish = {},
+                budgetMs = 100,
+                singleFlight = singleFlight,
+                scope = scope(),
+                log = log,
+            ) { ran.incrementAndGet() }.join()
+        }
+        assertEquals(1, ran.get())
+        assertTrue(uncaught.isEmpty())
+    }
+
     @Test
     fun finishOnce_ignoresSecondCall() {
         val calls = AtomicInteger()
