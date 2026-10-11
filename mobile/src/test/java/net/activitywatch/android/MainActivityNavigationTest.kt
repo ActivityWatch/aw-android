@@ -63,6 +63,22 @@ class MainActivityNavigationTest {
     }
 
     @Test
+    fun back_closesSharedWebMenuBeforeWebViewHistory() {
+        assertEquals(
+            BackAction.CLOSE_WEB_MENU,
+            backAction(drawerOpen = false, webViewCanGoBack = true, webMenuOpen = true),
+        )
+        assertEquals(
+            BackAction.CLOSE_WEB_MENU,
+            backAction(drawerOpen = false, webViewCanGoBack = false, webMenuOpen = true),
+        )
+        assertEquals(
+            BackAction.CLOSE_DRAWER,
+            backAction(drawerOpen = true, webViewCanGoBack = true, webMenuOpen = true),
+        )
+    }
+
+    @Test
     fun back_walksWebViewHistoryBeforeFinishing() {
         assertEquals(BackAction.WEBVIEW_BACK, backAction(drawerOpen = false, webViewCanGoBack = true))
     }
