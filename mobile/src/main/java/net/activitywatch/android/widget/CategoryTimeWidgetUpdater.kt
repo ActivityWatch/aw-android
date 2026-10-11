@@ -73,109 +73,158 @@ object CategoryTimeWidgetUpdater {
     )
 
     /**
+     * Today's data for the widget, loaded once per update pass and rendered to every
+     * widget instance.
+     */
+    internal data class WidgetData(
+        val categories: List<Pair<String, Long>>,
+        val configuredColors: Map<String, String>,
+    )
+
+    /**
      * Update all instances of the widget
      */
     fun updateAllWidgets(context: Context) {
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val componentName = ComponentName(context, CategoryTimeWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            
-            Log.d(TAG, "Updating ${appWidgetIds.size} widget instances")
-            
-            for (appWidgetId in appWidgetIds) {
-                updateSingleWidget(context, appWidgetManager, appWidgetId)
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        val componentName = ComponentName(context, CategoryTimeWidgetProvider::class.java)
+        updateWidgets(context, appWidgetManager, appWidgetManager.getAppWidgetIds(componentName))
+    }
+
+    /**
+     * Load today's data once and render it to [appWidgetIds].
+     *
+     * This blocks (JNI into the Rust datastore), so call it off the main thread. If the
+     * datastore can't be read, every widget shows the "no data yet" state instead of throwing.
+     */
+    fun updateWidgets(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        Log.d(TAG, "Updating ${appWidgetIds.size} widget instances")
+        if (appWidgetIds.isEmpty()) return
+        val data = try {
+            loadData(context)
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not load widget data", e)
+            null
+        }
+        for (appWidgetId in appWidgetIds) {
+            render(context, appWidgetManager, appWidgetId, data)
+        }
+    }
+
+    /**
+     * Render the "no data yet" state, used when an update fails or overruns its budget.
+     * Does no datastore access, so it is safe to call when the datastore is the problem.
+     */
+    fun renderFallback(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        for (appWidgetId in appWidgetIds) {
+            render(context, appWidgetManager, appWidgetId, null)
+        }
+    }
+
+    private fun loadData(context: Context): WidgetData {
+        // Initialize ThreeTenABP timezone data (required for widgets running in background)
+        AndroidThreeTen.init(context)
+        val ri = RustInterface(context)
+        return WidgetData(
+            categories = getCategoryTimesToday(ri),
+            configuredColors = parseCategoryColors(ri.getSetting("classes")),
+        )
+    }
+
+    /**
+     * Render [data] to one widget, or the "no data yet" state when [data] is null.
+     * Never throws: a widget that can't be updated (e.g. removed meanwhile) is logged.
+     */
+    private fun render(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        data: WidgetData?
+    ) {
+        try {
+            appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, data))
+            Log.d(TAG, "Widget $appWidgetId updated (${if (data == null) "no data" else "${data.categories.size} categories"})")
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not update widget $appWidgetId", e)
+        }
+    }
+
+    private fun buildViews(context: Context, data: WidgetData?): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_category_time)
+        val categoryData = data?.categories.orEmpty()
+        val configuredColors = data?.configuredColors.orEmpty()
+        val totalMillis = categoryData.sumOf { it.second }
+
+        // Update total time (hours and minutes separately)
+        val totalSeconds = totalMillis / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        views.setTextViewText(R.id.widget_hours, hours.toString())
+        views.setTextViewText(R.id.widget_minutes, minutes.toString())
+
+        // Draw and set the bar chart
+        val barChartBitmap = createBarChartBitmap(context, categoryData, totalMillis, configuredColors)
+        views.setImageViewBitmap(R.id.widget_bar_chart, barChartBitmap)
+
+        // Update top 3 apps
+        val topApps = categoryData.take(3)
+        val dotColors = resolveBarColors(context, topApps.map { it.first }, configuredColors)
+
+        for (i in 0 until 3) {
+            if (i < topApps.size) {
+                val (name, duration) = topApps[i]
+                views.setTextViewText(appNameIds[i], name)
+                views.setTextViewText(appTimeIds[i], formatDurationShort(duration))
+                views.setInt(appDotIds[i], "setColorFilter", dotColors[i])
+                views.setViewVisibility(appRowIds[i], View.VISIBLE)
+            } else {
+                views.setViewVisibility(appRowIds[i], View.GONE)
             }
         }
 
-        /**
-         * Update a single widget instance
-         */
-        fun updateSingleWidget(
-            context: Context,
-            appWidgetManager: AppWidgetManager,
-            appWidgetId: Int
-        ) {
-            Log.d(TAG, "Updating widget $appWidgetId")
-
-            val views = RemoteViews(context.packageName, R.layout.widget_category_time)
-
-            try {
-                // Initialize ThreeTenABP timezone data (required for widgets running in background)
-                AndroidThreeTen.init(context)
-                
-                val ri = RustInterface(context)
-                val categoryData = getCategoryTimesToday(ri)
-                val totalMillis = categoryData.sumOf { it.second }
-
-                // Update total time (hours and minutes separately)
-                val totalSeconds = totalMillis / 1000
-                val hours = totalSeconds / 3600
-                val minutes = (totalSeconds % 3600) / 60
-                views.setTextViewText(R.id.widget_hours, hours.toString())
-                views.setTextViewText(R.id.widget_minutes, minutes.toString())
-
-                // Draw and set the bar chart
-                val configuredColors = parseCategoryColors(ri.getSetting("classes"))
-                val barChartBitmap = createBarChartBitmap(context, categoryData, totalMillis, configuredColors)
-                views.setImageViewBitmap(R.id.widget_bar_chart, barChartBitmap)
-
-                // Update top 3 apps
-                val topApps = categoryData.take(3)
-                val dotColors = resolveBarColors(context, topApps.map { it.first }, configuredColors)
-
-                for (i in 0 until 3) {
-                    if (i < topApps.size) {
-                        val (name, duration) = topApps[i]
-                        views.setTextViewText(appNameIds[i], name)
-                        views.setTextViewText(appTimeIds[i], formatDurationShort(duration))
-                        views.setInt(appDotIds[i], "setColorFilter", dotColors[i])
-                        views.setViewVisibility(appRowIds[i], View.VISIBLE)
-                    } else {
-                        views.setViewVisibility(appRowIds[i], View.GONE)
-                    }
-                }
-
-                // Update timestamp
-                val now = LocalDateTime.now()
-                val timestampFormatter = DateTimeFormatter.ofPattern("M/d, HH:mm")
-                views.setTextViewText(R.id.widget_timestamp, timestampFormatter.format(now))
-
-                Log.d(TAG, "Widget updated successfully with ${topApps.size} apps, total: ${hours}h ${minutes}m")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating widget", e)
-                views.setTextViewText(R.id.widget_hours, "0")
-                views.setTextViewText(R.id.widget_minutes, "0")
-            }
-
-            // Single tap on widget body → refresh
-            val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
-                action = ACTION_REFRESH
-            }
-            val refreshPendingIntent = PendingIntent.getBroadcast(
-                context,
-                0,
-                refreshIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_root, refreshPendingIntent)
-
-            // Open-app button → launch MainActivity
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val launchPendingIntent = PendingIntent.getActivity(
-                context,
-                2,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_open_button, launchPendingIntent)
-
-            // Ensure loading indicator is hidden
-            views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
-
-            appWidgetManager.updateAppWidget(appWidgetId, views)
+        if (data == null) {
+            views.setTextViewText(R.id.widget_timestamp, context.getString(R.string.widget_no_data_yet))
+        } else {
+            val now = LocalDateTime.now()
+            val timestampFormatter = DateTimeFormatter.ofPattern("M/d, HH:mm")
+            views.setTextViewText(R.id.widget_timestamp, timestampFormatter.format(now))
         }
+
+        // Single tap on widget body → refresh
+        val refreshIntent = Intent(context, CategoryTimeWidgetProvider::class.java).apply {
+            action = ACTION_REFRESH
+        }
+        val refreshPendingIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            refreshIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        views.setOnClickPendingIntent(R.id.widget_root, refreshPendingIntent)
+
+        // Open-app button → launch MainActivity
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val launchPendingIntent = PendingIntent.getActivity(
+            context,
+            2,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        views.setOnClickPendingIntent(R.id.widget_open_button, launchPendingIntent)
+
+        // Ensure loading indicator is hidden
+        views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
+        return views
+    }
 
         /**
          * Parse the aw-webui `classes` setting JSON into a map of top-level category
