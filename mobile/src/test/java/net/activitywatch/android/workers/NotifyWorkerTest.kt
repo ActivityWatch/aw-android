@@ -57,12 +57,12 @@ class NotifyWorkerTest {
     }
 
     @Test
-    fun alertsFromSetting_fallsBackWhenAllCanonicalAlertsAreMalformed() {
+    fun alertsFromSetting_returnsEmptyWhenAllCanonicalAlertsAreMalformed() {
         val alerts = alertsFromSetting(
             """{"alerts":[{"category":"Work","label":"Focus","positive":true}]}"""
         )
 
-        assertEquals("All", alerts[0].label)
+        assertEquals(emptyList<CategoryAlert>(), alerts)
     }
 
     @Test
@@ -74,7 +74,7 @@ class NotifyWorkerTest {
             ]}"""
         )
 
-        assertEquals("All", alerts[0].label)
+        assertEquals(emptyList<CategoryAlert>(), alerts)
     }
 
     @Test
@@ -90,9 +90,42 @@ class NotifyWorkerTest {
     }
 
     @Test
-    fun alertsFromSetting_fallsBackForMissingOrInvalidSetting() {
+    fun alertsFromSetting_preservesMissingSettingUntilMigration() {
         assertEquals("All", alertsFromSetting("null")[0].label)
-        assertEquals("All", alertsFromSetting("not-json")[0].label)
+        assertEquals("All", alertsFromSetting("")[0].label)
+        assertEquals("All", alertsFromSetting("   ")[0].label)
+    }
+
+    @Test
+    fun alertsFromSetting_explicitFalseSuppressesConfiguredAlerts() {
+        assertEquals(emptyList<CategoryAlert>(), alertsFromSetting(
+            """{"enabled":false,"alerts":[{"category":"Work","thresholds_minutes":[30]}]}"""
+        ))
+        assertEquals(emptyList<CategoryAlert>(), alertsFromSetting("""{"enabled":false}"""))
+    }
+
+    @Test
+    fun alertsFromSetting_explicitTruePreservesConfiguredAlerts() {
+        val alerts = alertsFromSetting(
+            """{"enabled":true,"alerts":[{"category":"Work","thresholds_minutes":[30]}]}"""
+        )
+        assertEquals(1, alerts.size)
+        assertEquals("Work", alerts[0].category)
+        assertEquals(listOf(30), alerts[0].thresholdMinutes)
+    }
+
+    @Test
+    fun alertsFromSetting_malformedConfigFailsClosed() {
+        for (value in listOf(
+            "not-json", "{}", "42", "true", "[null]",
+            """{"enabled":"true","alerts":[{"category":"Work","thresholds_minutes":[30]}]}""",
+            """{"enabled":null,"alerts":[{"category":"Work","thresholds_minutes":[30]}]}""",
+            """{"enabled":1,"alerts":[{"category":"Work","thresholds_minutes":[30]}]}""",
+            """{"enabled":true,"alerts":null}""",
+            """{"enabled":true,"alerts":[null]}"""
+        )) {
+            assertEquals(value, emptyList<CategoryAlert>(), alertsFromSetting(value))
+        }
     }
 
     @Test
