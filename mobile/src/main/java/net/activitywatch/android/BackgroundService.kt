@@ -170,7 +170,9 @@ class BackgroundService : Service() {
         // Watcher-bucket migration must follow hostname migration so IDs are stable first.
         val needsHostnameMigration = !prefs.hasMigratedHostname()
         val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
-        if ((needsHostnameMigration || needsWatcherBucketMigration) && !migrationsQueued) {
+        val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
+        if ((needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) &&
+            !migrationsQueued) {
             migrationsQueued = true
             CoroutineScope(Dispatchers.IO).launch {
                 val ri = awaitRustInterface() ?: return@launch
@@ -184,6 +186,9 @@ class BackgroundService : Service() {
                 }
                 if (needsWatcherBucketMigration) {
                     migrateWatcherAndroidTestBuckets(prefs, ri)
+                }
+                if (needsNotifyOptInMigration) {
+                    migrateNotifyOptIn(prefs, ri)
                 }
             }
         }
@@ -271,6 +276,34 @@ class BackgroundService : Service() {
                 "Watcher bucket migration left legacy bucket(s) $leftover; will retry on next start"
             )
         }
+    }
+
+    // Make the aw-notify enable flag explicit once, so the webui toggle shows what
+    // NotifyWorker actually does (ActivityWatch/activitywatch#1435).
+    private fun migrateNotifyOptIn(prefs: AWPreferences, ri: RustInterface) {
+        val value = net.activitywatch.android.workers.notifyOptInMigrationValue(
+            ri.getSetting("aw-notify"),
+            isUpgrade = isUpgradeInstall(),
+        )
+        if (value == null) {
+            prefs.setNotifyOptInMigrated()
+            return
+        }
+        val result = ri.setSetting("aw-notify", value)
+        Log.i(TAG, "aw-notify opt-in migration wrote $value: $result")
+        if (migrationSucceeded(result, "ok", "aw-notify opt-in")) {
+            prefs.setNotifyOptInMigrated()
+        }
+    }
+
+    // An update keeps firstInstallTime and bumps lastUpdateTime; a fresh install
+    // has them equal. On a lookup failure, keep existing behavior (alerts on).
+    private fun isUpgradeInstall(): Boolean = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        info.lastUpdateTime > info.firstInstallTime
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not read install times; treating as an upgrade", e)
+        true
     }
 
     private fun migrationSucceeded(result: String, successPrefix: String, name: String): Boolean {

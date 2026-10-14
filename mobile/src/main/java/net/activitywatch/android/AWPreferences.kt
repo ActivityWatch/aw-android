@@ -67,6 +67,14 @@ class AWPreferences(context: Context) {
             .apply()
     }
 
+    fun hasMigratedNotifyOptIn(): Boolean {
+        return sharedPreferences.getBoolean("hasMigratedNotifyOptIn", false)
+    }
+
+    fun setNotifyOptInMigrated() {
+        sharedPreferences.edit().putBoolean("hasMigratedNotifyOptIn", true).apply()
+    }
+
     fun hasRequestedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
     }

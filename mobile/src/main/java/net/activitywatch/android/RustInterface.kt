@@ -118,6 +118,7 @@ class RustInterface(context: Context? = null) {
     external fun query(query: String, timeperiods: String): String
     external fun androidQuery(timeperiods: String): String
     external fun getSetting(key: String): String
+    external fun setSetting(key: String, value: String): String
     external fun migrateHostname(hostname: String): String
     external fun migrateWatcherAndroidBucketNames(): String
 
