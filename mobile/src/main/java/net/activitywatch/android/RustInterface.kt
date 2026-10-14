@@ -49,6 +49,52 @@ internal fun probeServerPort(
         PortProbe.SOCKET_DENIED
     }
 
+/**
+ * The error in the response to a datastore write, or null if the write succeeded.
+ *
+ * A response is a failure when it is an `{"error": …}` object, or when it is missing:
+ * without a response nothing confirms that the write happened. Any other response is
+ * a success.
+ */
+internal fun writeErrorOf(response: String?): String? {
+    if (response == null) return "no response from the datastore"
+    if (!response.startsWith("{")) return null
+    return try {
+        JSONObject(response).opt("error") as? String
+    } catch (e: JSONException) {
+        null
+    }
+}
+
+/**
+ * Logs failed datastore writes: the first failure of a run, then how many failed once
+ * a write to the same bucket succeeds again.
+ *
+ * Only the start and the end of a run are logged: a write can come every few seconds,
+ * and a line for each failure would flood logcat.
+ *
+ * Runs are counted per bucket, so a success in one bucket does not end a run of
+ * failures in another.
+ */
+internal class WriteFailureLog(private val log: (String) -> Unit = { Log.w(TAG, it) }) {
+    private val failedInARow = HashMap<String, Int>()
+
+    // Synchronized so that one instance can be shared by writers on several threads.
+    @Synchronized
+    fun record(bucketId: String, response: String?) {
+        val error = writeErrorOf(response)
+        val failed = failedInARow[bucketId] ?: 0
+        if (error != null) {
+            if (failed == 0) log("Writes to bucket '$bucketId' are failing: $error")
+            failedInARow[bucketId] = failed + 1
+        } else if (failed > 0) {
+            failedInARow.remove(bucketId)
+            val writes = if (failed == 1) "write" else "writes"
+            log("Writes to bucket '$bucketId' succeed again after $failed failed $writes")
+        }
+    }
+}
+
 class RustInterface(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
@@ -104,6 +150,10 @@ class RustInterface(context: Context? = null) {
         // @Volatile so the check in startServerTask() is visible across threads
         // without requiring callers to be inside a synchronized block.
         @Volatile var serverStarted = false
+
+        // One for the whole process, like the datastore it reports on, so that a run of
+        // failures outlives the RustInterface instances that write during it.
+        private val writeFailures = WriteFailureLog()
     }
 
     private external fun initialize()
@@ -114,7 +164,8 @@ class RustInterface(context: Context? = null) {
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
-    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
+    // Null when the native side cannot build even its error object.
+    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String?
     external fun query(query: String, timeperiods: String): String
     external fun androidQuery(timeperiods: String): String
     external fun getSetting(key: String): String
@@ -227,7 +278,7 @@ class RustInterface(context: Context? = null) {
     ) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), pulsetime)
-        // Log.w(TAG, msg)
+        writeFailures.record(bucket_id, msg)
     }
 
     /**
@@ -243,7 +294,7 @@ class RustInterface(context: Context? = null) {
     fun insertEvent(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), 0.0)
-        Log.d(TAG, "insertEvent response: $msg")
+        writeFailures.record(bucket_id, msg)
     }
 
     fun getBucketsJSON(): JSONObject {
