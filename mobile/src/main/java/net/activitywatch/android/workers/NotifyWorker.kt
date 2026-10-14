@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.jakewharton.threetenabp.AndroidThreeTen
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
@@ -82,8 +83,8 @@ private fun parseAlertArray(alerts: JSONArray, legacy: Boolean): List<CategoryAl
 
 internal fun alertsFromSetting(json: String): List<CategoryAlert> {
     val value = json.trim()
-    // Missing settings retain pre-migration behavior. Switching existing installs
-    // to opt-in needs a reachable enable control and an explicit migration notice.
+    // Missing settings retain pre-migration behavior until
+    // [notifyOptInMigrationValue] has written an explicit flag.
     if (value.isEmpty() || value == "null") return DEFAULT_ALERTS
 
     return try {
@@ -94,11 +95,39 @@ internal fun alertsFromSetting(json: String): List<CategoryAlert> {
             // Do not coerce strings/numbers into an opt-in decision. Missing is
             // the legacy state; explicit false or an invalid flag fails closed.
             if (config.has("enabled") && config.opt("enabled") != true) return emptyList()
+            // Like aw-notify-rs, an enabled config without an alerts key uses the
+            // defaults. This is what the opt-in migration writes for upgrades.
+            if (config.opt("enabled") == true && !config.has("alerts")) return DEFAULT_ALERTS
             parseAlertArray(config.getJSONArray("alerts"), legacy = false)
         }
     } catch (e: Exception) {
         emptyList()
     }
+}
+
+/**
+ * The `aw-notify` setting to store once for the opt-in migration
+ * (ActivityWatch/activitywatch#1435), or null when nothing should be written.
+ *
+ * A missing setting becomes an explicit flag: upgraded installs keep their
+ * default-on alerts, fresh installs start disabled. An object with `alerts` but
+ * without `enabled` predates the flag and was being honored, so it is marked
+ * enabled. Objects without `alerts` previously failed closed and stay untouched,
+ * as do explicit flags, legacy arrays, and malformed values.
+ */
+internal fun notifyOptInMigrationValue(current: String, isUpgrade: Boolean): String? {
+    val value = current.trim()
+    if (value.isEmpty() || value == "null") {
+        return JSONObject().put("enabled", isUpgrade).toString()
+    }
+    if (!value.startsWith("{")) return null
+    val config = try {
+        JSONObject(value)
+    } catch (e: JSONException) {
+        return null
+    }
+    if (config.has("enabled") || !config.has("alerts")) return null
+    return config.put("enabled", true).toString()
 }
 
 internal fun parseStartOfDayHour(response: String): Int {
@@ -201,6 +230,13 @@ class NotifyWorker internal constructor(
 
     override fun doWork(): Result {
         Log.i(TAG, "Starting category time notification check")
+        // Service startup migrates settings asynchronously. Gate even previously
+        // scheduled workers so a missing setting cannot enable defaults before
+        // the fresh-install opt-out is successfully written.
+        if (!AWPreferences(applicationContext).hasMigratedNotifyOptIn()) {
+            Log.i(TAG, "Opt-in migration pending; retrying later")
+            return Result.retry()
+        }
         AndroidThreeTen.init(applicationContext)
         val backend = backend ?: RustNotifyBackend(applicationContext)
 
