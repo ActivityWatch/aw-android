@@ -25,10 +25,12 @@ object StagingReset {
      * side reports `{"success": true}`. Never throws: a failed reset must not
      * block the sync that follows it.
      *
-     * [LinkageError] is caught as well as [Exception] because a native library
-     * built without `resetStaging` throws [UnsatisfiedLinkError]; letting that
-     * escape would kill the sync executor before its callback clears
-     * `syncInFlight`, rejecting every later sync as "already in flight".
+     * [Throwable] (not just [Exception]) is caught because the sync executor
+     * only catches [Exception]; any [Error] escaping here would leave
+     * `syncInFlight` permanently set, rejecting every later sync as
+     * "already in flight". [UnsatisfiedLinkError] (a native lib built without
+     * `resetStaging`) and hypothetical JVM errors like [AssertionError] are both
+     * mapped to [Result.Failed] so the sync that follows still runs.
      */
     fun runOnce(isDone: () -> Boolean, markDone: () -> Unit, reset: () -> String): Result {
         if (isDone()) return Result.AlreadyDone
@@ -40,9 +42,7 @@ object StagingReset {
             } else {
                 Result.Failed(json.optString("error", "unknown error"))
             }
-        } catch (e: Exception) {
-            Result.Failed("${e.javaClass.simpleName}: ${e.message}")
-        } catch (e: LinkageError) {
+        } catch (e: Throwable) {
             Result.Failed("${e.javaClass.simpleName}: ${e.message}")
         }
     }

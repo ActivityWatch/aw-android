@@ -65,6 +65,15 @@ class StagingResetTest {
     }
 
     @Test
+    fun nonLinkageErrorDoesNotEscape() {
+        // Any Error (not just LinkageError) must not escape into the sync executor.
+        val prefs = Prefs()
+        val result = attempt(prefs) { throw AssertionError("unexpected JVM error") }
+        assertTrue(result is StagingReset.Result.Failed)
+        assertEquals(0, prefs.markCalls)
+    }
+
+    @Test
     fun prefKeyIsPerHostname() {
         assertEquals("stagingResetDone_poco_f8_ultra", StagingReset.prefKey("poco_f8_ultra"))
         assertNotEquals(StagingReset.prefKey("a"), StagingReset.prefKey("b"))
