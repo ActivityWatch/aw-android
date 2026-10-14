@@ -68,11 +68,11 @@ class MediaWatcher : NotificationListenerService() {
         Log.i(TAG, "MediaWatcher created")
         handler = android.os.Handler(handlerThread.looper)
 
-        // RustInterface construction and createBucketHelper() make blocking JNI/HTTP calls to the
-        // local aw-server (which may not be running yet at boot). Run them on the handlerThread so
-        // they never block the NotificationListenerService main thread. This is posted before the
-        // polling runnable and per-session callbacks (all on the same looper), so ri is initialized
-        // before the first poll; any event arriving earlier is dropped by the ri?. null-safe calls.
+        // RustInterface construction and createBucketHelper() can block for seconds, especially at
+        // boot. Run them on the handlerThread so they never block the NotificationListenerService
+        // main thread. This is posted before the polling runnable and per-session callbacks (all
+        // on the same looper), so ri is initialized before the first poll; any event arriving
+        // earlier is dropped by the ri?. null-safe calls.
         handler?.post {
             try {
                 val r = RustInterface(applicationContext)
