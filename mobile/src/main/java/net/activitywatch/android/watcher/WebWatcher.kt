@@ -70,6 +70,7 @@ class WebWatcher : AccessibilityService() {
             if (!executor.isShutdown) Log.w(TAG, "Datastore stalled; dropping a browser event")
         },
     )
+    private lateinit var audibleDetector: BrowserAudibleDetector
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -94,6 +95,7 @@ class WebWatcher : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
+        audibleDetector = BrowserAudibleDetector(this)
         // createBucketHelper() blocks on the datastore worker. Doing that on the
         // accessibility service's main thread produced "Executing service
         // WebWatcher" ANRs whenever the worker was busy (aw-android#261), so
@@ -138,11 +140,15 @@ class WebWatcher : AccessibilityService() {
                 try {
                     val browser = packageName!!
                     val newUrl = extractUrl(browser, event)
+                    val audible = audibleDetector.isAudible(browser)
 
                     if (newUrl == null) {
                         maybeDumpTree(browser)
+                        // Still on the previous url; only the audible state may have moved.
+                        handleAudible(browser, audible)
                     } else {
-                        handleUrl(newUrl, newBrowser = browser)
+                        // Also covers the same-url case: the tracker splits on an audible change.
+                        handleUrl(newUrl, newBrowser = browser, audible = audible)
                     }
                     when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
                         null -> {}
@@ -238,9 +244,16 @@ class WebWatcher : AccessibilityService() {
         }
     }
 
-    private fun handleUrl(newUrl : String?, newBrowser: String?) {
-        newUrl?.let { Log.i(TAG, "Url: $it, browser: $newBrowser") }
-        sessionTracker.handleUrl(newUrl, newBrowser)?.let { logBrowserEvent(it) }
+    private fun handleUrl(newUrl : String?, newBrowser: String?, audible: Boolean = false) {
+        newUrl?.let { Log.i(TAG, "Url: $it, browser: $newBrowser, audible: $audible") }
+        sessionTracker.handleUrl(newUrl, newBrowser, audible)?.let { logBrowserEvent(it) }
+    }
+
+    private fun handleAudible(browser: String, audible: Boolean) {
+        sessionTracker.handleAudible(browser, audible)?.let {
+            Log.i(TAG, "Audible changed to $audible; splitting session")
+            logBrowserEvent(it)
+        }
     }
 
     private fun handleWindowTitle(newWindowTitle: String) {
@@ -254,7 +267,7 @@ class WebWatcher : AccessibilityService() {
             .put("url", session.url)
             .put("browser", session.browser)
             .put("title", session.title)
-            .put("audible", false) // TODO
+            .put("audible", session.audible)
             .put("incognito", false) // TODO
 
         Log.i(TAG, "Registered event: $data")
