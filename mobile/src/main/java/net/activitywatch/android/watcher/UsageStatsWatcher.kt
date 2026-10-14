@@ -27,9 +27,6 @@ import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
 import java.net.URL
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -49,7 +46,6 @@ class UsageStatsWatcher constructor(val context: Context) {
             logTag = TAG,
         ) { RustInterface(context.applicationContext) }
     }
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
     private val sessionWatcher by lazy { SessionEventWatcher(context) }
 
     var lastUpdated: Instant? = null
@@ -183,14 +179,11 @@ class UsageStatsWatcher constructor(val context: Context) {
 
         return if(lastEvent != null) {
             val timestampString = lastEvent.getString("timestamp")
-            // Instant.parse("2014-10-23T00:35:14.800Z").toEpochMilli()
-            try {
-                val timeCreatedDate = isoFormatter.parse(timestampString)
-                DateTimeUtils.toInstant(timeCreatedDate)
-            } catch (e: ParseException) {
-                Log.e(TAG, "Unable to parse timestamp: $timestampString")
-                null
-            }
+            parseAwTimestamp(timestampString)
+                ?: run {
+                    Log.e(TAG, "Unable to parse timestamp: $timestampString")
+                    null
+                }
         } else {
             null
         }
