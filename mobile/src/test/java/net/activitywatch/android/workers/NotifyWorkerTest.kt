@@ -146,6 +146,17 @@ class NotifyWorkerTest {
     }
 
     @Test
+    fun notifyOptInMigration_keepsObjectsWithoutAlertsFailClosed() {
+        for (before in listOf("{}", """{"unrelated":true}""")) {
+            for (isUpgrade in listOf(true, false)) {
+                val migrated = notifyOptInMigrationValue(before, isUpgrade)
+                assertNull(before, migrated)
+                assertEquals(emptyList<CategoryAlert>(), alertsFromSetting(migrated ?: before))
+            }
+        }
+    }
+
+    @Test
     fun notifyOptInMigration_leavesExplicitLegacyAndMalformedValuesAlone() {
         for (value in listOf(
             """{"enabled":false}""",

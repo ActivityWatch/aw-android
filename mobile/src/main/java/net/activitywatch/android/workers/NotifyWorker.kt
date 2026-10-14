@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.jakewharton.threetenabp.AndroidThreeTen
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
@@ -109,9 +110,10 @@ internal fun alertsFromSetting(json: String): List<CategoryAlert> {
  * (ActivityWatch/activitywatch#1435), or null when nothing should be written.
  *
  * A missing setting becomes an explicit flag: upgraded installs keep their
- * default-on alerts, fresh installs start disabled. An object without `enabled`
- * predates the flag and was being honored, so it is marked enabled. Explicit
- * flags, legacy arrays, and malformed values are left untouched.
+ * default-on alerts, fresh installs start disabled. An object with `alerts` but
+ * without `enabled` predates the flag and was being honored, so it is marked
+ * enabled. Objects without `alerts` previously failed closed and stay untouched,
+ * as do explicit flags, legacy arrays, and malformed values.
  */
 internal fun notifyOptInMigrationValue(current: String, isUpgrade: Boolean): String? {
     val value = current.trim()
@@ -124,7 +126,7 @@ internal fun notifyOptInMigrationValue(current: String, isUpgrade: Boolean): Str
     } catch (e: JSONException) {
         return null
     }
-    if (config.has("enabled")) return null
+    if (config.has("enabled") || !config.has("alerts")) return null
     return config.put("enabled", true).toString()
 }
 
@@ -228,6 +230,13 @@ class NotifyWorker internal constructor(
 
     override fun doWork(): Result {
         Log.i(TAG, "Starting category time notification check")
+        // Service startup migrates settings asynchronously. Gate even previously
+        // scheduled workers so a missing setting cannot enable defaults before
+        // the fresh-install opt-out is successfully written.
+        if (!AWPreferences(applicationContext).hasMigratedNotifyOptIn()) {
+            Log.i(TAG, "Opt-in migration pending; retrying later")
+            return Result.retry()
+        }
         AndroidThreeTen.init(applicationContext)
         val backend = backend ?: RustNotifyBackend(applicationContext)
 
