@@ -109,6 +109,7 @@ class SessionEventWatcher(val context: Context) {
             return 0
         }
         Log.i(TAG, "Processing session events...")
+        ScreenStateWatcher(context).sendSinceLastStored(ri)
 
         // Create bucket for session events
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
