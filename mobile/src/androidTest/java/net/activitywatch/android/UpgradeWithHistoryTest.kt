@@ -88,6 +88,11 @@ class UpgradeWithHistoryTest {
         context.getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean("isFirstTime", false)
             .putBoolean("hasMigratedHostname", true)
+            // Distinct from hasMigratedHostname: without this, startup opens sqlite.db
+            // from Java to rewrite bucket hostnames while the rust worker is switching
+            // journal_mode to WAL. On this 17MB seed that races SQLITE_BUSY, the worker
+            // panics, and events/count stays 500 for the rest of the test.
+            .putString("sanitizedHostnameMigratedTo", hostname)
             .putBoolean("hasMigratedWatcherAndroidBucketNames", false)
             .putBoolean("hasRequestedNotificationPermission", true)
             .commit()
@@ -182,28 +187,38 @@ class UpgradeWithHistoryTest {
             )
 
             val insert = db.compileStatement("INSERT INTO events(bucketrow, starttime, endtime, data) VALUES (?, ?, ?, ?)")
-            val data = """{"app":"com.android.chrome","package":"com.android.chrome","classname":"x"}"""
-            // 2024-01-01T00:00:00Z in nanoseconds; events are back to back and disjoint.
-            val start = 1_704_067_200L * 1_000_000_000L
-            db.beginTransaction()
             try {
-                for (i in 0 until LEGACY_EVENTS) {
-                    val s = start + i * EVENT_NS
-                    bind(insert, 1, s, s + EVENT_NS - 1, data)
+                val data = """{"app":"com.android.chrome","package":"com.android.chrome","classname":"x"}"""
+                // 2024-01-01T00:00:00Z in nanoseconds; events are back to back and disjoint.
+                val start = 1_704_067_200L * 1_000_000_000L
+                db.beginTransaction()
+                try {
+                    for (i in 0 until LEGACY_EVENTS) {
+                        val s = start + i * EVENT_NS
+                        bind(insert, 1, s, s + EVENT_NS - 1, data)
+                    }
+                    val cutover = start + LEGACY_EVENTS * EVENT_NS
+                    bind(insert, 1, cutover - EVENT_NS / 2, cutover + EVENT_NS / 2, data)
+                    for (i in 0 until DESTINATION_EVENTS) {
+                        val s = cutover + i * EVENT_NS
+                        bind(insert, 2, s, s + EVENT_NS - 1, data)
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
                 }
-                val cutover = start + LEGACY_EVENTS * EVENT_NS
-                bind(insert, 1, cutover - EVENT_NS / 2, cutover + EVENT_NS / 2, data)
-                for (i in 0 until DESTINATION_EVENTS) {
-                    val s = cutover + i * EVENT_NS
-                    bind(insert, 2, s, s + EVENT_NS - 1, data)
-                }
-                db.setTransactionSuccessful()
             } finally {
-                db.endTransaction()
+                // SQLiteStatement holds a SQLiteClosable ref on the database.
+                // db.close() only drops one ref, so an unclosed statement keeps
+                // the Java connection alive. rust then panics on BEGIN EXCLUSIVE
+                // for the v6 index (`database is locked`) and events/count stays 500.
+                insert.close()
             }
         } finally {
             db.close()
         }
+        File(file.path + "-wal").delete()
+        File(file.path + "-shm").delete()
         Log.i(TAG, "Seeded ${file.length()} bytes of history into ${file.path}")
     }
 

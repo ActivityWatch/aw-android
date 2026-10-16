@@ -41,11 +41,16 @@ internal fun AppCompatActivity.applySystemBarAppearance(darkContent: Boolean) {
     findViewById<ViewGroup>(android.R.id.content).getChildAt(0)?.setBackgroundColor(color)
 }
 
-/** Call after setContentView. The activity root owns safe areas for all its children. */
-internal fun AppCompatActivity.applySafeWindowInsets() {
-    // Native settings/onboarding stay light even when the device is in dark mode.
-    // MainActivity overrides this once the embedded web UI reports its scheme.
-    applySystemBarAppearance(darkContent = false)
+/**
+ * Call after setContentView. The activity root owns safe areas for all its children.
+ *
+ * @param followNightMode when true, mirrors the system night mode instead of forcing
+ *   light; pass true for native screens whose layouts use DayNight theme attributes
+ *   (e.g. SyncSettingsActivity). Default false keeps the existing behaviour for
+ *   activities that host the web UI (MainActivity overrides later).
+ */
+internal fun AppCompatActivity.applySafeWindowInsets(followNightMode: Boolean = false) {
+    applySystemBarAppearance(darkContent = followNightMode && isSystemNightMode())
     val root = findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
     val left = root.paddingLeft
     val top = root.paddingTop

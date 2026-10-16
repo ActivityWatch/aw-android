@@ -88,19 +88,27 @@ internal fun formatNextSyncStatus(
  * transferred everything — the failure mode of a boolean-only status.
  */
 internal fun formatSyncDetail(status: SyncStatus, isPushOnlyDevice: Boolean = false): String {
-    val peers = status.peersImported + status.peersSkipped + status.peersFailed
+    val peerCount = status.peersImported + status.peersSkipped + status.peersFailed
     val parts = mutableListOf("pulled ${status.eventsPulled}, pushed ${status.eventsPushed}")
-    if (peers > 0) {
-        var peerText = "peers ${status.peersImported}/$peers imported"
+    if (peerCount > 0) {
+        var peerText = "peers ${status.peersImported}/$peerCount imported"
         if (status.peersSkipped > 0) peerText += ", ${status.peersSkipped} skipped"
         if (status.peersFailed > 0) peerText += ", ${status.peersFailed} failed"
+        // Append per-peer hostnames when available (requires aw-server-rust >= SyncReport JNI).
+        // Show all imported peers; for failed peers prefix "!" to distinguish without extra prose.
+        val importedHosts = status.peers.filter { it.outcome == "imported" }.map { it.hostname }
+        val failedHosts = status.peers.filter { it.outcome == "failed" }.map { "!${it.hostname}" }
+        val namedHosts = importedHosts + failedHosts
+        if (namedHosts.isNotEmpty()) {
+            peerText += " (${namedHosts.joinToString(", ")})"
+        }
         parts += peerText
     }
     val line = parts.joinToString(" · ")
     // The "zero peers in a configured sync dir" warning is a desktop diagnostic
     // (aw-server-rust#687) — not meaningful on Android where pull is a no-op by
     // construction (SAF mirror is outbound-only until sync v2).
-    val warnings = if (isPushOnlyDevice) status.warnings.filter { "zero peers" !in it } else status.warnings
+    val warnings = if (isPushOnlyDevice) status.warnings.filter { "zero peers" !in it.lowercase() } else status.warnings
     if (warnings.isEmpty()) return line
     return (listOf(line) + warnings).joinToString("\n")
 }
@@ -188,7 +196,7 @@ class SyncSettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sync_settings)
-        applySafeWindowInsets()
+        applySafeWindowInsets(followNightMode = true)
 
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)

@@ -12,10 +12,10 @@ android {
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
-        versionName '0.14.2'
+        versionName '0.14.4b1'
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 46
+        versionCode 49
 
         // Default server port; overridden per product flavor below. Threaded
         // through BuildConfig so a "research" build can run side by side with
@@ -110,6 +110,10 @@ android {
         viewBinding true
         buildConfig true
     }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -127,12 +131,15 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'androidx.webkit:webkit:1.12.1'
 
     implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.4.9'
 
     testImplementation "junit:junit:4.13.2"
     testImplementation 'org.json:json:20231013'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'androidx.work:work-testing:2.9.1'
     androidTestImplementation "androidx.test.ext:junit-ktx:$extJUnitVersion"
     androidTestImplementation "androidx.test:runner:$androidXTestVersion"
     androidTestImplementation "androidx.test:rules:$androidXTestVersion"

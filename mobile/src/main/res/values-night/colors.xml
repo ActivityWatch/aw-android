@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Do not override default_text_color here. Native Auth/Sync/Onboarding
-         keep light chrome via applySafeWindowInsets(); a night white text
-         color would be unreadable on that background (aw-android#301 P1). -->
+    <!-- Do not override default_text_color here. Auth and Onboarding activities
+         keep light chrome via applySafeWindowInsets(followNightMode = false);
+         a night white text color would be unreadable on that background
+         (aw-android#301 P1). SyncSettingsActivity uses followNightMode = true
+         and therefore gets a dark background in night mode — its DayNight theme
+         attributes resolve to white text automatically, so no override is
+         needed here for that screen either. -->
 
     <!-- Widget theme colors (dark mode overrides) -->
     <color name="widget_background">#2A2A2A</color>

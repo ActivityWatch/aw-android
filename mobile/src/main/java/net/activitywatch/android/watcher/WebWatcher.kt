@@ -1,7 +1,13 @@
 package net.activitywatch.android.watcher
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -51,6 +57,25 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+    private val titleGate = TitleLookupGate()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    // The scheduled follow-up lookup, the browser it is for and when it runs (uptime ms).
+    private class TitleFollowUp(val browser: String, val dueAt: Long, val runnable: Runnable)
+    private var titleFollowUp: TitleFollowUp? = null
+
+    // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
+    // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
+    // the createBucketHelper ANRs (aw-android#261). One thread keeps events in order.
+    // The queue is bounded so a long datastore stall can't grow it without limit; past
+    // MAX_PENDING_WRITES new events are dropped (and logged) rather than blocking this thread.
+    private val writer = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue(MAX_PENDING_WRITES),
+        { r -> Thread(r, "WebWatcher-writer") },
+        { _, executor ->
+            if (!executor.isShutdown) Log.w(TAG, "Datastore stalled; dropping a browser event")
+        },
+    )
 
     // Applies stripProtocol uniformly to whatever extractor matched, so the logged url is
     // formatted identically no matter which browser/view-variant produced it.
@@ -128,9 +153,10 @@ class WebWatcher : AccessibilityService() {
 
             event.source?.let { source ->
                 try {
-                    findWebView(source)?.let { webView ->
-                        handleWindowTitle(webView.text.toString())
-                        if (webView !== source) webView.recycle()
+                    when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
+                        null -> {}
+                        0L -> lookUpTitle(source)
+                        else -> scheduleTitleLookup(browser, delay)
                     }
                 } finally {
                     source.recycle()
@@ -145,6 +171,40 @@ class WebWatcher : AccessibilityService() {
 
     private fun shouldIgnoreEvent(event: AccessibilityEvent) =
         event.packageName == "com.android.systemui"
+
+    // Runs a lookup that was skipped by the gate once it is allowed, so a title that
+    // arrives on a skipped event (with the page quiet afterwards) is still captured.
+    // One follow-up at a time: a pending one for the same browser that runs no later
+    // already covers this event. One that runs later (a 5s recheck while a new page needs
+    // its 500ms retry) or is for a browser the user has left is replaced.
+    private fun scheduleTitleLookup(browser: String, delayMs: Long) {
+        val dueAt = SystemClock.uptimeMillis() + delayMs
+        titleFollowUp?.let { pending ->
+            if (keepPendingTitleFollowUp(pending.browser, pending.dueAt, browser, dueAt)) return
+            mainHandler.removeCallbacks(pending.runnable)
+        }
+        val followUp = Runnable {
+            titleFollowUp = null
+            if (sessionTracker.currentBrowser != browser) return@Runnable
+            if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@Runnable
+            val root = rootInActiveWindow ?: return@Runnable
+            try {
+                // A fresh tree: the skipped event's nodes have been recycled by now.
+                if (root.packageName?.toString() == browser) lookUpTitle(root)
+            } finally {
+                root.recycle()
+            }
+        }
+        titleFollowUp = TitleFollowUp(browser, dueAt, followUp)
+        mainHandler.postAtTime(followUp, dueAt)
+    }
+
+    private fun lookUpTitle(from: AccessibilityNodeInfo) {
+        findWebView(from)?.let { webView ->
+            handleWindowTitle(webView.text.toString())
+            if (webView !== from) webView.recycle()
+        }
+    }
 
     // TODO(maintainer): this never finds a match for Firefox, so its page title is never
     // captured (logged events show title:""). Confirmed live on-device (2026-07-01, Fenix,
@@ -207,12 +267,24 @@ class WebWatcher : AccessibilityService() {
             .put("incognito", false) // TODO
 
         Log.i(TAG, "Registered event: $data")
-        ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        writer.execute {
+            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+        }
     }
 
     override fun onInterrupt() {}
 
+    override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        // Lets already-queued events finish writing.
+        writer.shutdown()
+        super.onDestroy()
+    }
+
     companion object {
+        // Each queued write is one completed page visit, so this covers a long stall.
+        private const val MAX_PENDING_WRITES = 256
+
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
             "com.brave.browser",

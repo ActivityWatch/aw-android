@@ -42,61 +42,18 @@ class BackgroundService : Service() {
         const val START_ORIGIN_SETTINGS = "settings"
         const val START_ORIGIN_SYSTEM_RESTART = "system-restart"
 
-        // How long the queued hostname rewrite waits for the server task to exit
-        // before giving up (the next service start retries).
-        private const val SERVER_EXIT_POLL_MS = 1_000L
-
-        // How long cancelQueuedHostnameRewrite() waits for the interrupted rewrite
-        // thread to finish. The interrupt wakes the poll sleep immediately, so this
-        // only needs to cover the poll-wake plus the thread's finally block —
-        // milliseconds. It must NOT be long: onDestroy runs on the main thread, and
-        // the only case where the join would wait longer is the thread being
-        // mid-SQLite-rewrite — there interrupt() cannot cancel the transaction, and
-        // the right outcome is to let it finish in the background (it completes the
-        // rewrite and sets the preference itself), not to stall teardown for it.
-        private const val CANCEL_JOIN_MS = 500L
-
-        // Only one deferred bucket-hostname rewrite may be queued per process. The
-        // guard is static because Android recreates the service instance on every
-        // full start; an instance-level flag would let each recreation stack
-        // another polling thread that later races to rewrite the same database.
-        @Volatile
-        private var hostnameRewriteQueued = false
-
-        @Volatile
-        private var hostnameRewriteThread: Thread? = null
-
-        // Static so the deferred rewrite thread — which outlives the service
-        // instance that queued it — and a recreated instance's server start are
-        // serialized on the same monitor. An instance-level lock would let a new
-        // instance open the database while the old thread is still rewriting it.
+        // Serializes the sync-folder migration with the server start, across service
+        // instances (Android recreates the service on every full start).
         val sanitizedMigrationLock = Any()
-
-        fun cancelQueuedHostnameRewrite() {
-            val thread = hostnameRewriteThread ?: return
-            thread.interrupt()
-            // Bounded join: Android can recreate the service and run
-            // migrateSanitizedHostnameIdentity() before the interrupted thread's
-            // finally block clears hostnameRewriteQueued. The guard is shared via
-            // the companion object, so the recreated start would see it set, skip
-            // queueing, and miss the rewrite until another full start (which
-            // Android does not guarantee). Joining here ensures the flag is
-            // settled before a recreated instance runs the migration. If the
-            // timeout lapses the thread is mid-rewrite (it will complete and set
-            // the preference itself), never wedged in its poll loop — the poll
-            // wakes on interrupt immediately.
-            try {
-                thread.join(CANCEL_JOIN_MS)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-        }
     }
 
 
 
     private lateinit var syncScheduler: SyncScheduler
-    private lateinit var rustInterface: RustInterface
+    // RustInterface construction loads libaw_server.so and calls the JNI initialize,
+    // which can take seconds; doing it in onCreate blocked the main thread (the class of
+    // hang fixed for the watchers in #262). Every use is already on an IO coroutine.
+    private lateinit var rustInterface: OffThreadInit<RustInterface>
 
     // Becomes true after the first full onStartCommand() completes (server started,
     // workers scheduled, etc.). Guards against ACTION_SYNC_ENABLED_CHANGED skipping
@@ -139,7 +96,9 @@ class BackgroundService : Service() {
             stopSelf()
             return
         }
-        rustInterface = RustInterface(this)
+        rustInterface = OffThreadInit(threadName = "BackgroundService-init", logTag = TAG) {
+            RustInterface(applicationContext)
+        }
         syncScheduler = SyncScheduler(this)
     }
 
@@ -175,13 +134,16 @@ class BackgroundService : Service() {
         ensureDashboardApiKey(this)
 
         val prefs = AWPreferences(this)
-        // The sanitized-hostname migration traverses the sync tree and opens
-        // sqlite.db for a write transaction — doing that synchronously on the
-        // service main thread can ANR startup on a large sync tree or a busy
-        // database (same class as the #262 startup hang). Run it on IO and
-        // sequence the server start after it so the server never opens the
-        // database before the rewrite has completed or explicitly deferred.
+        // The sync-folder migration traverses the sync tree, which can ANR startup
+        // on a large tree if done on the service main thread (same class as the
+        // #262 startup hang). Run it on IO and start the server after it. The
+        // bucket-hostname rewrite in sqlite.db happens earlier, at process start
+        // (DatastoreStartup), because it must finish before *anything* opens the
+        // datastore, not just the server.
         CoroutineScope(Dispatchers.IO).launch {
+            // Awaited outside the lock: construction does not open the database, so it
+            // need not be ordered against the migration.
+            val ri = awaitRustInterface() ?: return@launch
             synchronized(sanitizedMigrationLock) {
                 // onDestroy can run on the main thread as soon as onStartCommand
                 // returns, so the service may already be gone by the time this
@@ -195,11 +157,11 @@ class BackgroundService : Service() {
                     Log.i(TAG, "Service destroyed while the server start was waiting; skipping")
                     return@launch
                 }
-                migrateSanitizedHostnameIdentity(prefs)
+                migrateSanitizedSyncFolders()
                 // Under the same lock as the migration so overlapping
                 // onStartCommand invocations and the deferred rewrite thread
                 // can never interleave with the server opening the database.
-                rustInterface.startServerTask()
+                ri.startServerTask()
             }
         }
 
@@ -208,19 +170,25 @@ class BackgroundService : Service() {
         // Watcher-bucket migration must follow hostname migration so IDs are stable first.
         val needsHostnameMigration = !prefs.hasMigratedHostname()
         val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
-        if ((needsHostnameMigration || needsWatcherBucketMigration) && !migrationsQueued) {
+        val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
+        if ((needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) &&
+            !migrationsQueued) {
             migrationsQueued = true
             CoroutineScope(Dispatchers.IO).launch {
+                val ri = awaitRustInterface() ?: return@launch
                 if (needsHostnameMigration) {
-                    val hostname = rustInterface.getDeviceName(this@BackgroundService)
-                    val result = rustInterface.migrateHostname(hostname)
+                    val hostname = ri.getDeviceName(this@BackgroundService)
+                    val result = ri.migrateHostname(hostname)
                     Log.i(TAG, "Hostname migration result: $result")
                     if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
                         prefs.setHostnameMigrated()
                     }
                 }
                 if (needsWatcherBucketMigration) {
-                    migrateWatcherAndroidTestBuckets(prefs)
+                    migrateWatcherAndroidTestBuckets(prefs, ri)
+                }
+                if (needsNotifyOptInMigration) {
+                    migrateNotifyOptIn(prefs, ri)
                 }
             }
         }
@@ -247,10 +215,10 @@ class BackgroundService : Service() {
     }
 
     /**
-     * Rewrite unsanitized bucket hostnames and fold leftover sync folders before
-     * the datastore worker opens sqlite.db. Must run before [startServerTask].
+     * Fold leftover sync folders named after legacy (unsanitized) hostnames into the
+     * current one. Bucket hostnames in sqlite.db are rewritten by [DatastoreStartup].
      */
-    private fun migrateSanitizedHostnameIdentity(prefs: AWPreferences) {
+    private fun migrateSanitizedSyncFolders() {
         val current = deviceHostname(this)
         val legacy = legacyDeviceHostnames(this)
 
@@ -273,98 +241,19 @@ class BackgroundService : Service() {
                 )
             }
         }
-
-        if (prefs.sanitizedHostnameMigratedTo() == current) return
-        val dbFile = File(filesDir, "sqlite.db")
-        if (!dbFile.isFile) {
-            prefs.setSanitizedHostnameMigratedTo(current)
-            return
-        }
-        if (RustInterface.serverStarted) {
-            // The datastore worker owns sqlite.db while the server runs; a raw
-            // rewrite under it is unsafe. Queue the rewrite for when the server
-            // task exits instead of skipping silently — a silent skip here would
-            // leave the preference unset and the rewrite would never converge
-            // (every later start sees serverStarted true again).
-            Log.i(TAG, "Datastore already open; queueing bucket hostname rewrite until the server task exits")
-            queueHostnameRewriteAfterServerExit(prefs, dbFile, current, legacy)
-            return
-        }
-        val updated =
-            SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(dbFile, current, legacy)
-        if (updated >= 0) {
-            prefs.setSanitizedHostnameMigratedTo(current)
-        }
     }
 
-    private fun queueHostnameRewriteAfterServerExit(
-        prefs: AWPreferences,
-        dbFile: File,
-        current: String,
-        legacy: List<String>,
-    ) {
-        if (hostnameRewriteQueued) {
-            val existing = hostnameRewriteThread
-            if (existing?.isAlive == true) {
-                Log.i(TAG, "Hostname rewrite already queued; not queueing another")
-                return
-            }
-            // Stale guard: the owning thread is gone without having cleared the
-            // flag (defensive — the finally block clears it, but a lapsed cancel
-            // join must not leave the rewrite permanently blocked). Reset and
-            // queue a fresh rewrite.
-            Log.w(TAG, "Hostname rewrite guard stale (owner thread not alive); re-queueing")
-            hostnameRewriteQueued = false
+    private fun awaitRustInterface(): RustInterface? =
+        try {
+            rustInterface.await()
+        } catch (e: Exception) {
+            // Previously this failure crashed the service in onCreate; log it and skip the
+            // work that needs the native library.
+            Log.e(TAG, "RustInterface failed to initialize", e)
+            null
         }
-        hostnameRewriteQueued = true
-        hostnameRewriteThread = Thread {
-            try {
-                // No wait bound: a long-running background service may keep the
-                // server task alive for days, and a bounded poll would time out
-                // with the rewrite permanently deferred (every later start sees
-                // serverStarted true again). The server task exits when the
-                // service is destroyed (or the process dies); onDestroy
-                // interrupts this thread so teardown does not leave it polling,
-                // and the unset preference makes the next start re-queue it.
-                try {
-                    while (RustInterface.serverStarted) {
-                        Thread.sleep(SERVER_EXIT_POLL_MS)
-                    }
-                } catch (_: InterruptedException) {
-                    return@Thread
-                }
-                synchronized(sanitizedMigrationLock) {
-                    // Re-check under the lock: the server start is serialized on
-                    // the same monitor, so a start that raced past the poll loop
-                    // cannot open the database while the rewrite runs.
-                    if (RustInterface.serverStarted) {
-                        Log.i(TAG, "Server started while rewrite was queued; deferring to the next start")
-                        return@Thread
-                    }
-                    val updated =
-                        SanitizedHostnameMigration.rewriteBucketHostnamesInDatabase(
-                            dbFile,
-                            current,
-                            legacy,
-                        )
-                    if (updated >= 0) {
-                        prefs.setSanitizedHostnameMigratedTo(current)
-                    }
-                }
-            } finally {
-                // Clear the guard whether the rewrite ran, failed (a later start
-                // retries), or the thread was interrupted before the server exited.
-                hostnameRewriteThread = null
-                hostnameRewriteQueued = false
-            }
-        }.apply {
-            name = "sanitized-hostname-rewrite"
-            isDaemon = true
-            start()
-        }
-    }
 
-    private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences) {
+    private fun migrateWatcherAndroidTestBuckets(prefs: AWPreferences, rustInterface: RustInterface) {
         // Older production releases wrote activity into aw-watcher-android-test.
         // The JNI is the only caller of migrate_test_bucket_names(); shipping the
         // Rust function alone does nothing until this path runs.
@@ -387,6 +276,34 @@ class BackgroundService : Service() {
                 "Watcher bucket migration left legacy bucket(s) $leftover; will retry on next start"
             )
         }
+    }
+
+    // Make the aw-notify enable flag explicit once, so the webui toggle shows what
+    // NotifyWorker actually does (ActivityWatch/activitywatch#1435).
+    private fun migrateNotifyOptIn(prefs: AWPreferences, ri: RustInterface) {
+        val value = net.activitywatch.android.workers.notifyOptInMigrationValue(
+            ri.getSetting("aw-notify"),
+            isUpgrade = isUpgradeInstall(),
+        )
+        if (value == null) {
+            prefs.setNotifyOptInMigrated()
+            return
+        }
+        val result = ri.setSetting("aw-notify", value)
+        Log.i(TAG, "aw-notify opt-in migration wrote $value: $result")
+        if (migrationSucceeded(result, "ok", "aw-notify opt-in")) {
+            prefs.setNotifyOptInMigrated()
+        }
+    }
+
+    // An update keeps firstInstallTime and bumps lastUpdateTime; a fresh install
+    // has them equal. On a lookup failure, keep existing behavior (alerts on).
+    private fun isUpgradeInstall(): Boolean = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        info.lastUpdateTime > info.firstInstallTime
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not read install times; treating as an upgrade", e)
+        true
     }
 
     private fun migrationSucceeded(result: String, successPrefix: String, name: String): Boolean {
@@ -450,7 +367,6 @@ class BackgroundService : Service() {
     override fun onDestroy() {
         Log.i(TAG, "BackgroundService destroyed")
         serviceDestroyed = true
-        cancelQueuedHostnameRewrite()
         if (::syncScheduler.isInitialized) syncScheduler.stop()
         super.onDestroy()
     }
