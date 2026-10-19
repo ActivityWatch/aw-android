@@ -42,8 +42,6 @@ class SessionParser(private val context: Context) {
 
         // Session limits
         private const val MAX_ORPHANED_SESSION_DURATION = 5 * 60 * 1000L // 5 minutes for sessions without proper end events
-        private const val MAX_REASONABLE_SESSION_DURATION = 4 * 60 * 60 * 1000L // 4 hours maximum for any session
-        private const val MIN_SESSION_DURATION = 1000L // 1 second minimum
     }
 
     /**
@@ -171,95 +169,24 @@ class SessionParser(private val context: Context) {
     private fun isRelevantEvent(event: UsageEvents.Event): Boolean {
         return when (event.eventType) {
             UsageEvents.Event.ACTIVITY_RESUMED, // Also covers MOVE_TO_FOREGROUND (same value)
-            UsageEvents.Event.ACTIVITY_PAUSED -> true // Also covers MOVE_TO_BACKGROUND (same value)
+            UsageEvents.Event.ACTIVITY_PAUSED, // Also covers MOVE_TO_BACKGROUND (same value)
+            UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+            UsageEvents.Event.DEVICE_SHUTDOWN -> true
             else -> false
         }
     }
 
-    /**
-     * Parse events into app sessions using a sequential foreground state machine.
-     *
-     * At any instant only one app is in the foreground, so we track a single open session and
-     * close it at whichever comes first: the foreground app's own PAUSE, or another app's RESUME
-     * (which implicitly backgrounds the previous app even if its PAUSE is late or missing). This
-     * avoids the overlapping-session double-counting that strict RESUME->PAUSE pair-matching
-     * produced when events for different apps interleaved.
-     *
-     * The trailing still-open session is emitted only when [openSessionEnd] is given, ending
-     * there. Incremental ingest passes the current time: the next run re-reads from that
-     * session's start and emits it again with a later end, and the server merges it into the
-     * stored event (same start and data) instead of inserting a duplicate.
-     *
-     * [storedSessionStart] is the start of the session already stored (possibly while it was
-     * still open). That session is capped at the maximum duration instead of being dropped:
-     * dropping it would leave its earlier, shorter stored value in place for good.
-     */
     private fun parseEventsIntoSessions(
         events: List<UsageEvent>,
         periodEnd: Long,
         openSessionEnd: Long? = null,
         storedSessionStart: Long? = null
     ): List<AppSession> {
-        val sessions = mutableListOf<AppSession>()
-
         Log.d(TAG, "Parsing ${events.size} events into sessions (foreground state machine)")
-
-        var openPackage: String? = null
-        var openClassName = ""
-        var openStart = 0L
-
-        fun closeSession(sessionEnd: Long) {
-            val pkg = openPackage ?: return
-            openPackage = null
-            val endTime = if (openStart == storedSessionStart) {
-                minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
-            } else {
-                sessionEnd
-            }
-            val duration = endTime - openStart
-            if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
-                val appName = SessionUtils.getAppName(context, pkg)
-                sessions.add(
-                    AppSession(
-                        packageName = pkg,
-                        appName = appName,
-                        className = openClassName,
-                        startTime = openStart,
-                        endTime = endTime
-                    )
-                )
-                Log.d(TAG, "Session: $appName ${duration}ms")
-            }
+        val sessions = parseForegroundSessions(events, openSessionEnd, storedSessionStart) {
+            SessionUtils.getAppName(context, it)
         }
-
-        for (event in events) {
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    // Same app re-resumed without an intervening PAUSE: keep the original session
-                    // open (earliest start) rather than restarting it.
-                    if (openPackage == event.packageName) continue
-                    // A different app came to the foreground: end the previous session here.
-                    closeSession(event.timeStamp)
-                    openPackage = event.packageName
-                    openClassName = event.className
-                    openStart = event.timeStamp
-                }
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    // Only the currently-foreground app's PAUSE ends the session; stale/out-of-order
-                    // PAUSEs for other apps are ignored.
-                    if (openPackage == event.packageName) {
-                        closeSession(event.timeStamp)
-                    }
-                }
-            }
-        }
-
-        if (openSessionEnd != null) {
-            closeSession(openSessionEnd)
-        }
-
         Log.d(TAG, "Created ${sessions.size} sessions")
-
         return sessions
     }
 
@@ -329,4 +256,96 @@ class SessionParser(private val context: Context) {
     }
 
 
+}
+
+// Upper bound on a single session. Screen-off ends the open session (see
+// parseForegroundSessions), so this is only a guard against a corrupt event stream; a
+// lower cap silently dropped genuine long sessions such as navigation or video.
+internal const val MAX_REASONABLE_SESSION_DURATION = 24 * 60 * 60 * 1000L
+internal const val MIN_SESSION_DURATION = 1000L // 1 second minimum
+
+/**
+ * Parse events into app sessions using a sequential foreground state machine.
+ *
+ * At any instant only one app is in the foreground, so we track a single open session and
+ * close it at whichever comes first: the foreground app's own PAUSE, another app's RESUME
+ * (which implicitly backgrounds the previous app even if its PAUSE is late or missing), or
+ * the screen turning off / the device shutting down. This avoids the overlapping-session
+ * double-counting that strict RESUME->PAUSE pair-matching produced when events for
+ * different apps interleaved, and bounds a session whose PAUSE never arrives.
+ *
+ * The trailing still-open session is emitted only when [openSessionEnd] is given, ending
+ * there. Incremental ingest passes the current time: the next run re-reads from that
+ * session's start and emits it again with a later end, and the server merges it into the
+ * stored event (same start and data) instead of inserting a duplicate.
+ *
+ * [storedSessionStart] is the start of the session already stored (possibly while it was
+ * still open). That session is capped at the maximum duration instead of being dropped:
+ * dropping it would leave its earlier, shorter stored value in place for good.
+ */
+internal fun parseForegroundSessions(
+    events: List<UsageEvent>,
+    openSessionEnd: Long? = null,
+    storedSessionStart: Long? = null,
+    appName: (packageName: String) -> String,
+): List<AppSession> {
+    val sessions = mutableListOf<AppSession>()
+
+    var openPackage: String? = null
+    var openClassName = ""
+    var openStart = 0L
+
+    fun closeSession(sessionEnd: Long) {
+        val pkg = openPackage ?: return
+        openPackage = null
+        val endTime = if (openStart == storedSessionStart) {
+            minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
+        } else {
+            sessionEnd
+        }
+        val duration = endTime - openStart
+        if (duration > MIN_SESSION_DURATION && duration < MAX_REASONABLE_SESSION_DURATION) {
+            sessions.add(
+                AppSession(
+                    packageName = pkg,
+                    appName = appName(pkg),
+                    className = openClassName,
+                    startTime = openStart,
+                    endTime = endTime
+                )
+            )
+        }
+    }
+
+    for (event in events) {
+        when (event.eventType) {
+            UsageEvents.Event.ACTIVITY_RESUMED -> {
+                // Same app re-resumed without an intervening PAUSE: keep the original session
+                // open (earliest start) rather than restarting it.
+                if (openPackage == event.packageName) continue
+                // A different app came to the foreground: end the previous session here.
+                closeSession(event.timeStamp)
+                openPackage = event.packageName
+                openClassName = event.className
+                openStart = event.timeStamp
+            }
+            UsageEvents.Event.ACTIVITY_PAUSED -> {
+                // Only the currently-foreground app's PAUSE ends the session; stale/out-of-order
+                // PAUSEs for other apps are ignored.
+                if (openPackage == event.packageName) {
+                    closeSession(event.timeStamp)
+                }
+            }
+            // Nothing is in the foreground once the screen is off, whether or not the app's
+            // PAUSE was recorded.
+            UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+            UsageEvents.Event.DEVICE_SHUTDOWN -> closeSession(event.timeStamp)
+        }
+    }
+
+    if (openSessionEnd != null) {
+        closeSession(openSessionEnd)
+    }
+
+    return sessions
 }

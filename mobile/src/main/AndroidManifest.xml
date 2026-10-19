@@ -55,14 +55,14 @@
             android:name=".AuthSettingsActivity"
             android:screenOrientation="portrait"
             android:configChanges="orientation"
-            android:theme="@style/AppTheme.LightOnly"
+            android:theme="@style/AppTheme.FollowNight"
             android:exported="false"/>
 
         <activity
             android:name=".SyncSettingsActivity"
             android:screenOrientation="portrait"
             android:configChanges="orientation"
-            android:theme="@style/AppTheme.LightOnly"
+            android:theme="@style/AppTheme.FollowNight"
             android:exported="false"/>
 
         <receiver
