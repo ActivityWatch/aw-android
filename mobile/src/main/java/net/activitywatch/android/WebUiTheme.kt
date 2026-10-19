@@ -118,7 +118,16 @@ internal val ANDROID_THEME_HOOK_JS = """
   }
 
   var settledObserver = new MutationObserver(checkSettled);
-  settledObserver.observe(document.documentElement, { childList: true, subtree: true });
+  // onPageFinished can deliver this hook into a document that has not parsed
+  // its root element yet (the previous navigation finishing after the next one
+  // started). document.documentElement is then null and observing it throws,
+  // which aborted the whole hook and left that document unable to ever report
+  // settlement — the WebView stayed hidden. Observing the Document covers the
+  // same subtree and survives the empty-document window.
+  settledObserver.observe(document.documentElement || document, {
+    childList: true,
+    subtree: true,
+  });
   checkSettled();
 
   var orig = localStorage.setItem.bind(localStorage);

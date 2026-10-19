@@ -55,6 +55,15 @@ class WebUiThemeTest {
     }
 
     @Test
+    fun themeHookObservesADocumentWithoutARootElement() {
+        // onPageFinished can run this hook in a document that has not parsed its
+        // root element yet. Observing a null documentElement threw and aborted
+        // the hook, so that document could never report settlement and the
+        // WebView stayed hidden (observed as a DashboardThemePaintTest timeout).
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("document.documentElement || document"))
+    }
+
+    @Test
     fun initialWebViewBackgroundResFollowsSystemNightMode() {
         val dark = android.content.res.Configuration().apply {
             uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
