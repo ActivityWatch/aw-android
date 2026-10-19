@@ -31,9 +31,7 @@ class MediaWatcher : NotificationListenerService() {
         private const val TAG = "MediaWatcher"
         private const val BUCKET_ID = "aw-watcher-android-media"
         private const val BUCKET_TYPE = "media.playback"
-        // Heartbeat pulsetime: merge events within 60s (same track playing continuously)
-        private const val PULSETIME = 60.0
-        // How often to poll active media sessions to send heartbeats
+        // How often to poll active media sessions (also bounds how late a segment is written)
         private const val POLL_INTERVAL_MS = 15000L
 
         fun isNotificationAccessGranted(context: android.content.Context): Boolean {
@@ -56,7 +54,15 @@ class MediaWatcher : NotificationListenerService() {
     // access these maps concurrently; CHM prevents ConcurrentModificationException.
     private val activeControllers = ConcurrentHashMap<MediaSession.Token, MediaController>()
     private val activeCallbacks = ConcurrentHashMap<MediaSession.Token, MediaController.Callback>()
-    private val lastEventKeys = ConcurrentHashMap<String, String>()
+    // Only touched on handlerThread: callbacks, polling, the session scan and the final
+    // writes all run there, so writes never block the service's main thread.
+    private val segments = MediaPlaybackSegments<MediaSession.Token> { start, durationSeconds, data ->
+        ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
+    }
+
+    // Handler thread only. False between teardown and the next session scan, so a callback
+    // or poll already queued when the listener disconnected can't reopen a segment.
+    private var connected = false
 
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
@@ -96,22 +102,21 @@ class MediaWatcher : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "MediaWatcher listener connected")
-        registerActiveSessionListener()
+        handler?.post { registerActiveSessionListener() }
         pollingRunnable?.let { handler?.postDelayed(it, POLL_INTERVAL_MS) }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         Log.i(TAG, "MediaWatcher listener disconnected")
-        unregisterAllCallbacks()
-        handler?.removeCallbacksAndMessages(null)
+        disconnect()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "MediaWatcher destroyed")
-        unregisterAllCallbacks()
-        handler?.removeCallbacksAndMessages(null)
+        disconnect()
+        // quitSafely still runs the teardown disconnect() just posted.
         handlerThread.quitSafely()
     }
 
@@ -129,6 +134,7 @@ class MediaWatcher : NotificationListenerService() {
      * This is called once on service creation and handles all session lifecycle.
      */
     private fun registerActiveSessionListener() {
+        connected = true
         val componentName = ComponentName(this, MediaWatcher::class.java)
         try {
             val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -152,13 +158,16 @@ class MediaWatcher : NotificationListenerService() {
      * Registers callbacks for new sessions and cleans up stale ones.
      */
     private fun onActiveSessionsChanged(controllers: List<MediaController>?) {
-        if (controllers == null) return
+        if (controllers == null || !connected) return
 
         val currentTokens = controllers.map { it.sessionToken }.toSet()
 
         // Remove callbacks for sessions that are no longer active
         val staleTokens = activeControllers.keys - currentTokens
+        val now = Instant.now()
         for (token in staleTokens) {
+            // An inactive session no longer reports state, so close its playback now.
+            segments.end(token, now)
             val controller = activeControllers.remove(token)
             val callback = activeCallbacks.remove(token)
             if (controller != null && callback != null) {
@@ -194,10 +203,17 @@ class MediaWatcher : NotificationListenerService() {
     private fun createMediaCallback(controller: MediaController): MediaController.Callback {
         return object : MediaController.Callback() {
             override fun onPlaybackStateChanged(state: PlaybackState?) {
-                val metadata = controller.metadata ?: return
-                if (state != null) {
-                    handlePlaybackChange(controller, state, metadata)
+                if (state == null) return
+                val metadata = controller.metadata
+                if (metadata == null) {
+                    // Some players clear metadata when they pause or stop. Nothing can be
+                    // logged without it, but playback has still ended.
+                    if (state.state != PlaybackState.STATE_PLAYING) {
+                        segments.end(controller.sessionToken, Instant.now())
+                    }
+                    return
                 }
+                handlePlaybackChange(controller, state, metadata)
             }
 
             override fun onMetadataChanged(metadata: MediaMetadata?) {
@@ -211,7 +227,7 @@ class MediaWatcher : NotificationListenerService() {
                 val token = controller.sessionToken
                 activeControllers.remove(token)
                 activeCallbacks.remove(token)?.let { controller.unregisterCallback(it) }
-                controller.packageName?.let { lastEventKeys.remove(it) }
+                segments.end(token, Instant.now())
                 Log.d(TAG, "Session destroyed for ${controller.packageName}")
             }
         }
@@ -225,7 +241,9 @@ class MediaWatcher : NotificationListenerService() {
         state: PlaybackState,
         metadata: MediaMetadata
     ) {
+        if (!connected) return
         val packageName = controller.packageName ?: return
+        val token = controller.sessionToken
 
         val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
         val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
@@ -237,11 +255,19 @@ class MediaWatcher : NotificationListenerService() {
             PlaybackState.STATE_PAUSED -> "paused"
             PlaybackState.STATE_STOPPED -> "stopped"
             PlaybackState.STATE_BUFFERING -> "buffering"
-            else -> return // Ignore transitional states (none, connecting, etc.)
+            else -> {
+                // Transitional states (none, connecting, etc.) aren't logged, but they
+                // aren't playback either.
+                segments.end(token, Instant.now())
+                return
+            }
         }
 
-        // Skip events with no useful metadata
-        if (title.isEmpty() && artist.isEmpty()) return
+        // Skip events with no useful metadata, ending any playback they replace.
+        if (title.isEmpty() && artist.isEmpty()) {
+            segments.end(token, Instant.now())
+            return
+        }
 
         // Resolve app name from package
         val appName = try {
@@ -264,18 +290,12 @@ class MediaWatcher : NotificationListenerService() {
             put("state", playbackState)
         }
 
-        // Deduplicate: don't send identical heartbeats
-        val eventKey = "$packageName|$title|$artist|$playbackState"
-        val lastKey = lastEventKeys[packageName]
-        if (eventKey == lastKey && playbackState == "playing") {
-            // Same track still playing — let heartbeat merging handle it
-            ri?.heartbeatHelper(BUCKET_ID, Instant.now(), 0.0, data, PULSETIME)
-            return
+        // Everything written to the event, so a segment never outlives the data it records.
+        val eventKey = "$packageName|$title|$artist|$album|$playbackState"
+        val changed = segments.observe(token, eventKey, data, playbackState == "playing", Instant.now())
+        if (changed) {
+            Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
         }
-        lastEventKeys[packageName] = eventKey
-
-        Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
-        ri?.heartbeatHelper(BUCKET_ID, Instant.now(), 0.0, data, PULSETIME)
     }
 
     private fun pollActiveSessions() {
@@ -288,7 +308,18 @@ class MediaWatcher : NotificationListenerService() {
         }
     }
 
-    private fun unregisterAllCallbacks() {
+    // Called on the main thread. Teardown runs on the handler thread, after any session scan
+    // already running there, so a scan can never register callbacks after it.
+    private fun disconnect() {
+        // Drops queued polls, callbacks and a session scan that hasn't started yet.
+        handler?.removeCallbacksAndMessages(null)
+        val now = Instant.now()
+        handler?.post { unregisterAllCallbacks(now) }
+    }
+
+    // Handler thread only. Ends at [disconnectedAt] whatever is still playing.
+    private fun unregisterAllCallbacks(disconnectedAt: Instant) {
+        connected = false
         // Remove the active sessions listener to prevent leaks
         activeSessionsListener?.let { listener ->
             sessionManager?.removeOnActiveSessionsChangedListener(listener)
@@ -301,6 +332,6 @@ class MediaWatcher : NotificationListenerService() {
         }
         activeControllers.clear()
         activeCallbacks.clear()
-        lastEventKeys.clear()
+        segments.endAll(disconnectedAt)
     }
 }
