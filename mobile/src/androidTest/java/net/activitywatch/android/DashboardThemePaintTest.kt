@@ -17,6 +17,9 @@ import java.net.ServerSocket
 import java.net.SocketException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 /**
@@ -40,8 +43,9 @@ class DashboardThemePaintTest {
         )
         val wasFirstRun = preferences.getBoolean("isFirstTime", true)
         val hadRequestedPermission = preferences.getBoolean("hasRequestedNotificationPermission", false)
-        val stylesheetRequested = CountDownLatch(1)
-        val releaseStylesheet = CountDownLatch(1)
+        val stylesheetRequests = AtomicInteger()
+        val releaseStylesheet = AtomicReference(CountDownLatch(1))
+        val stylesheetMissing = AtomicBoolean(false)
         val server = ServerSocket(0)
         val responder = thread(isDaemon = true) {
             try {
@@ -51,12 +55,19 @@ class DashboardThemePaintTest {
                         val input = socket.getInputStream().bufferedReader()
                         val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
                         while (!input.readLine().isNullOrEmpty()) { }
+                        if (path == "/dark.css" && stylesheetMissing.get()) {
+                            socket.getOutputStream().write(
+                                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
+                            )
+                            return@use
+                        }
                         val (type, body) = when (path) {
                             "/" -> "text/html" to PAGE
                             "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
                             "/dark.css" -> {
-                                stylesheetRequested.countDown()
-                                releaseStylesheet.await(15, TimeUnit.SECONDS)
+                                val release = releaseStylesheet.get()
+                                stylesheetRequests.incrementAndGet()
+                                release.await(15, TimeUnit.SECONDS)
                                 "text/css" to "body { background: rgb(15, 19, 26); }"
                             }
                             else -> "text/plain" to ""
@@ -87,10 +98,7 @@ class DashboardThemePaintTest {
                         .commitNow()
                     webView = activity.findViewById(R.id.webview)
                 }
-                assertTrue(
-                    "The page must request its dark stylesheet",
-                    stylesheetRequested.await(15, TimeUnit.SECONDS)
-                )
+                await { stylesheetRequests.get() == 1 }
                 await { evaluate(webView, "document.readyState") == "\"complete\"" }
                 assertEquals(
                     "The finished document is still light-styled",
@@ -103,7 +111,7 @@ class DashboardThemePaintTest {
                         View.INVISIBLE, webView.visibility
                     )
                 }
-                releaseStylesheet.countDown()
+                releaseStylesheet.get().countDown()
                 await {
                     var visible = false
                     scenario.onActivity { visible = webView.visibility == View.VISIBLE }
@@ -113,10 +121,49 @@ class DashboardThemePaintTest {
                     "\"rgb(15, 19, 26)\"",
                     evaluate(webView, "getComputedStyle(document.body).backgroundColor")
                 )
+
+                // A page-initiated reload replaces the document without a new
+                // fragment; its light frame must be hidden too.
+                releaseStylesheet.set(CountDownLatch(1))
+                evaluate(webView, "location.reload()")
+                await { stylesheetRequests.get() == 2 }
+                await { evaluate(webView, "document.readyState") == "\"complete\"" }
+                assertEquals(
+                    "\"rgb(247, 250, 252)\"",
+                    evaluate(webView, "getComputedStyle(document.body).backgroundColor")
+                )
+                scenario.onActivity {
+                    assertEquals(
+                        "A reloaded light-styled document must not be painted before dark.css applies",
+                        View.INVISIBLE, webView.visibility
+                    )
+                }
+                releaseStylesheet.get().countDown()
+                await {
+                    var visible = false
+                    scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                    visible
+                }
+
+                // A failed stylesheet still reveals the readable light page.
+                stylesheetMissing.set(true)
+                evaluate(webView, "window.__previousDocument = true; location.reload()")
+                await {
+                    var visible = false
+                    scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                    visible && evaluate(
+                        webView,
+                        "!window.__previousDocument && !!document.getElementById('wrapper')",
+                    ) == "true"
+                }
+                assertEquals(
+                    "\"rgb(247, 250, 252)\"",
+                    evaluate(webView, "getComputedStyle(document.body).backgroundColor")
+                )
             }
         } finally {
             themeSettleFailsafeMs = originalFailsafeMs
-            releaseStylesheet.countDown()
+            releaseStylesheet.get().countDown()
             server.close()
             responder.join(1000)
             preferences.edit().putBoolean("isFirstTime", wasFirstRun)
