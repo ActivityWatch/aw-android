@@ -35,6 +35,18 @@ class WebUiThemeTest {
     }
 
     @Test
+    fun initialWebViewBackgroundResFollowsSystemNightMode() {
+        val dark = android.content.res.Configuration().apply {
+            uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        val light = android.content.res.Configuration().apply {
+            uiMode = android.content.res.Configuration.UI_MODE_NIGHT_NO
+        }
+        assertEquals(R.color.chrome_dark, initialWebViewBackgroundRes(dark))
+        assertEquals(R.color.chrome_light, initialWebViewBackgroundRes(light))
+    }
+
+    @Test
     fun systemNightModeReadsUiModeMask() {
         val dark = android.content.res.Configuration().apply {
             uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
