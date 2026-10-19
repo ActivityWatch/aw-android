@@ -464,9 +464,11 @@ class SyncInterface(context: Context) {
      * The mirror is recursive and structure-preserving, which is required for the copy to
      * contain anything at all and for the result to be usable. aw-sync never writes a regular
      * file at the root of the sync directory: `setup_local_remote` in aw-server-rust
-     * (`aw-sync/src/sync.rs`) does `path.join(device_id)` and writes `test.db` inside it, and
-     * on Android the observed tree is one level deeper still,
-     * `<syncDir>/<hostname>/<device_id>/test.db`. The consuming side requires the same nesting:
+     * (`aw-sync/src/sync.rs`) does `path.join(device_id)` and writes `sync.db` inside it
+     * (it was `test.db` before ActivityWatch/aw-server-rust#800, and that legacy name is
+     * migrated in place on the next push), and on Android the observed tree is one level
+     * deeper still, `<syncDir>/<hostname>/<device_id>/sync.db`. The consuming side requires
+     * the same nesting:
      * `find_remotes` (`aw-sync/src/util.rs`) keeps only directories and looks for `*.db` one
      * level inside them, so a flattened copy would be ignored even if it were made.
      *
