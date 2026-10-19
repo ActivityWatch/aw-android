@@ -110,9 +110,7 @@ object CategoryTimeWidgetUpdater {
             Log.e(TAG, "Could not load widget data", e)
             null
         }
-        for (appWidgetId in appWidgetIds) {
-            render(context, appWidgetManager, appWidgetId, data)
-        }
+        render(context, appWidgetManager, appWidgetIds, data)
     }
 
     /**
@@ -152,9 +150,7 @@ object CategoryTimeWidgetUpdater {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        for (appWidgetId in appWidgetIds) {
-            render(context, appWidgetManager, appWidgetId, null)
-        }
+        render(context, appWidgetManager, appWidgetIds, null)
     }
 
     private fun loadData(context: Context): WidgetData {
@@ -168,20 +164,30 @@ object CategoryTimeWidgetUpdater {
     }
 
     /**
-     * Render [data] to one widget, or the "no data yet" state when [data] is null.
+     * Render [data] to the given widgets, or the "no data yet" state when [data] is null.
+     * Every instance shows the same thing, so the views and the bar chart are built once.
      * Never throws: a widget that can't be updated (e.g. removed meanwhile) is logged.
      */
     private fun render(
         context: Context,
         appWidgetManager: AppWidgetManager,
-        appWidgetId: Int,
+        appWidgetIds: IntArray,
         data: WidgetData?
     ) {
-        try {
-            appWidgetManager.updateAppWidget(appWidgetId, buildViews(context, data))
-            Log.d(TAG, "Widget $appWidgetId updated (${if (data == null) "no data" else "${data.categories.size} categories"})")
+        if (appWidgetIds.isEmpty()) return
+        val views = try {
+            buildViews(context, data)
         } catch (e: Exception) {
-            Log.e(TAG, "Could not update widget $appWidgetId", e)
+            Log.e(TAG, "Could not build widget views", e)
+            return
+        }
+        for (appWidgetId in appWidgetIds) {
+            try {
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+                Log.d(TAG, "Widget $appWidgetId updated (${if (data == null) "no data" else "${data.categories.size} categories"})")
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not update widget $appWidgetId", e)
+            }
         }
     }
 
