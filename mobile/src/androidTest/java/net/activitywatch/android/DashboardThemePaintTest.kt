@@ -63,6 +63,7 @@ class DashboardThemePaintTest {
                         }
                         val (type, body) = when (path) {
                             "/" -> "text/html" to PAGE
+                            "/early" -> "text/html" to PAGE_EARLY
                             "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
                             "/dark.css" -> {
                                 val release = releaseStylesheet.get()
@@ -160,6 +161,44 @@ class DashboardThemePaintTest {
                     "\"rgb(247, 250, 252)\"",
                     evaluate(webView, "getComputedStyle(document.body).backgroundColor")
                 )
+
+                // A stylesheet that failed before the hook was injected has
+                // already dispatched its error event. The hook must read the
+                // null sheet as settled instead of waiting for a listener that
+                // can never fire (the failsafe is disabled here).
+                evaluate(webView, "location.href = '/early'")
+                await {
+                    var visible = false
+                    scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                    visible && evaluate(webView, "document.readyState") == "\"complete\""
+                }
+                assertEquals(
+                    "\"rgb(247, 250, 252)\"",
+                    evaluate(webView, "getComputedStyle(document.body).backgroundColor")
+                )
+
+                // A dashboard that takes longer than the failsafe bound to
+                // settle must still be waited for: revealing it there would
+                // paint the light base styles first.
+                stylesheetMissing.set(false)
+                themeSettleFailsafeMs = 100
+                releaseStylesheet.set(CountDownLatch(1))
+                evaluate(webView, "location.href = '/'")
+                await { stylesheetRequests.get() == 3 }
+                await { evaluate(webView, "document.readyState") == "\"complete\"" }
+                Thread.sleep(300)
+                scenario.onActivity {
+                    assertEquals(
+                        "A slow dashboard must not be revealed by the failsafe",
+                        View.INVISIBLE, webView.visibility
+                    )
+                }
+                releaseStylesheet.get().countDown()
+                await {
+                    var visible = false
+                    scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                    visible
+                }
             }
         } finally {
             themeSettleFailsafeMs = originalFailsafeMs
@@ -196,10 +235,24 @@ class DashboardThemePaintTest {
     }
 
     private companion object {
+        // The link is appended while the document is still parsing, so its 404
+        // error fires before the load event (and therefore before the hook is
+        // injected from onPageFinished).
+        val PAGE_EARLY = """
+            <!doctype html>
+            <html><head><script>
+              var link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = '/dark.css';
+              document.head.appendChild(link);
+            </script></head>
+            <body><div id="app"><div id="wrapper">dashboard</div></div></body></html>
+        """.trimIndent()
+
         val PAGE = """
             <!doctype html>
             <html><head><style>body { background: rgb(247, 250, 252); }</style></head>
-            <body><script>
+            <body><div id="app"></div><script>
               window.addEventListener('load', function () {
                 fetch('/settings').then(function (r) { return r.json(); }).then(function () {
                   var link = document.createElement('link');

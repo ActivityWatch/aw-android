@@ -55,12 +55,33 @@ internal const val INITIAL_RELOAD_DELAY_MS = 250L
 internal const val MAX_RELOAD_DELAY_MS = 5_000L
 
 // Bound on waiting for the page to report its theme stylesheet has settled
-// (see ANDROID_THEME_HOOK_JS). Only documents that never report it, such as a
-// non-dashboard page, wait this long; the dashboard reveals as soon as it reports.
+// (see ANDROID_THEME_HOOK_JS). The dashboard reveals as soon as it reports; this
+// bound only reveals a document that can never report (no JS bridge).
 internal const val THEME_SETTLE_FAILSAFE_MS = 3_000L
+
+// A document that can still report its theme is waited for, not revealed: doing
+// so would paint its light base styles before dark.css applies (aw-android#300).
+// Each extension adds one more THEME_SETTLE_FAILSAFE_MS, capping the total wait.
+internal const val THEME_SETTLE_MAX_EXTENSIONS = 4
 
 @VisibleForTesting
 internal var themeSettleFailsafeMs = THEME_SETTLE_FAILSAFE_MS
+
+internal enum class ThemeFailsafeAction { WAIT, REVEAL }
+
+/**
+ * Decides what the theme-settle failsafe does when one bound elapses.
+ *
+ * Only a document that can never report (`no-bridge`, `not-dashboard`, or an
+ * unreadable hook state) is revealed. A `pending` dashboard is still applying
+ * its theme, so revealing it would reintroduce the white frame this failsafe
+ * exists to avoid; it is waited for until [extensionsLeft] is spent.
+ */
+internal fun themeFailsafeAction(state: String?, extensionsLeft: Int): ThemeFailsafeAction =
+    if (state == "pending" && extensionsLeft > 0) ThemeFailsafeAction.WAIT else ThemeFailsafeAction.REVEAL
+
+private const val THEME_STATE_JS =
+    "(window.__awAndroidThemeState && window.__awAndroidThemeState()) || 'unknown'"
 
 internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
 
@@ -446,7 +467,9 @@ class WebUIFragment : Fragment() {
     private var navigationId = 0L
     private var finishedNavigation = -1L
     private var themeSettledNavigation = -1L
-    private val themeSettleFailsafe = Runnable { onThemeSettled(navigationId) }
+    private var themeFailsafeNavigation = -1L
+    private var themeFailsafeExtensionsLeft = 0
+    private val themeSettleFailsafe = Runnable { runThemeSettleFailsafe() }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val webMenuState = WebMenuState()
     private var nativeBridgeReply: JavaScriptReplyProxy? = null
@@ -549,7 +572,7 @@ class WebUIFragment : Fragment() {
                 // Tag the document so a settle report from an older one is ignored.
                 view?.evaluateJavascript("window.__awAndroidNavigation = '$navigationId';", null)
                 view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
-                reloadHandler.postDelayed(themeSettleFailsafe, themeSettleFailsafeMs)
+                scheduleThemeSettleFailsafe(navigationId, THEME_SETTLE_MAX_EXTENSIONS)
                 revealWhenReady()
             }
 
@@ -617,6 +640,42 @@ class WebUIFragment : Fragment() {
         if (navigation != navigationId) return
         themeSettledNavigation = navigation
         revealWhenReady()
+    }
+
+    /**
+     * Bounded fallback for documents that can never report their theme.
+     *
+     * The page's own report always wins; this only reveals when the hook says
+     * the document has no bridge. A dashboard that is still settling is waited
+     * for rather than revealed, because at that point its body is still painted
+     * with the light base styles (aw-android#300).
+     */
+    private fun scheduleThemeSettleFailsafe(navigation: Long, extensionsLeft: Int) {
+        themeFailsafeNavigation = navigation
+        themeFailsafeExtensionsLeft = extensionsLeft
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
+        reloadHandler.postDelayed(themeSettleFailsafe, themeSettleFailsafeMs)
+    }
+
+    private fun runThemeSettleFailsafe() {
+        val navigation = themeFailsafeNavigation
+        val view = webView ?: return
+        if (navigation != navigationId || finishedNavigation != navigation ||
+            themeSettledNavigation == navigation || reloadPolicy.currentLoadFailed
+        ) {
+            return
+        }
+        view.evaluateJavascript(THEME_STATE_JS) { raw ->
+            postToUi {
+                if (navigation != navigationId || themeSettledNavigation == navigation) return@postToUi
+                val state = raw?.trim()?.trim('"')
+                when (themeFailsafeAction(state, themeFailsafeExtensionsLeft)) {
+                    ThemeFailsafeAction.WAIT ->
+                        scheduleThemeSettleFailsafe(navigation, themeFailsafeExtensionsLeft - 1)
+                    ThemeFailsafeAction.REVEAL -> onThemeSettled(navigation)
+                }
+            }
+        }
     }
 
     private fun revealWhenReady() {
