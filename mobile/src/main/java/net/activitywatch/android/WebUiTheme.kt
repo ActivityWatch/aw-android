@@ -34,6 +34,12 @@ internal fun initialWebViewBackgroundRes(config: Configuration): Int =
 /**
  * Observes aw-webui's `localStorage.theme` and the injected `/dark.css` link,
  * then reports `dark` or `light` to `Android.reportColorScheme`.
+ *
+ * Also calls `Android.reportThemeSettled` once per document, when the page's
+ * theme is actually applied: aw-webui's App.vue renders `#wrapper` only after
+ * loading settings and appending any `/dark.css` link, and that stylesheet must
+ * then have loaded or failed. Before that the body is painted with the light
+ * base styles even when dark is selected (aw-android#300).
  */
 internal val ANDROID_THEME_HOOK_JS = """
 (function () {
@@ -52,6 +58,39 @@ internal val ANDROID_THEME_HOOK_JS = """
     if (typeof Android === 'undefined' || !Android.reportColorScheme) return;
     Android.reportColorScheme(resolve());
   }
+
+  var settledReported = false;
+
+  function darkStylesheetSettled(link) {
+    if (link.__awSettled) return true;
+    try {
+      if (link.sheet && link.sheet.cssRules.length > 0) return true;
+    } catch (e) {}
+    if (!link.__awWatched) {
+      link.__awWatched = true;
+      var done = function () {
+        link.__awSettled = true;
+        checkSettled();
+      };
+      link.addEventListener('load', done);
+      link.addEventListener('error', done);
+    }
+    return false;
+  }
+
+  function checkSettled() {
+    if (settledReported || !document.getElementById('wrapper')) return;
+    var link = document.querySelector('link[href*="dark.css"]');
+    if (link && !darkStylesheetSettled(link)) return;
+    if (typeof Android === 'undefined' || !Android.reportThemeSettled) return;
+    settledReported = true;
+    settledObserver.disconnect();
+    Android.reportThemeSettled();
+  }
+
+  var settledObserver = new MutationObserver(checkSettled);
+  settledObserver.observe(document.documentElement, { childList: true, subtree: true });
+  checkSettled();
 
   var orig = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function (k, v) {
