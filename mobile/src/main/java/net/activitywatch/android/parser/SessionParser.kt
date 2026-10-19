@@ -85,21 +85,51 @@ class SessionParser(private val context: Context) {
         return parseEventsIntoSessions(rawEvents, endTimestamp)
     }
 
+    class IngestBatch(val sessions: List<AppSession>, val unlockTimestamps: List<Long>)
+
     /**
-     * Parse usage events since a specific timestamp (for incremental updates).
+     * Sessions since [sessionsSince] and unlock (KEYGUARD_HIDDEN) timestamps since
+     * [unlocksSince], for incremental ingest, from a single pass over the usage events.
      *
-     * Unlike the period/day parsers, this also returns the still-open foreground session,
+     * Unlike the period/day parsers, the sessions include the still-open foreground session,
      * ending now, so time in the current app counts before the user leaves it.
+     * [storedSessionStart] is passed through to [parseEventsIntoSessions].
      */
-    fun parseUsageEventsSince(lastUpdateTimestamp: Long, storedSessionStart: Long? = null): List<AppSession> {
+    fun parseSessionsAndUnlocksSince(
+        sessionsSince: Long,
+        unlocksSince: Long,
+        storedSessionStart: Long? = null,
+    ): IngestBatch {
         val currentTime = System.currentTimeMillis()
-        val usageEvents = usageStatsManager.queryEvents(lastUpdateTimestamp, currentTime)
-        val rawEvents = extractRawEvents(usageEvents)
+        val usageEvents = usageStatsManager.queryEvents(minOf(sessionsSince, unlocksSince), currentTime)
+        val rawEvents = mutableListOf<UsageEvent>()
+        val unlockTimestamps = mutableListOf<Long>()
 
-        Log.d(TAG, "Processing ${rawEvents.size} events since $lastUpdateTimestamp")
+        val event = UsageEvents.Event()
+        while (usageEvents.hasNextEvent()) {
+            usageEvents.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                if (event.timeStamp >= unlocksSince) unlockTimestamps.add(event.timeStamp)
+            } else if (isRelevantEvent(event) && event.timeStamp >= sessionsSince) {
+                rawEvents.add(
+                    UsageEvent(
+                        eventType = event.eventType,
+                        timeStamp = event.timeStamp,
+                        packageName = event.packageName ?: "",
+                        className = event.className ?: ""
+                    )
+                )
+            }
+        }
 
-        return parseEventsIntoSessions(
-            rawEvents, currentTime, openSessionEnd = currentTime, storedSessionStart = storedSessionStart
+        Log.d(TAG, "Processing ${rawEvents.size} events and ${unlockTimestamps.size} unlocks")
+
+        return IngestBatch(
+            sessions = parseEventsIntoSessions(
+                rawEvents.sortedBy { it.timeStamp }, currentTime,
+                openSessionEnd = currentTime, storedSessionStart = storedSessionStart
+            ),
+            unlockTimestamps = unlockTimestamps.sorted()
         )
     }
 
@@ -119,14 +149,6 @@ class SessionParser(private val context: Context) {
         }
 
         return unlockTimestamps.sorted()
-    }
-
-    /**
-     * Parse unlock events since a specific timestamp
-     */
-    fun parseUnlockEventsSince(lastUpdateTimestamp: Long): List<Long> {
-        val currentTime = System.currentTimeMillis()
-        return parseUnlockEventsForPeriod(lastUpdateTimestamp, currentTime)
     }
 
     /**
@@ -182,9 +204,11 @@ class SessionParser(private val context: Context) {
         openSessionEnd: Long? = null,
         storedSessionStart: Long? = null
     ): List<AppSession> {
+        // One PackageManager binder call per app rather than per session.
+        val appNames = HashMap<String, String>()
         Log.d(TAG, "Parsing ${events.size} events into sessions (foreground state machine)")
-        val sessions = parseForegroundSessions(events, openSessionEnd, storedSessionStart) {
-            SessionUtils.getAppName(context, it)
+        val sessions = parseForegroundSessions(events, openSessionEnd, storedSessionStart) { pkg ->
+            appNames.getOrPut(pkg) { SessionUtils.getAppName(context, pkg) }
         }
         Log.d(TAG, "Created ${sessions.size} sessions")
         return sessions

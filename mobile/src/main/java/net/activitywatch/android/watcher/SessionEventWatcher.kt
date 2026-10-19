@@ -116,8 +116,9 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Processing session events...")
 
         // Create bucket for session events
-        ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
-        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
+        ri.createBucketsHelper(
+            mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
+        )
 
         val lastSession = getLastEvent(SESSION_BUCKET_ID)
         lastStoredData = lastSession?.optJSONObject("data")
@@ -126,12 +127,15 @@ class SessionEventWatcher(val context: Context) {
 
         val startTimestamp = nextQueryStartTimestamp()
         val storedStart = lastUpdated?.toEpochMilli()
-        val sessions = sessionParser.parseUsageEventsSince(startTimestamp, storedStart)
         // Unlocks need their own cursor. Resuming them from the last *session* start
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
         val lastUnlock = getLastEvent(UNLOCK_BUCKET_ID)?.let(::eventStart)
-        val unlockTimestamps = sessionParser.parseUnlockEventsSince(queryStartAfter(lastUnlock))
+        val batch = sessionParser.parseSessionsAndUnlocksSince(
+            startTimestamp, queryStartAfter(lastUnlock), storedStart
+        )
+        val sessions = batch.sessions
+        val unlockTimestamps = batch.unlockTimestamps
 
         var eventsSent = 0
 
