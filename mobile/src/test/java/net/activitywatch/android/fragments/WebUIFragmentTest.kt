@@ -355,4 +355,31 @@ class WebUIFragmentTest {
         policy.onPageStarted()
         assertEquals(1000L, policy.onReceivedError(isForMainFrame = true))
     }
+
+    @Test
+    fun `theme failsafe waits for a dashboard that is still settling`() {
+        assertEquals(
+            "A pending dashboard must not be revealed before its theme settles",
+            ThemeFailsafeAction.WAIT,
+            themeFailsafeAction("pending", extensionsLeft = THEME_SETTLE_MAX_EXTENSIONS),
+        )
+    }
+
+    @Test
+    fun `theme failsafe reveals when the document can never report`() {
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("no-bridge", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("not-dashboard", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("unknown", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction(null, 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("settled", 0))
+    }
+
+    @Test
+    fun `theme failsafe keeps a pending dashboard hidden after the polling cap`() {
+        assertEquals(
+            "Exhausting retries is not evidence that the stylesheet has settled",
+            ThemeFailsafeAction.AWAIT_REPORT,
+            themeFailsafeAction("pending", extensionsLeft = 0),
+        )
+    }
 }

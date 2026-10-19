@@ -25,6 +25,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
@@ -52,6 +53,40 @@ private const val ARG_URL = "url"
 // Reload backoff while the local server is still starting (aw-android#261).
 internal const val INITIAL_RELOAD_DELAY_MS = 250L
 internal const val MAX_RELOAD_DELAY_MS = 5_000L
+
+// Bound on waiting for the page to report its theme stylesheet has settled
+// (see ANDROID_THEME_HOOK_JS). The dashboard reveals as soon as it reports; this
+// bound only reveals a document that can never report (no JS bridge).
+internal const val THEME_SETTLE_FAILSAFE_MS = 3_000L
+
+// A document that can still report its theme is waited for, not revealed: doing
+// so would paint its light base styles before dark.css applies (aw-android#300).
+// Each extension adds one more THEME_SETTLE_FAILSAFE_MS. After the polling cap,
+// keep a pending dashboard hidden until its own settle report arrives.
+internal const val THEME_SETTLE_MAX_EXTENSIONS = 4
+
+@VisibleForTesting
+internal var themeSettleFailsafeMs = THEME_SETTLE_FAILSAFE_MS
+
+internal enum class ThemeFailsafeAction { WAIT, AWAIT_REPORT, REVEAL }
+
+/**
+ * Decides what the theme-settle failsafe does when one bound elapses.
+ *
+ * Only a document that can never report (`no-bridge`, `not-dashboard`, or an
+ * unreadable hook state) is revealed. A `pending` dashboard is still applying
+ * its theme, so revealing it would reintroduce the white frame this failsafe
+ * exists to avoid. Exhausting [extensionsLeft] stops polling, not waiting for
+ * the page's own settle report.
+ */
+internal fun themeFailsafeAction(state: String?, extensionsLeft: Int): ThemeFailsafeAction = when {
+    state != "pending" -> ThemeFailsafeAction.REVEAL
+    extensionsLeft > 0 -> ThemeFailsafeAction.WAIT
+    else -> ThemeFailsafeAction.AWAIT_REPORT
+}
+
+private const val THEME_STATE_JS =
+    "(window.__awAndroidThemeState && window.__awAndroidThemeState()) || 'unknown'"
 
 internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
 
@@ -432,6 +467,14 @@ class WebUIFragment : Fragment() {
         arguments?.getString(ARG_URL)?.let { target.loadUrl(it) }
     }
     private val exportQueue = ExportSaveQueue()
+    // Each main-frame document starts hidden and is revealed only once it has
+    // both finished loading and applied its theme (aw-android#300).
+    private var navigationId = 0L
+    private var finishedNavigation = -1L
+    private var themeSettledNavigation = -1L
+    private var themeFailsafeNavigation = -1L
+    private var themeFailsafeExtensionsLeft = 0
+    private val themeSettleFailsafe = Runnable { runThemeSettleFailsafe() }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val webMenuState = WebMenuState()
     private var nativeBridgeReply: JavaScriptReplyProxy? = null
@@ -492,12 +535,15 @@ class WebUIFragment : Fragment() {
         myWebView.setBackgroundColor(
             ContextCompat.getColor(view.context, initialWebViewBackgroundRes(resources.configuration)),
         )
+        // The dashboard paints its light base styles before it has loaded settings
+        // and applied dark.css. Keep it hidden until revealWhenReady().
+        myWebView.visibility = View.INVISIBLE
 
         class MyWebViewClient : WebViewClient() {
-            private var navigationId = 0L
-
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 navigationId++
+                view?.visibility = View.INVISIBLE
+                reloadHandler.removeCallbacks(themeSettleFailsafe)
                 reloadPolicy.onPageStarted()
                 webMenuState.onPageStarted()
                 nativeBridgeReply = null
@@ -526,18 +572,13 @@ class WebUIFragment : Fragment() {
                 // successful load should drop the pending startup retry.
                 if (!reloadPolicy.onPageFinished()) return
                 reloadHandler.removeCallbacks(reloadRunnable)
-                // A finished navigation can still have the old error frame in
-                // the compositor. Reveal only after the replacement is drawable.
-                val finishedNavigation = navigationId
-                view?.postVisualStateCallback(finishedNavigation, object : WebView.VisualStateCallback() {
-                    override fun onComplete(requestId: Long) {
-                        if (view === webView && navigationId == requestId && !reloadPolicy.currentLoadFailed) {
-                            view.visibility = View.VISIBLE
-                        }
-                    }
-                })
+                finishedNavigation = navigationId
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
+                // Tag the document so a settle report from an older one is ignored.
+                view?.evaluateJavascript("window.__awAndroidNavigation = '$navigationId';", null)
                 view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
+                scheduleThemeSettleFailsafe(navigationId, THEME_SETTLE_MAX_EXTENSIONS)
+                revealWhenReady()
             }
 
             // Open external links in external browser
@@ -587,7 +628,9 @@ class WebUIFragment : Fragment() {
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
         myWebView.addJavascriptInterface(
-            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl),
+            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl) { navigation ->
+                navigation.toLongOrNull()?.let { postToUi { onThemeSettled(it) } }
+            },
             "Android",
         )
         installNativeBridge(myWebView)
@@ -596,6 +639,71 @@ class WebUIFragment : Fragment() {
         }
 
         return view
+    }
+
+    private fun onThemeSettled(navigation: Long) {
+        if (navigation != navigationId) return
+        themeSettledNavigation = navigation
+        revealWhenReady()
+    }
+
+    /**
+     * Bounded fallback for documents that can never report their theme.
+     *
+     * The page's own report always wins; this only reveals when the hook says
+     * the document has no bridge. A dashboard that is still settling is waited
+     * for rather than revealed, because at that point its body is still painted
+     * with the light base styles (aw-android#300).
+     */
+    private fun scheduleThemeSettleFailsafe(navigation: Long, extensionsLeft: Int) {
+        themeFailsafeNavigation = navigation
+        themeFailsafeExtensionsLeft = extensionsLeft
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
+        reloadHandler.postDelayed(themeSettleFailsafe, themeSettleFailsafeMs)
+    }
+
+    private fun runThemeSettleFailsafe() {
+        val navigation = themeFailsafeNavigation
+        val view = webView ?: return
+        if (navigation != navigationId || finishedNavigation != navigation ||
+            themeSettledNavigation == navigation || reloadPolicy.currentLoadFailed
+        ) {
+            return
+        }
+        view.evaluateJavascript(THEME_STATE_JS) { raw ->
+            postToUi {
+                if (navigation != navigationId || themeSettledNavigation == navigation) return@postToUi
+                val state = raw?.trim()?.trim('"')
+                when (themeFailsafeAction(state, themeFailsafeExtensionsLeft)) {
+                    ThemeFailsafeAction.WAIT ->
+                        scheduleThemeSettleFailsafe(navigation, themeFailsafeExtensionsLeft - 1)
+                    // The hook's observer/load/error callbacks still report
+                    // settlement after polling stops. Keep the WebView hidden.
+                    ThemeFailsafeAction.AWAIT_REPORT -> Unit
+                    ThemeFailsafeAction.REVEAL -> onThemeSettled(navigation)
+                }
+            }
+        }
+    }
+
+    private fun revealWhenReady() {
+        val view = webView ?: return
+        val navigation = navigationId
+        if (finishedNavigation != navigation || themeSettledNavigation != navigation ||
+            reloadPolicy.currentLoadFailed
+        ) {
+            return
+        }
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
+        // A finished navigation can still have the old error frame in the
+        // compositor. Reveal only after the replacement is drawable.
+        view.postVisualStateCallback(navigation, object : WebView.VisualStateCallback() {
+            override fun onComplete(requestId: Long) {
+                if (view === webView && navigationId == requestId && !reloadPolicy.currentLoadFailed) {
+                    view.visibility = View.VISIBLE
+                }
+            }
+        })
     }
 
     private fun scheduleReload(delay: Long) {
@@ -675,6 +783,7 @@ class WebUIFragment : Fragment() {
 
     override fun onDestroyView() {
         reloadHandler.removeCallbacks(reloadRunnable)
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         webView = null
@@ -962,6 +1071,7 @@ class WebAppInterface(
     private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
     private val onColorScheme: (String) -> Unit = {},
     private val onExportUrl: (url: String, filename: String) -> Unit = { _, _ -> },
+    private val onThemeSettled: (navigation: String) -> Unit = {},
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -1011,6 +1121,11 @@ class WebAppInterface(
     @JavascriptInterface
     fun reportColorScheme(scheme: String) {
         onColorScheme(scheme)
+    }
+
+    @JavascriptInterface
+    fun reportThemeSettled(navigation: String) {
+        onThemeSettled(navigation)
     }
 
     @JavascriptInterface

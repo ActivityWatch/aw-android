@@ -35,6 +35,26 @@ class WebUiThemeTest {
     }
 
     @Test
+    fun themeHookTreatsAStylesheetThatFailedBeforeInjectionAsSettled() {
+        // The hook runs from onPageFinished, after window load: a link already in
+        // the document has already fired load/error, so a null sheet means it
+        // failed and the light fallback must reveal without waiting.
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("__awPresentAtHookInstall"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("document.readyState === 'complete'"))
+    }
+
+    @Test
+    fun themeHookExposesItsSettleStateToTheNativeFailsafe() {
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("__awAndroidThemeState"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("no-bridge"))
+        // A document without aw-webui's mount point is not a dashboard and must
+        // not keep the failsafe waiting.
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("not-dashboard"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("getElementById('app')"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("'pending'"))
+    }
+
+    @Test
     fun initialWebViewBackgroundResFollowsSystemNightMode() {
         val dark = android.content.res.Configuration().apply {
             uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
