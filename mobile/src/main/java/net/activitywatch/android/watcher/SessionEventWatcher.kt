@@ -48,6 +48,11 @@ class SessionEventWatcher(val context: Context) {
     // event, keeping the later end, rather than inserting a duplicate.
     private fun nextQueryStartTimestamp(): Long = lastUpdated?.toEpochMilli() ?: 0L
 
+    // Unlocks are zero-duration and never extended, so they resume strictly after the
+    // last stored one: queryEvents' lower bound is inclusive, and replaying that
+    // timestamp would duplicate the event on every run.
+    private fun queryStartAfter(last: Instant?): Long = (last?.toEpochMilli()?.plus(1L)) ?: 0L
+
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
         withContext(Dispatchers.IO) {
@@ -64,25 +69,25 @@ class SessionEventWatcher(val context: Context) {
     // replay would then be inserted as a second copy.
     private var lastStoredData: JSONObject? = null
 
-    private fun getLastEventTime(): Instant? {
+    private fun getLastEvent(bucketId: String): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
-        lastStoredData = null
+        val events = ri.getEventsJSON(bucketId, limit = 1)
         return if (events.length() == 1) {
-            val lastEvent = events[0] as JSONObject
-            lastStoredData = lastEvent.optJSONObject("data")
-            val timestampString = lastEvent.getString("timestamp")
-            try {
-                val timeCreatedDate = isoFormatter.parse(timestampString)
-                DateTimeUtils.toInstant(timeCreatedDate)
-            } catch (e: ParseException) {
-                Log.e(TAG, "Unable to parse timestamp: $timestampString")
-                null
-            }
+            events[0] as JSONObject
         } else if (events.length() == 0) {
             null  // normal on first run
         } else {
-            Log.w(TAG, "Expected 1 event for last-event lookup, got ${events.length()}")
+            Log.w(TAG, "Expected 1 event for last-event lookup in $bucketId, got ${events.length()}")
+            null
+        }
+    }
+
+    private fun eventStart(event: JSONObject): Instant? {
+        val timestampString = event.getString("timestamp")
+        return try {
+            DateTimeUtils.toInstant(isoFormatter.parse(timestampString))
+        } catch (e: ParseException) {
+            Log.e(TAG, "Unable to parse timestamp: $timestampString")
             null
         }
     }
@@ -114,13 +119,19 @@ class SessionEventWatcher(val context: Context) {
         ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
         ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
 
-        lastUpdated = getLastEventTime()
+        val lastSession = getLastEvent(SESSION_BUCKET_ID)
+        lastStoredData = lastSession?.optJSONObject("data")
+        lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
         val startTimestamp = nextQueryStartTimestamp()
         val storedStart = lastUpdated?.toEpochMilli()
         val sessions = sessionParser.parseUsageEventsSince(startTimestamp, storedStart)
-        val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
+        // Unlocks need their own cursor. Resuming them from the last *session* start
+        // re-sent every unlock since then on each run, and the server only merges a
+        // heartbeat into the newest event, so all but the last were inserted again.
+        val lastUnlock = getLastEvent(UNLOCK_BUCKET_ID)?.let(::eventStart)
+        val unlockTimestamps = sessionParser.parseUnlockEventsSince(queryStartAfter(lastUnlock))
 
         var eventsSent = 0
 
