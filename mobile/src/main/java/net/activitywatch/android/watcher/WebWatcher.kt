@@ -14,18 +14,24 @@ import android.view.accessibility.AccessibilityNodeInfo
 import net.activitywatch.android.RustInterface
 import org.json.JSONObject
 
-private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? {
-    event.source?.let { source ->
-        val nodes = source.findAccessibilityNodeInfosByViewId(viewId)
-        try {
-            return processExtractedText(nodes.firstOrNull()?.text?.toString())
-        } finally {
-            nodes.forEach { it.recycle() }
-            source.recycle()
-        }
+private fun extractTextByViewId(
+    source: AccessibilityNodeInfo?,
+    viewId: String,
+    ignoreFocused: Boolean = false,
+): String? {
+    source ?: return null
+    val nodes = source.findAccessibilityNodeInfosByViewId(viewId)
+    try {
+        val node = nodes.firstOrNull()?.takeUnless { ignoreFocused && it.isFocused }
+        return processExtractedText(node?.text?.toString())
+    } finally {
+        nodes.forEach { it.recycle() }
+        source.recycle()
     }
-    return null
 }
+
+private fun extractTextByViewId(event: AccessibilityEvent, viewId: String): String? =
+    extractTextByViewId(event.source, viewId)
 
 class WebWatcher : AccessibilityService() {
 
@@ -86,6 +92,8 @@ class WebWatcher : AccessibilityService() {
     private fun extractUrl(packageName: String, event: AccessibilityEvent): String? = when (packageName) {
         "com.android.chrome",
         "app.vanadium.browser" -> extractChromiumUrl(packageName, event)
+        // Page events omit Brave's toolbar; the focused address bar may show a search hint.
+        "com.brave.browser" -> extractTextByViewId(rootInActiveWindow, "com.brave.browser:id/url_bar", ignoreFocused = true)
         "org.mozilla.firefox",
         "org.ironfoxoss.ironfox",
         "org.mozilla.fennec_fdroid" -> extractGeckoUrl(packageName, event)
@@ -142,16 +150,17 @@ class WebWatcher : AccessibilityService() {
         }
 
         try {
+            val browser = packageName!!
+            val newUrl = extractUrl(browser, event)
+            if (newUrl == null) {
+                maybeDumpTree(browser)
+                if (windowChanged) handleUrl(null, newBrowser = null)
+            } else {
+                handleUrl(newUrl, newBrowser = browser)
+            }
+
             event.source?.let { source ->
                 try {
-                    val browser = packageName!!
-                    val newUrl = extractUrl(browser, event)
-
-                    if (newUrl == null) {
-                        maybeDumpTree(browser)
-                    } else {
-                        handleUrl(newUrl, newBrowser = browser)
-                    }
                     when (val delay = titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle)) {
                         null -> {}
                         0L -> lookUpTitle(source)
@@ -286,6 +295,7 @@ class WebWatcher : AccessibilityService() {
 
         internal val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
+            "com.brave.browser",
             "org.mozilla.firefox",
             "com.sec.android.app.sbrowser",
             "com.opera.browser",
