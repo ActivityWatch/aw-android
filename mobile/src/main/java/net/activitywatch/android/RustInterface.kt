@@ -245,7 +245,13 @@ class RustInterface(context: Context? = null) {
                     "Context is required but was not provided during initialization"
                 )
         val hostname = getDeviceName(context)
-        if (bucket_id in getBucketsJSON().keys().asSequence()) {
+        val buckets = try {
+            getBucketsJSON()
+        } catch (e: JSONException) {
+            Log.e(TAG, "Not creating bucket '$bucket_id': ${e.message}")
+            return
+        }
+        if (bucket_id in buckets.keys().asSequence()) {
             Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
         } else {
             val msg =
@@ -302,17 +308,14 @@ class RustInterface(context: Context? = null) {
         writeFailures.record(bucket_id, msg)
     }
 
-    fun getBucketsJSON(): JSONObject {
-        // TODO: Handle errors
-        val json = JSONObject(getBuckets())
-        if (json.length() <= 0) {
-            Log.w(TAG, "Length: ${json.length()}")
-        }
-        return json
-    }
+    /**
+     * @throws JSONException when the datastore is unavailable. The JNI reports that as
+     *   `{"error": "..."}`, which parses fine, so it is turned into an exception here;
+     *   otherwise callers would read the error object as a bucket map.
+     */
+    fun getBucketsJSON(): JSONObject = parseBucketsJSON(getBuckets())
 
     fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
-        // TODO: Handle errors
         val result = getEvents(bucket_id, limit)
         return try {
             JSONArray(result)
@@ -324,4 +327,16 @@ class RustInterface(context: Context? = null) {
 
     fun getDeviceName(context: Context): String = deviceHostname(context)
 
+}
+
+/**
+ * Parses a JNI `getBuckets` response. A bucket entry is always an object, so a string
+ * `error` value can only be the JNI error object.
+ */
+internal fun parseBucketsJSON(response: String): JSONObject {
+    val json = JSONObject(response)
+    if (json.opt("error") is String) {
+        throw JSONException("getBuckets failed: ${json.getString("error")}")
+    }
+    return json
 }
