@@ -494,7 +494,10 @@ class WebUIFragment : Fragment() {
         )
 
         class MyWebViewClient : WebViewClient() {
+            private var navigationId = 0L
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                navigationId++
                 reloadPolicy.onPageStarted()
                 webMenuState.onPageStarted()
                 nativeBridgeReply = null
@@ -510,7 +513,10 @@ class WebUIFragment : Fragment() {
                 // This used to Thread.sleep() on the main thread and reload
                 // immediately, which turned a slow server start into a tight
                 // reload loop on the UI thread (aw-android#261).
-                // TODO: Find way to not show the blinking Android error page
+                // Chromium paints its own (potentially white) error document even
+                // when the WebView background is dark. Keep it out of the view
+                // hierarchy's drawing until a successful retry replaces it.
+                view.visibility = View.INVISIBLE
                 Log.e(TAG, "WebView received error: ${error.description}")
                 scheduleReload(delay)
             }
@@ -518,9 +524,18 @@ class WebUIFragment : Fragment() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // Error-page finishes still call onPageFinished. Only a
                 // successful load should drop the pending startup retry.
-                if (reloadPolicy.onPageFinished()) {
-                    reloadHandler.removeCallbacks(reloadRunnable)
-                }
+                if (!reloadPolicy.onPageFinished()) return
+                reloadHandler.removeCallbacks(reloadRunnable)
+                // A finished navigation can still have the old error frame in
+                // the compositor. Reveal only after the replacement is drawable.
+                val finishedNavigation = navigationId
+                view?.postVisualStateCallback(finishedNavigation, object : WebView.VisualStateCallback() {
+                    override fun onComplete(requestId: Long) {
+                        if (view === webView && navigationId == requestId && !reloadPolicy.currentLoadFailed) {
+                            view.visibility = View.VISIBLE
+                        }
+                    }
+                })
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
                 view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
             }
