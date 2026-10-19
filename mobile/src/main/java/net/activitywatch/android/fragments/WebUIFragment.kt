@@ -61,13 +61,14 @@ internal const val THEME_SETTLE_FAILSAFE_MS = 3_000L
 
 // A document that can still report its theme is waited for, not revealed: doing
 // so would paint its light base styles before dark.css applies (aw-android#300).
-// Each extension adds one more THEME_SETTLE_FAILSAFE_MS, capping the total wait.
+// Each extension adds one more THEME_SETTLE_FAILSAFE_MS. After the polling cap,
+// keep a pending dashboard hidden until its own settle report arrives.
 internal const val THEME_SETTLE_MAX_EXTENSIONS = 4
 
 @VisibleForTesting
 internal var themeSettleFailsafeMs = THEME_SETTLE_FAILSAFE_MS
 
-internal enum class ThemeFailsafeAction { WAIT, REVEAL }
+internal enum class ThemeFailsafeAction { WAIT, AWAIT_REPORT, REVEAL }
 
 /**
  * Decides what the theme-settle failsafe does when one bound elapses.
@@ -75,10 +76,14 @@ internal enum class ThemeFailsafeAction { WAIT, REVEAL }
  * Only a document that can never report (`no-bridge`, `not-dashboard`, or an
  * unreadable hook state) is revealed. A `pending` dashboard is still applying
  * its theme, so revealing it would reintroduce the white frame this failsafe
- * exists to avoid; it is waited for until [extensionsLeft] is spent.
+ * exists to avoid. Exhausting [extensionsLeft] stops polling, not waiting for
+ * the page's own settle report.
  */
-internal fun themeFailsafeAction(state: String?, extensionsLeft: Int): ThemeFailsafeAction =
-    if (state == "pending" && extensionsLeft > 0) ThemeFailsafeAction.WAIT else ThemeFailsafeAction.REVEAL
+internal fun themeFailsafeAction(state: String?, extensionsLeft: Int): ThemeFailsafeAction = when {
+    state != "pending" -> ThemeFailsafeAction.REVEAL
+    extensionsLeft > 0 -> ThemeFailsafeAction.WAIT
+    else -> ThemeFailsafeAction.AWAIT_REPORT
+}
 
 private const val THEME_STATE_JS =
     "(window.__awAndroidThemeState && window.__awAndroidThemeState()) || 'unknown'"
@@ -672,6 +677,9 @@ class WebUIFragment : Fragment() {
                 when (themeFailsafeAction(state, themeFailsafeExtensionsLeft)) {
                     ThemeFailsafeAction.WAIT ->
                         scheduleThemeSettleFailsafe(navigation, themeFailsafeExtensionsLeft - 1)
+                    // The hook's observer/load/error callbacks still report
+                    // settlement after polling stops. Keep the WebView hidden.
+                    ThemeFailsafeAction.AWAIT_REPORT -> Unit
                     ThemeFailsafeAction.REVEAL -> onThemeSettled(navigation)
                 }
             }

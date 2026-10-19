@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import net.activitywatch.android.fragments.WebUIFragment
+import net.activitywatch.android.fragments.THEME_SETTLE_MAX_EXTENSIONS
 import net.activitywatch.android.fragments.themeSettleFailsafeMs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -186,11 +187,21 @@ class DashboardThemePaintTest {
                 evaluate(webView, "location.href = '/'")
                 await { stylesheetRequests.get() == 3 }
                 await { evaluate(webView, "document.readyState") == "\"complete\"" }
-                // Well past the first bound, still inside the extension cap.
-                Thread.sleep(1_500)
+                await { evaluate(webView, "window.__awAndroidThemeState()") == "\"pending\"" }
+                // Past every polling attempt plus scheduling margin, not just
+                // the first extension. The old cap revealed this light page.
+                Thread.sleep(themeSettleFailsafeMs * (THEME_SETTLE_MAX_EXTENSIONS + 1) + 1_500)
+                assertEquals(
+                    "The held stylesheet must still be pending after the cap",
+                    "\"pending\"", evaluate(webView, "window.__awAndroidThemeState()")
+                )
+                assertEquals(
+                    "\"rgb(247, 250, 252)\"",
+                    evaluate(webView, "getComputedStyle(document.body).backgroundColor")
+                )
                 scenario.onActivity {
                     assertEquals(
-                        "A slow dashboard must not be revealed by the failsafe",
+                        "A slow dashboard must stay hidden even after the polling cap",
                         View.INVISIBLE, webView.visibility
                     )
                 }
@@ -200,6 +211,10 @@ class DashboardThemePaintTest {
                     scenario.onActivity { visible = webView.visibility == View.VISIBLE }
                     visible
                 }
+                assertEquals(
+                    "\"rgb(15, 19, 26)\"",
+                    evaluate(webView, "getComputedStyle(document.body).backgroundColor")
+                )
             }
         } finally {
             themeSettleFailsafeMs = originalFailsafeMs

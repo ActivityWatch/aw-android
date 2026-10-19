@@ -375,7 +375,11 @@ class WebUIFragmentTest {
     }
 
     @Test
-    fun `theme failsafe eventually reveals a dashboard that never reports`() {
-        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("pending", extensionsLeft = 0))
+    fun `theme failsafe keeps a pending dashboard hidden after the polling cap`() {
+        assertEquals(
+            "Exhausting retries is not evidence that the stylesheet has settled",
+            ThemeFailsafeAction.AWAIT_REPORT,
+            themeFailsafeAction("pending", extensionsLeft = 0),
+        )
     }
 }
