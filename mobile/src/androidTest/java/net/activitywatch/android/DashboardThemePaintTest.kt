@@ -181,12 +181,13 @@ class DashboardThemePaintTest {
                 // settle must still be waited for: revealing it there would
                 // paint the light base styles first.
                 stylesheetMissing.set(false)
-                themeSettleFailsafeMs = 100
+                themeSettleFailsafeMs = 1_000
                 releaseStylesheet.set(CountDownLatch(1))
                 evaluate(webView, "location.href = '/'")
                 await { stylesheetRequests.get() == 3 }
                 await { evaluate(webView, "document.readyState") == "\"complete\"" }
-                Thread.sleep(300)
+                // Well past the first bound, still inside the extension cap.
+                Thread.sleep(1_500)
                 scenario.onActivity {
                     assertEquals(
                         "A slow dashboard must not be revealed by the failsafe",
