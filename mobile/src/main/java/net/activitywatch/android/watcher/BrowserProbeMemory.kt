@@ -39,6 +39,14 @@ internal class BrowserProbeMemory(saved: String?, private val save: (String) -> 
     fun isActive(pkg: String, versionCode: Long, nowMs: Long): Boolean =
         current(pkg, versionCode)?.let { isDue(it, nowMs) } ?: true
 
+    // Learned browsers need no timer. Unknown handlers retry only at their backoff deadline.
+    @Synchronized
+    fun retryDelayMs(pkg: String, versionCode: Long, nowMs: Long): Long? {
+        val state = current(pkg, versionCode) ?: return 0L
+        if (state.style != null) return null
+        return if (isDue(state, nowMs)) 0L else state.nextProbeAtMs - nowMs
+    }
+
     @Synchronized
     fun extract(pkg: String, versionCode: Long, nowMs: Long, probe: (UrlBarStyle) -> String?): String? {
         val state = current(pkg, versionCode) ?: ProbeState(versionCode)

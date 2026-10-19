@@ -78,6 +78,7 @@ class WebWatcher : AccessibilityService() {
     // The scheduled follow-up lookup, the browser it is for and when it runs (uptime ms).
     private class TitleFollowUp(val browser: String, val dueAt: Long, val runnable: Runnable)
     private var titleFollowUp: TitleFollowUp? = null
+    private var probeFollowUp: TitleFollowUp? = null
 
     // heartbeat() blocks on the datastore worker for as long as it is busy. Calling it from
     // onAccessibilityEvent ran it on the service's main thread, the same pattern that caused
@@ -142,7 +143,9 @@ class WebWatcher : AccessibilityService() {
         in detectedBrowsers -> probeMemory.extract(packageName, detectedBrowsers.getValue(packageName), System.currentTimeMillis()) {
             when (it) {
                 UrlBarStyle.CHROMIUM -> extractTextByViewId(rootInActiveWindow, "$packageName:id/url_bar", ignoreFocused = true)
-                UrlBarStyle.GECKO -> extractGeckoUrl(packageName, event)
+                UrlBarStyle.GECKO -> extractFirefoxUrl(event)
+                    ?: extractTextByViewId(rootInActiveWindow, "$packageName:id/url_bar_title")
+                    ?: extractTextByViewId(rootInActiveWindow, "$packageName:id/mozac_browser_toolbar_url_view")
             }
         }
         else -> null
@@ -210,6 +213,12 @@ class WebWatcher : AccessibilityService() {
         }
 
         val packageName = event.packageName?.toString()
+        probeFollowUp?.let { pending ->
+            if (pending.browser != packageName) {
+                mainHandler.removeCallbacks(pending.runnable)
+                probeFollowUp = null
+            }
+        }
         // A backed-off package is handled like any non-browser app, which also skips the
         // WebView walk below.
         val isKnownBrowser = packageName != null && (packageName in KNOWN_BROWSER_PACKAGES ||
@@ -219,6 +228,7 @@ class WebWatcher : AccessibilityService() {
         lastWindowId = event.windowId
 
         if (!isKnownBrowser) {
+            packageName?.let { scheduleProbeLookup(it) }
             // for some browsers like Firefox event.packageName can be null (no extractor matched)
             // but we are still on the same window
             if (windowChanged) {
@@ -229,8 +239,11 @@ class WebWatcher : AccessibilityService() {
             return
         }
 
+        processBrowserEvent(packageName!!, event, windowChanged)
+    }
+
+    private fun processBrowserEvent(browser: String, event: AccessibilityEvent, windowChanged: Boolean) {
         try {
-            val browser = packageName!!
             val newUrl = extractUrl(browser, event)
             if (newUrl == null) {
                 maybeDumpTree(browser)
@@ -252,7 +265,39 @@ class WebWatcher : AccessibilityService() {
             }
         } catch(ex : Exception) {
             Log.e(TAG, ex.message ?: ex.toString())
+        } finally {
+            scheduleProbeLookup(browser)
         }
+    }
+
+    // A failed first probe must not depend on the page emitting another event. Keep one
+    // deadline, and read a fresh tree only if this package still owns the active window.
+    private fun scheduleProbeLookup(browser: String) {
+        val version = detectedBrowsers[browser] ?: return
+        val delay = probeMemory.retryDelayMs(browser, version, System.currentTimeMillis()) ?: return
+        // Only failed probes create a deadline; extraction errors must not busy-loop.
+        if (delay <= 0 || probeFollowUp?.browser == browser) return
+        val dueAt = SystemClock.uptimeMillis() + delay
+        val followUp = Runnable {
+            probeFollowUp = null
+            if (detectedBrowsers[browser] != version) return@Runnable
+            val root = rootInActiveWindow ?: return@Runnable
+            try {
+                if (root.packageName?.toString() != browser) return@Runnable
+            } finally {
+                root.recycle()
+            }
+            // No retained AccessibilityEvent/source: the originating nodes are stale now.
+            val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+            try {
+                event.packageName = browser
+                processBrowserEvent(browser, event, windowChanged = false)
+            } finally {
+                event.recycle()
+            }
+        }
+        probeFollowUp = TitleFollowUp(browser, dueAt, followUp)
+        mainHandler.postAtTime(followUp, dueAt)
     }
 
     private fun windowChanged(windowId: Int): Boolean = windowId != lastWindowId
