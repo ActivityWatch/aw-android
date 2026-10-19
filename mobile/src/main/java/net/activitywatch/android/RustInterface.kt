@@ -118,6 +118,10 @@ class RustInterface(context: Context? = null) {
         if (context != null) {
             setDataDir(context.filesDir.absolutePath)
             appVersionString(context)?.let { setVersionOverride(it) }
+            // OS gethostname() is localhost on Android; buckets already use
+            // deviceHostname(). Without this, /api/0/info never matches the
+            // webui "this device" badge (ActivityWatch/aw-android#368).
+            setHostnameOverride(deviceHostname(context))
         }
     }
 
@@ -161,6 +165,7 @@ class RustInterface(context: Context? = null) {
     private external fun startServer(port: Int)
     private external fun setDataDir(path: String)
     private external fun setVersionOverride(version: String)
+    private external fun setHostnameOverride(hostname: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
