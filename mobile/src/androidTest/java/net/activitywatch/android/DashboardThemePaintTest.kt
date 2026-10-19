@@ -8,6 +8,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import net.activitywatch.android.fragments.WebUIFragment
+import net.activitywatch.android.fragments.themeSettleFailsafeMs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,7 +71,10 @@ class DashboardThemePaintTest {
                 // Closed by the test.
             }
         }
+        val originalFailsafeMs = themeSettleFailsafeMs
         try {
+            // Only the page's settle report may reveal it, not the fail-open bound.
+            themeSettleFailsafeMs = TimeUnit.MINUTES.toMillis(5)
             shell("appops set $packageName GET_USAGE_STATS allow")
             preferences.edit().putBoolean("isFirstTime", false)
                 .putBoolean("hasRequestedNotificationPermission", true).commit()
@@ -111,6 +115,7 @@ class DashboardThemePaintTest {
                 )
             }
         } finally {
+            themeSettleFailsafeMs = originalFailsafeMs
             releaseStylesheet.countDown()
             server.close()
             responder.join(1000)

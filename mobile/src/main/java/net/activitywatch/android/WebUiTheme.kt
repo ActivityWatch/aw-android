@@ -35,7 +35,8 @@ internal fun initialWebViewBackgroundRes(config: Configuration): Int =
  * Observes aw-webui's `localStorage.theme` and the injected `/dark.css` link,
  * then reports `dark` or `light` to `Android.reportColorScheme`.
  *
- * Also calls `Android.reportThemeSettled` once per document, when the page's
+ * Also calls `Android.reportThemeSettled(window.__awAndroidNavigation)` once
+ * per document (the native side tags each finished navigation), when the page's
  * theme is actually applied: aw-webui's App.vue renders `#wrapper` only after
  * loading settings and appending any `/dark.css` link, and that stylesheet must
  * then have loaded or failed. Before that the body is painted with the light
@@ -85,7 +86,7 @@ internal val ANDROID_THEME_HOOK_JS = """
     if (typeof Android === 'undefined' || !Android.reportThemeSettled) return;
     settledReported = true;
     settledObserver.disconnect();
-    Android.reportThemeSettled();
+    Android.reportThemeSettled(String(window.__awAndroidNavigation));
   }
 
   var settledObserver = new MutationObserver(checkSettled);

@@ -25,6 +25,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
@@ -57,6 +58,9 @@ internal const val MAX_RELOAD_DELAY_MS = 5_000L
 // (see ANDROID_THEME_HOOK_JS). Only documents that never report it, such as a
 // non-dashboard page, wait this long; the dashboard reveals as soon as it reports.
 internal const val THEME_SETTLE_FAILSAFE_MS = 3_000L
+
+@VisibleForTesting
+internal var themeSettleFailsafeMs = THEME_SETTLE_FAILSAFE_MS
 
 internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
 
@@ -442,7 +446,7 @@ class WebUIFragment : Fragment() {
     private var navigationId = 0L
     private var finishedNavigation = -1L
     private var themeSettledNavigation = -1L
-    private val themeSettleFailsafe = Runnable { onThemeSettled() }
+    private val themeSettleFailsafe = Runnable { onThemeSettled(navigationId) }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val webMenuState = WebMenuState()
     private var nativeBridgeReply: JavaScriptReplyProxy? = null
@@ -542,8 +546,10 @@ class WebUIFragment : Fragment() {
                 reloadHandler.removeCallbacks(reloadRunnable)
                 finishedNavigation = navigationId
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
+                // Tag the document so a settle report from an older one is ignored.
+                view?.evaluateJavascript("window.__awAndroidNavigation = '$navigationId';", null)
                 view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
-                reloadHandler.postDelayed(themeSettleFailsafe, THEME_SETTLE_FAILSAFE_MS)
+                reloadHandler.postDelayed(themeSettleFailsafe, themeSettleFailsafeMs)
                 revealWhenReady()
             }
 
@@ -594,8 +600,8 @@ class WebUIFragment : Fragment() {
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
         myWebView.addJavascriptInterface(
-            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl) {
-                postToUi(::onThemeSettled)
+            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl) { navigation ->
+                navigation.toLongOrNull()?.let { postToUi { onThemeSettled(it) } }
             },
             "Android",
         )
@@ -607,8 +613,9 @@ class WebUIFragment : Fragment() {
         return view
     }
 
-    private fun onThemeSettled() {
-        themeSettledNavigation = navigationId
+    private fun onThemeSettled(navigation: Long) {
+        if (navigation != navigationId) return
+        themeSettledNavigation = navigation
         revealWhenReady()
     }
 
@@ -997,7 +1004,7 @@ class WebAppInterface(
     private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
     private val onColorScheme: (String) -> Unit = {},
     private val onExportUrl: (url: String, filename: String) -> Unit = { _, _ -> },
-    private val onThemeSettled: () -> Unit = {},
+    private val onThemeSettled: (navigation: String) -> Unit = {},
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -1050,8 +1057,8 @@ class WebAppInterface(
     }
 
     @JavascriptInterface
-    fun reportThemeSettled() {
-        onThemeSettled()
+    fun reportThemeSettled(navigation: String) {
+        onThemeSettled(navigation)
     }
 
     @JavascriptInterface
