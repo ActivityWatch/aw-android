@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -157,7 +156,7 @@ class BackgroundService : Service() {
                     Log.i(TAG, "Service destroyed while the server start was waiting; skipping")
                     return@launch
                 }
-                migrateSanitizedSyncFolders()
+                migrateSyncFoldersBeforeServer(this@BackgroundService)
                 // Under the same lock as the migration so overlapping
                 // onStartCommand invocations and the deferred rewrite thread
                 // can never interleave with the server opening the database.
@@ -212,35 +211,6 @@ class BackgroundService : Service() {
         // A sticky recreation can occur while the app is backgrounded, where Android 12+
         // may reject foreground promotion. Only explicit, eligible callers restart us.
         return BACKGROUND_SERVICE_RESTART_MODE
-    }
-
-    /**
-     * Fold leftover sync folders named after legacy (unsanitized) hostnames into the
-     * current one. Bucket hostnames in sqlite.db are rewritten by [DatastoreStartup].
-     */
-    private fun migrateSanitizedSyncFolders() {
-        val current = deviceHostname(this)
-        val legacy = legacyDeviceHostnames(this)
-
-        val syncDir = existingAwSyncDirectory(this)
-        if (syncDir != null) {
-            val deviceId =
-                File(filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
-                    it.isNotEmpty()
-                }
-            val result =
-                SanitizedHostnameMigration.migrateSyncFolders(syncDir, current, legacy, deviceId)
-            if (result.moved > 0) {
-                Log.i(TAG, "Migrated ${result.moved} leftover sync-folder entries to '$current'")
-            }
-            if (result.failed > 0) {
-                Log.w(
-                    TAG,
-                    "${result.failed} sync-folder migration action(s) failed; " +
-                        "the next start retries",
-                )
-            }
-        }
     }
 
     private fun awaitRustInterface(): RustInterface? =

@@ -47,7 +47,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         continuation.resume(Result.success())
                     } else {
                         Log.w(TAG, "Automatic sync failed: $message")
-                        continuation.resume(Result.failure())
+                        continuation.resume(if (runAttemptCount < 2) Result.retry() else Result.failure())
                     }
                 }
             } catch (e: UnsatisfiedLinkError) {
