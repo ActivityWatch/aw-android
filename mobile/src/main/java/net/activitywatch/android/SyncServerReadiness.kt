@@ -12,7 +12,14 @@ internal fun awaitSyncServer(
 ) {
     if (ready()) return
     val deadline = now() + timeoutMs
-    start()
+    try {
+        start()
+    } catch (e: UnsatisfiedLinkError) {
+        // RustInterface is constructed on the sync executor. Linkage errors are
+        // Errors, so normalize this recoverable startup failure for its existing
+        // Exception handler, which persists failure and completes the callback.
+        throw IOException("Local ActivityWatch server native library unavailable: ${e.message}", e)
+    }
     while (!ready()) {
         val remaining = deadline - now()
         if (remaining <= 0) throw IOException("Local ActivityWatch server did not become ready within ${timeoutMs}ms")

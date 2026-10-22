@@ -29,6 +29,8 @@ class ColdStartSyncTest {
                 .putBoolean("hasRequestedNotificationPermission", true).commit()
         }
         val prefs = AWPreferences(context)
+        // This test exercises opted-in background work, including on fresh CI installs.
+        prefs.setSyncEnabled(true)
         prefs.setHandlerPassAt(0)
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         fun foregroundServerRunning() = activityManager.getRunningServices(Int.MAX_VALUE).any {

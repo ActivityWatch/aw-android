@@ -5,6 +5,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SyncServerReadinessTest {
+    @Test fun missingNativeLibraryBecomesReportableStartupFailure() {
+        val nativeError = UnsatisfiedLinkError("aw_server unavailable")
+        try {
+            awaitSyncServer(start = { throw nativeError }, ready = { false })
+            fail("Native loading failure must not proceed to sync")
+        } catch (e: IOException) {
+            assertSame(nativeError, e.cause)
+            assertTrue(e.message!!.contains("native library unavailable"))
+        }
+    }
+
     @Test fun existingServerNeedsNoRestart() {
         awaitSyncServer(start = { fail("Healthy server must not restart") }, ready = { true })
     }
