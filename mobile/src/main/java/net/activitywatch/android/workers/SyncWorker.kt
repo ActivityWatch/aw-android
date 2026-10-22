@@ -16,9 +16,16 @@ private const val TAG = "SyncWorker"
 /** Keeps alarm-triggered sync and SAF mirroring inside WorkManager's process lifecycle. */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        // Each retry is a new attempt. Sync may have been disabled since the alarm
+        // was delivered or the previous attempt failed; do not initialize JNI then.
+        val prefs = AWPreferences(applicationContext)
+        if (!prefs.isSyncEnabled()) {
+            Log.i(TAG, "Sync is disabled; skipping queued background sync")
+            return Result.success()
+        }
         // Checked again here, not only when the alarm was delivered: a worker can start
         // after a Handler pass that began or finished in between, and would then repeat it.
-        val lastHandlerPassAt = AWPreferences(applicationContext).getHandlerPassAt()
+        val lastHandlerPassAt = prefs.getHandlerPassAt()
         if (alarmSyncIsRedundant(lastHandlerPassAt, System.currentTimeMillis())) {
             Log.i(TAG, "Scheduler synced since the alarm; skipping fallback sync")
             return Result.success()
@@ -47,7 +54,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         continuation.resume(Result.success())
                     } else {
                         Log.w(TAG, "Automatic sync failed: $message")
-                        continuation.resume(Result.failure())
+                        continuation.resume(if (runAttemptCount < 2) Result.retry() else Result.failure())
                     }
                 }
             } catch (e: UnsatisfiedLinkError) {
