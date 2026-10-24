@@ -4,6 +4,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
+import android.os.UserManager
 import android.util.Log
 import kotlin.math.roundToLong
 import net.activitywatch.android.RustInterface
@@ -55,6 +56,9 @@ const val SCREEN_STATE_BUCKET_TYPE = "os.screen.state"
  * - a run stopped between two writes just after a startup: rare, and the writes cannot be
  *   made all at once, so the startup can be taken for a new one and the time until the next
  *   screen event lost;
+ * - a read the usage stats service fails to answer: Android returns it as empty, which cannot
+ *   be told from no change, so the last span is extended and a change in that time is placed
+ *   at the stored end by the next read;
  * - Android before version 10, which records no shutdowns: nothing is recorded there.
  */
 class ScreenStateWatcher(private val context: Context) {
@@ -67,13 +71,17 @@ class ScreenStateWatcher(private val context: Context) {
         // Without shutdown events the span open when the phone is turned off would run on
         // until it is turned on again.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        // Without usage access Android returns no events at all, which would read as no change
-        // and extend the last span to now.
+        // Without usage access there is nothing to read: no bucket is created and nothing is
+        // written.
         if (!UsageStatsWatcher.isUsageAllowed(context)) return
+        // Before the first unlock after a boot there are no usage events to read, and Android may
+        // return that as an empty result, which would read as no change.
+        if (context.getSystemService(UserManager::class.java)?.isUserUnlocked != true) return
         try {
             send(ri)
         } catch (e: Exception) {
-            // A failure here must not stop the caller's own ingest.
+            // A failure, a read that cannot be trusted included, skips this run without stopping
+            // the caller's own ingest.
             Log.e(TAG, "Screen state ingest failed", e)
         }
     }
@@ -95,6 +103,9 @@ class ScreenStateWatcher(private val context: Context) {
 
         val now = System.currentTimeMillis()
         val events = readEvents(resume.begin, now)
+        // Usage access revoked during this run leaves the read empty, and an empty read would
+        // extend the last span to now.
+        check(UsageStatsWatcher.isUsageAllowed(context)) { "Usage access revoked during the run" }
         val result = parseScreenStateSpans(events, resume.stored, now)
 
         for (span in result.spans) {
@@ -114,7 +125,9 @@ class ScreenStateWatcher(private val context: Context) {
 
     private fun readEvents(begin: Long, end: Long): List<UsageEvent> {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val usageEvents = usm.queryEvents(begin, end) ?: return emptyList()
+        // Null, documented while the user has not unlocked the device yet (Android 11 and later),
+        // tells nothing about the state, unlike an empty result, so the run stops.
+        val usageEvents = checkNotNull(usm.queryEvents(begin, end)) { "Usage events unavailable" }
         val events = mutableListOf<UsageEvent>()
         val event = UsageEvents.Event()
         while (usageEvents.hasNextEvent()) {
