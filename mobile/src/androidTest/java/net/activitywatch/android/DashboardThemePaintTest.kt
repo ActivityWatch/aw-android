@@ -185,6 +185,11 @@ class DashboardThemePaintTest {
                 themeSettleFailsafeMs = 1_000
                 releaseStylesheet.set(CountDownLatch(1))
                 evaluate(webView, "location.href = '/'")
+                // Wait until the WebView has actually navigated to `/` before
+                // polling the theme state. Evaluating on the unloading /early
+                // document returns undefined for __awAndroidThemeState, which
+                // would cause the final await to time out spuriously.
+                await { evaluate(webView, "location.href") == "\"$url\"" }
                 await { stylesheetRequests.get() == 3 }
                 await { evaluate(webView, "document.readyState") == "\"complete\"" }
                 await { evaluate(webView, "window.__awAndroidThemeState()") == "\"pending\"" }

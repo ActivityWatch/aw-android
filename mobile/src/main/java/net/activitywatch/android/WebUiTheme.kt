@@ -77,12 +77,6 @@ internal val ANDROID_THEME_HOOK_JS = """
       // The sheet exists but its rules are unreadable (cross-origin): loaded.
       return true;
     }
-    if (link.__awPresentAtHookInstall && document.readyState === 'complete') {
-      // Present before this hook ran and the document finished loading, so the
-      // link has already loaded or failed. A null sheet means it failed and the
-      // readable light fallback must reveal now.
-      return true;
-    }
     if (!link.__awWatched) {
       link.__awWatched = true;
       var done = function () {
@@ -91,6 +85,26 @@ internal val ANDROID_THEME_HOOK_JS = """
       };
       link.addEventListener('load', done);
       link.addEventListener('error', done);
+    }
+    if (link.__awPresentAtHookInstall && document.readyState === 'complete') {
+      // Present before this hook ran and the document finished loading. A link
+      // that was added before the load event has already dispatched load/error
+      // (our listener above will never fire). However, a link appended in a
+      // post-load fetch callback may still be in-flight when this hook runs.
+      // PerformanceResourceTiming's responseEnd distinguishes the two cases:
+      // > 0 means the response was received before the hook; treat a null
+      // sheet as "failed" and reveal the readable fallback now.
+      try {
+        var entries = performance.getEntriesByName(link.href, 'resource');
+        if (entries.length > 0 && entries[entries.length - 1].responseEnd > 0) {
+          return true;
+        }
+        // Request still in-flight; the listener above will fire on completion.
+        return false;
+      } catch (e) {
+        // performance API unavailable; fall back: treat null sheet as failed.
+        return true;
+      }
     }
     return false;
   }
