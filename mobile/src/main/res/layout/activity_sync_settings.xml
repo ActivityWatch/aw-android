@@ -79,5 +79,60 @@
             android:textColor="?android:attr/textColorSecondary"
             android:text="ActivityWatch can sync data between devices. Choose a directory accessible to your sync tool (e.g. Syncthing, Dropbox) — the Downloads folder is a common choice.\n\nSync is off by default. Enable it only after selecting a directory." />
 
+
+        <!-- Scheduled export (aw-android#141) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Automatic export"
+            android:textAppearance="?android:attr/textAppearanceListItem" />
+
+        <RadioGroup
+            android:id="@+id/rg_auto_export"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rb_auto_export_off"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Off" />
+
+            <RadioButton
+                android:id="@+id/rb_auto_export_daily"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Daily" />
+
+            <RadioButton
+                android:id="@+id/rb_auto_export_weekly"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Weekly" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/tv_auto_export_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <Button
+            android:id="@+id/btn_choose_export_dir"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Choose Export Folder"
+            style="@style/Widget.AppCompat.Button.Borderless" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?android:attr/textColorSecondary"
+            android:text="Writes a full export of all buckets (aw-export-&lt;device&gt;-&lt;date&gt;.json) to the chosen folder, e.g. one watched by Nextcloud or Syncthing. The newest 7 exports are kept. Off by default." />
+
     </LinearLayout>
 </ScrollView>
