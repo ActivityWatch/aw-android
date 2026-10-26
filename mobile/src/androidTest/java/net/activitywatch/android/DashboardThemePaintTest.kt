@@ -48,36 +48,42 @@ class DashboardThemePaintTest {
         val releaseStylesheet = AtomicReference(CountDownLatch(1))
         val stylesheetMissing = AtomicBoolean(false)
         val server = ServerSocket(0)
+        // Concurrent handlers: a held /dark.css from the previous document
+        // must not stall GET /. Serial accept timed out the /early → /
+        // wait on API 29 CI (run 40334359221).
         val responder = thread(isDaemon = true) {
             try {
                 while (true) {
-                    server.accept().use { socket ->
-                        socket.soTimeout = 5000
-                        val input = socket.getInputStream().bufferedReader()
-                        val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
-                        while (!input.readLine().isNullOrEmpty()) { }
-                        if (path == "/dark.css" && stylesheetMissing.get()) {
-                            socket.getOutputStream().write(
-                                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
-                            )
-                            return@use
-                        }
-                        val (type, body) = when (path) {
-                            "/" -> "text/html" to PAGE
-                            "/early" -> "text/html" to PAGE_EARLY
-                            "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
-                            "/dark.css" -> {
-                                val release = releaseStylesheet.get()
-                                stylesheetRequests.incrementAndGet()
-                                release.await(15, TimeUnit.SECONDS)
-                                "text/css" to "body { background: rgb(15, 19, 26); }"
+                    val socket = server.accept()
+                    thread(isDaemon = true) {
+                        socket.use { conn ->
+                            conn.soTimeout = 5000
+                            val input = conn.getInputStream().bufferedReader()
+                            val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
+                            while (!input.readLine().isNullOrEmpty()) { }
+                            if (path == "/dark.css" && stylesheetMissing.get()) {
+                                conn.getOutputStream().write(
+                                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
+                                )
+                                return@use
                             }
-                            else -> "text/plain" to ""
+                            val (type, body) = when (path) {
+                                "/" -> "text/html" to PAGE
+                                "/early" -> "text/html" to PAGE_EARLY
+                                "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
+                                "/dark.css" -> {
+                                    val release = releaseStylesheet.get()
+                                    stylesheetRequests.incrementAndGet()
+                                    release.await(15, TimeUnit.SECONDS)
+                                    "text/css" to "body { background: rgb(15, 19, 26); }"
+                                }
+                                else -> "text/plain" to ""
+                            }
+                            val response = "HTTP/1.1 200 OK\r\nContent-Type: $type\r\n" +
+                                "Content-Length: ${body.toByteArray().size}\r\n" +
+                                "Cache-Control: no-store\r\nConnection: close\r\n\r\n$body"
+                            conn.getOutputStream().write(response.toByteArray())
                         }
-                        val response = "HTTP/1.1 200 OK\r\nContent-Type: $type\r\n" +
-                            "Content-Length: ${body.toByteArray().size}\r\n" +
-                            "Cache-Control: no-store\r\nConnection: close\r\n\r\n$body"
-                        socket.getOutputStream().write(response.toByteArray())
                     }
                 }
             } catch (_: SocketException) {
@@ -184,10 +190,39 @@ class DashboardThemePaintTest {
                 stylesheetMissing.set(false)
                 themeSettleFailsafeMs = 1_000
                 releaseStylesheet.set(CountDownLatch(1))
-                evaluate(webView, "location.href = '/'")
-                await { stylesheetRequests.get() == 3 }
-                await { evaluate(webView, "document.readyState") == "\"complete\"" }
-                await { evaluate(webView, "window.__awAndroidThemeState()") == "\"pending\"" }
+                evaluate(webView, "location.href = '$url'")
+                // Wait until the WebView has actually navigated to `/` before
+                // polling the theme state. Evaluating on the unloading /early
+                // document returns undefined for __awAndroidThemeState, which
+                // would cause the final await to time out spuriously.
+                // Pathname, not full href: Chromium may omit the trailing slash
+                // that `$url` includes, which would fail an exact href match
+                // after a successful navigation.
+                var lastHref = "unset"
+                var lastPath = "unset"
+                try {
+                    await("dashboard pathname /") {
+                        lastHref = evaluate(webView, "location.href")
+                        lastPath = evaluate(webView, "location.pathname")
+                        lastPath == "\"/\""
+                    }
+                } catch (e: AssertionError) {
+                    throw AssertionError(
+                        "Timed out waiting for dashboard pathname / " +
+                            "(href=$lastHref pathname=$lastPath " +
+                            "requests=${stylesheetRequests.get()})",
+                        e
+                    )
+                }
+                await("held dark.css after dashboard navigation") {
+                    stylesheetRequests.get() >= 3
+                }
+                await("dashboard document complete") {
+                    evaluate(webView, "document.readyState") == "\"complete\""
+                }
+                await("theme pending on held stylesheet") {
+                    evaluate(webView, "window.__awAndroidThemeState()") == "\"pending\""
+                }
                 // Past every polling attempt plus scheduling margin, not just
                 // the first extension. The old cap revealed this light page.
                 Thread.sleep(themeSettleFailsafeMs * (THEME_SETTLE_MAX_EXTENSIONS + 1) + 1_500)
@@ -241,13 +276,13 @@ class DashboardThemePaintTest {
         return result
     }
 
-    private fun await(condition: () -> Boolean) {
+    private fun await(what: String = "WebView state", condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
         while (System.nanoTime() < deadline) {
             if (condition()) return
             Thread.sleep(25)
         }
-        throw AssertionError("Timed out waiting for WebView state")
+        throw AssertionError("Timed out waiting for $what")
     }
 
     private companion object {
