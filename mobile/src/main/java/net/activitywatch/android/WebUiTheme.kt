@@ -1,6 +1,8 @@
 package net.activitywatch.android
 
 import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 
 /**
  * Resolve aw-webui's stored theme (`light` / `dark` / `auto`) to a dark chrome
@@ -21,6 +23,30 @@ internal fun webUiSchemeIsDark(
     }
 }
 
+/** Persistable aw-webui Appearance values. Unknown input becomes `auto`. */
+internal fun normalizeWebUiTheme(setting: String?): String =
+    when (setting?.lowercase()) {
+        "dark" -> "dark"
+        "light" -> "light"
+        else -> "auto"
+    }
+
+/**
+ * AppCompat night mode for native screens (Auth/Sync). Explicit Light/Dark
+ * override the device; `auto` still follows system. Call
+ * [applyPersistedWebUiNightMode] before `super.onCreate`.
+ */
+internal fun nightModeForWebUiTheme(setting: String?): Int =
+    when (normalizeWebUiTheme(setting)) {
+        "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+        "light" -> AppCompatDelegate.MODE_NIGHT_NO
+        else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+    }
+
+internal fun AppCompatActivity.applyPersistedWebUiNightMode() {
+    delegate.localNightMode = nightModeForWebUiTheme(AWPreferences(applicationContext).getWebUiTheme())
+}
+
 /**
  * Color resource for the WebView background to apply immediately on creation,
  * before the page loads and [ANDROID_THEME_HOOK_JS] fires.
@@ -33,7 +59,9 @@ internal fun initialWebViewBackgroundRes(config: Configuration): Int =
 
 /**
  * Observes aw-webui's `localStorage.theme` and the injected `/dark.css` link,
- * then reports `dark` or `light` to `Android.reportColorScheme`.
+ * then reports `dark` or `light` to `Android.reportColorScheme` and the raw
+ * `light`/`dark`/`auto` setting to `Android.reportThemeSetting` so native
+ * Auth/Sync screens can follow the in-app choice rather than only the device.
  *
  * Also calls `Android.reportThemeSettled(window.__awAndroidNavigation)` once
  * per document (the native side tags each finished navigation), when the page's
@@ -56,8 +84,9 @@ internal val ANDROID_THEME_HOOK_JS = """
   }
 
   function notify() {
-    if (typeof Android === 'undefined' || !Android.reportColorScheme) return;
-    Android.reportColorScheme(resolve());
+    if (typeof Android === 'undefined') return;
+    if (Android.reportColorScheme) Android.reportColorScheme(resolve());
+    if (Android.reportThemeSetting) Android.reportThemeSetting(localStorage.getItem('theme') || 'auto');
   }
 
   var settledReported = false;

@@ -44,10 +44,11 @@ internal fun AppCompatActivity.applySystemBarAppearance(darkContent: Boolean) {
 /**
  * Call after setContentView. The activity root owns safe areas for all its children.
  *
- * @param followNightMode when true, mirrors the system night mode instead of forcing
+ * @param followNightMode when true, mirrors the activity night mode instead of forcing
  *   light; pass true for native screens whose layouts use DayNight theme attributes
- *   (e.g. SyncSettingsActivity). Default false keeps the existing behaviour for
- *   activities that host the web UI (MainActivity overrides later).
+ *   (e.g. SyncSettingsActivity). After [applyPersistedWebUiNightMode], that is the
+ *   in-app Appearance setting, not only the device. Default false keeps the existing
+ *   behaviour for activities that host the web UI (MainActivity overrides later).
  */
 internal fun AppCompatActivity.applySafeWindowInsets(followNightMode: Boolean = false) {
     applySystemBarAppearance(darkContent = followNightMode && isSystemNightMode())

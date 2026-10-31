@@ -117,6 +117,18 @@ class WebUIFragmentTest {
     }
 
     @Test
+    fun `WebAppInterface reports the stored appearance setting`() {
+        val settings = mutableListOf<String>()
+        val bridge = WebAppInterface(
+            onExport = { _, _, _ -> error("export must not run") },
+            onThemeSetting = { settings.add(it) },
+        )
+        bridge.reportThemeSetting("dark")
+        bridge.reportThemeSetting("auto")
+        assertEquals(listOf("dark", "auto"), settings)
+    }
+
+    @Test
     fun `WebAppInterface download helpers keep explicit mime types`() {
         val received = mutableListOf<Triple<String, String, String>>()
         val bridge = WebAppInterface(onExport = { content, filename, mimeType ->
