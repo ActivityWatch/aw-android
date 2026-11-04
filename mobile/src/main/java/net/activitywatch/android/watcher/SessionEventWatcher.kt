@@ -154,19 +154,12 @@ class SessionEventWatcher(val context: Context) {
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
         val lastUnlock = lastUnlockEvent?.let(::eventStart)
-        var unlockCursor = queryStartAfter(lastUnlock)
+        val unlockCursor = queryStartAfter(lastUnlock)
 
         var eventsSent = 0
         var unlocksSent = 0
-        var previousWindowEnd: Long? = null
 
         for (window in windows) {
-            // Unlocks inside a pause are suppressed and advance no stored event, so leave the
-            // cursor alone until the window before the gap has actually been processed.
-            // Floors it to the newest interval end instead would skip valid unlocks that
-            // happened before the pause.
-            previousWindowEnd?.let { unlockCursor = maxOf(unlockCursor, it) }
-
             // A clipped event starts at the pause's end, not at its original RESUMED.
             // Recover foreground state even for the FIRST window after restart; using
             // only storedStart would filter out RESUMED and permanently stop extension.
@@ -174,7 +167,7 @@ class SessionEventWatcher(val context: Context) {
 
             val batch = sessionParser.parseSessionsAndUnlocksSince(
                 sessionsSince,
-                maxOf(unlockCursor, window.startMs),
+                Long.MAX_VALUE, // Unlocks replay independently below, not from the session cursor.
                 storedStart,
                 until = window.endMs,
             )
@@ -187,17 +180,23 @@ class SessionEventWatcher(val context: Context) {
                 insertSessionAsEvent(clipped, storedData)
                 eventsSent++
             }
-            for (timestamp in batch.unlockTimestamps) {
+        }
+
+        // A killed import may have persisted sessions but not all unlocks. Their allowed
+        // windows must start at the unlock cursor, even when it predates every session.
+        for (window in PauseIntervals.allowedWindows(pauses, unlockCursor, now)) {
+            for (timestamp in sessionParser.parseUnlockEventsForPeriod(window.startMs, window.endMs)) {
                 val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
                 ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
                 unlocksSent++
             }
-            previousWindowEnd = window.endMs
         }
 
-        // Keep the boundary needed to recover clipped foreground state. Output windows
-        // never rewind past storedStart; the retention margin also covers replay lookback.
-        storedStart?.let { pauseStore.prune(it - PAUSE_INTERVAL_RETENTION_MARGIN_MS) }
+        // Neither independent cursor may lose an exclusion it could still query. Keep the
+        // session lookback margin too, for recovering clipped foreground state.
+        storedStart?.let {
+            pauseStore.prune(minOf(it, unlockCursor) - PAUSE_INTERVAL_RETENTION_MARGIN_MS)
+        }
 
         Log.i(TAG, "Finished processing events, sent $eventsSent session events and $unlocksSent unlock events in ${windows.size} window(s)")
         return eventsSent
