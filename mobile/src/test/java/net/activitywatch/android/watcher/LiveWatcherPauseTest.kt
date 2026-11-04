@@ -132,6 +132,47 @@ class LiveWatcherPauseTest {
     }
 
     @Test
+    fun mediaPausedPollsKeepCallbacksUntilGenerationChanges() {
+        val context = RuntimeEnvironment.getApplication()
+        val service = Robolectric.buildService(MediaWatcher::class.java).get()
+        val emitted = mutableListOf<String>()
+        val segments = MediaPlaybackSegments<MediaSession.Token> { _, _, data -> emitted += data.getString("title") }
+        field(service, "segments").set(service, segments)
+        field(service, "connected").set(service, true)
+        val session = MediaSession(context, "paused-poll-test")
+        val controller = session.controller
+        shadowOf(controller).setPackageName(context.packageName)
+        shadowOf(controller).setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
+        shadowOf(controller).setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "public").build())
+        @Suppress("UNCHECKED_CAST")
+        val controllers = field(service, "activeControllers").get(service) as MutableMap<MediaSession.Token, android.media.session.MediaController>
+        @Suppress("UNCHECKED_CAST")
+        val callbacks = field(service, "activeCallbacks").get(service) as MutableMap<MediaSession.Token, android.media.session.MediaController.Callback>
+        controllers[controller.sessionToken] = controller
+        val poll = service.javaClass.getDeclaredMethod("pollActiveSessions").apply { isAccessible = true }
+        try {
+            prefs.setLiveCollectionPaused(true)
+            poll.invoke(service)
+            val pausedCallback = callbacks[controller.sessionToken]
+            assertNotNull("Entering a new generation must replace callback registrations", pausedCallback)
+            repeat(3) { poll.invoke(service) }
+            assertSame("Paused polls must not replace the same generation's callback", pausedCallback, callbacks[controller.sessionToken])
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertTrue("Paused polls must not collect playback", emitted.isEmpty())
+
+            prefs.setLiveCollectionPaused(false)
+            poll.invoke(service)
+            assertNotSame("Resume must replace the paused generation's callback", pausedCallback, callbacks[controller.sessionToken])
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertEquals(listOf("public"), emitted)
+        } finally {
+            callbacks[controller.sessionToken]?.let { controller.unregisterCallback(it) }
+            session.release()
+            (field(service, "handlerThread").get(service) as android.os.HandlerThread).quitSafely()
+        }
+    }
+
+    @Test
     fun mediaDelayedPlaybackCallbacksPreserveTransitionsWithoutCollectionPause() {
         val context = RuntimeEnvironment.getApplication()
         val service = Robolectric.buildService(MediaWatcher::class.java).get()

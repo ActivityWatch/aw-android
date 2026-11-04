@@ -73,7 +73,7 @@ class MediaWatcher : NotificationListenerService() {
     // teardown cancels the preference listener's posted reset.
     private fun canCollect(): Boolean {
         val generation = collectionPrefs.liveCollectionGeneration()
-        if (generation != collectionGeneration || collectionPrefs.isLiveCollectionPaused()) {
+        if (generation != collectionGeneration) {
             segments.clear()
             collectionGeneration = generation
             // A callback carries the generation in which Android queued its payload.
