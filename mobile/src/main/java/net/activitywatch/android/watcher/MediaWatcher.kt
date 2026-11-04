@@ -57,12 +57,34 @@ class MediaWatcher : NotificationListenerService() {
     // Only touched on handlerThread: callbacks, polling, the session scan and the final
     // writes all run there, so writes never block the service's main thread.
     private val segments = MediaPlaybackSegments<MediaSession.Token> { start, durationSeconds, data ->
-        ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
+        // A pause may arrive while metadata/package lookup is running on this thread.
+        if (!collectionPrefs.isLiveCollectionPaused() && collectionGeneration == collectionPrefs.liveCollectionGeneration()) {
+            ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
+        }
     }
 
     // Handler thread only. False between teardown and the next session scan, so a callback
     // or poll already queued when the listener disconnected can't reopen a segment.
     private var connected = false
+    private val collectionPrefs by lazy { net.activitywatch.android.AWPreferences(this) }
+    private var collectionGeneration = 0L
+
+    // Handler thread only. Persisted generation catches quick pause/resume even if
+    // teardown cancels the preference listener's posted reset.
+    private fun canCollect(): Boolean {
+        val generation = collectionPrefs.liveCollectionGeneration()
+        if (generation != collectionGeneration || collectionPrefs.isLiveCollectionPaused()) {
+            segments.clear()
+            collectionGeneration = generation
+        }
+        return !collectionPrefs.isLiveCollectionPaused()
+    }
+
+    private val pauseListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == net.activitywatch.android.AWPreferences.LIVE_COLLECTION_PAUSED) {
+            handler?.post { canCollect() }
+        }
+    }
 
     // Polling mechanism to prevent 60-second cutoffs
     private var handler: android.os.Handler? = null
@@ -73,6 +95,7 @@ class MediaWatcher : NotificationListenerService() {
         super.onCreate()
         Log.i(TAG, "MediaWatcher created")
         handler = android.os.Handler(handlerThread.looper)
+        collectionPrefs.registerListener(pauseListener)
 
         // RustInterface construction and createBucketHelper() can block for seconds, especially at
         // boot. Run them on the handlerThread so they never block the NotificationListenerService
@@ -115,6 +138,7 @@ class MediaWatcher : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "MediaWatcher destroyed")
+        collectionPrefs.unregisterListener(pauseListener)
         disconnect()
         // quitSafely still runs the teardown disconnect() just posted.
         handlerThread.quitSafely()
@@ -159,6 +183,7 @@ class MediaWatcher : NotificationListenerService() {
      */
     private fun onActiveSessionsChanged(controllers: List<MediaController>?) {
         if (controllers == null || !connected) return
+        canCollect()
 
         val currentTokens = controllers.map { it.sessionToken }.toSet()
 
@@ -203,7 +228,7 @@ class MediaWatcher : NotificationListenerService() {
     private fun createMediaCallback(controller: MediaController): MediaController.Callback {
         return object : MediaController.Callback() {
             override fun onPlaybackStateChanged(state: PlaybackState?) {
-                if (state == null) return
+                if (!canCollect() || state == null) return
                 val metadata = controller.metadata
                 if (metadata == null) {
                     // Some players clear metadata when they pause or stop. Nothing can be
@@ -224,6 +249,7 @@ class MediaWatcher : NotificationListenerService() {
             }
 
             override fun onSessionDestroyed() {
+                canCollect()
                 val token = controller.sessionToken
                 activeControllers.remove(token)
                 activeCallbacks.remove(token)?.let { controller.unregisterCallback(it) }
@@ -241,7 +267,7 @@ class MediaWatcher : NotificationListenerService() {
         state: PlaybackState,
         metadata: MediaMetadata
     ) {
-        if (!connected) return
+        if (!connected || !canCollect()) return
         val packageName = controller.packageName ?: return
         val token = controller.sessionToken
 
@@ -292,6 +318,11 @@ class MediaWatcher : NotificationListenerService() {
 
         // Everything written to the event, so a segment never outlives the data it records.
         val eventKey = "$packageName|$title|$artist|$album|$playbackState"
+        // Don't admit metadata read before a pause into a fresh post-resume segment.
+        if (collectionGeneration != collectionPrefs.liveCollectionGeneration() || collectionPrefs.isLiveCollectionPaused()) {
+            canCollect()
+            return
+        }
         val changed = segments.observe(token, eventKey, data, playbackState == "playing", Instant.now())
         if (changed) {
             Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
@@ -299,6 +330,7 @@ class MediaWatcher : NotificationListenerService() {
     }
 
     private fun pollActiveSessions() {
+        if (!canCollect()) return
         for (controller in activeControllers.values) {
             val state = controller.playbackState
             val metadata = controller.metadata
@@ -332,6 +364,6 @@ class MediaWatcher : NotificationListenerService() {
         }
         activeControllers.clear()
         activeCallbacks.clear()
-        segments.endAll(disconnectedAt)
+        if (canCollect()) segments.endAll(disconnectedAt)
     }
 }
