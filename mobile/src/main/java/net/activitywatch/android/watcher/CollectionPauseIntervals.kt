@@ -1,6 +1,7 @@
 package net.activitywatch.android.watcher
 
 import net.activitywatch.android.data.AppSession
+import net.activitywatch.android.parser.MAX_REASONABLE_SESSION_DURATION
 
 /**
  * One private wall-clock window `[startMs, endMs)`.
@@ -87,6 +88,23 @@ internal object PauseIntervals {
 
         if (cursor < toMs) windows.add(AllowedWindow(cursor, toMs))
         return windows
+    }
+
+    /**
+     * A stored session beginning at a pause's end may have had its RESUMED inside (or
+     * before) that pause. Its clipped timestamp is an output cursor, not a foreground
+     * replay cursor. Recover state from the persisted boundary on every run, including
+     * after process death. The parser cannot emit a new session >= its maximum duration,
+     * so that much lookback covers every session it can import without an unbounded query.
+     *
+     * Callers MUST clip every parsed session to [window]: the lookback is state recovery,
+     * not permission to reinsert earlier events or any private part of a session.
+     */
+    fun sessionReplayStart(pauses: List<PauseInterval>, storedStart: Long?, window: AllowedWindow): Long {
+        val cursor = minOf(storedStart ?: window.startMs, window.startMs)
+        return if (normalize(pauses).any { it.endMs == window.startMs }) {
+            minOf(cursor, (window.startMs - MAX_REASONABLE_SESSION_DURATION).coerceAtLeast(0L))
+        } else cursor
     }
 
     /**

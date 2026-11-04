@@ -53,4 +53,6 @@
     <string name="live_collection_scope">This pauses ActivityWatch\'s web browsing, media, and app-usage recording. App-usage and unlock history from paused intervals is not imported, and unfinished web visits and media segments are discarded. Resume logging from this menu when ready.</string>
     <string name="live_collection_paused">Logging paused. Web, media, and app-usage history are not recorded.</string>
     <string name="live_collection_resumed">Logging resumed</string>
+    <string name="live_collection_pause_failed">Could not save the pause. Logging is still active.</string>
+    <string name="live_collection_resume_failed">Could not save the resume. Logging remains paused.</string>
 </resources>

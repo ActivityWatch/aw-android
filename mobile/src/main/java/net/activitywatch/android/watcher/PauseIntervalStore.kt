@@ -68,7 +68,12 @@ internal class PauseIntervalStore(context: Context) {
     /**
      * Persisted intervals, reconciled with the live flag.
      *
-     * `flagPaused && no open interval` appends `{startMs: now, endMs: null}`. Read the `now`
+     * Only a missing interval file may migrate `flagPaused` into an open interval. Once the
+     * file exists it is authoritative: a caller may have sampled a stale true preference
+     * just before recordResume closed the interval. Reopening it would suppress all later
+     * history even after the UI cleared the flag.
+     *
+     * Migration appends `{startMs: now, endMs: null}`. Read the `now`
      * literally: history recorded before this upgrade was collected while only the live
      * collectors were paused, so it is not known-private and must import normally. Never
      * backdate to epoch or first launch — that would quietly delete real history instead of
@@ -76,8 +81,7 @@ internal class PauseIntervalStore(context: Context) {
      */
     fun loadOrMigrate(flagPaused: Boolean, nowMs: Long): List<PauseInterval> = synchronized(lock) {
         val current = PauseIntervals.normalize(read())
-        if (!flagPaused) return@synchronized current
-        if (current.any { it.endMs == null }) return@synchronized current
+        if (!flagPaused || file.exists()) return@synchronized current
         val migrated = current + PauseInterval(startMs = nowMs, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $nowMs")
         write(migrated)
