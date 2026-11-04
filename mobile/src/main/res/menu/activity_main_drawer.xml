@@ -22,6 +22,10 @@
         <menu>
             <group>
                 <item
+                        android:id="@+id/nav_pause_live_collection"
+                        android:icon="@drawable/ic_menu_manage"
+                        android:title="@string/pause_live_collection"/>
+                <item
                         android:id="@+id/nav_settings"
                         android:icon="@drawable/ic_menu_manage"
                         android:title="@string/dashboard_settings"/>
