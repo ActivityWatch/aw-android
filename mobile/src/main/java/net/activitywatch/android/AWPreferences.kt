@@ -18,10 +18,10 @@ class AWPreferences(context: Context) {
 
     private val appContext = context.applicationContext
 
-    // Only AW's live web/media collectors; Android usage-history import is independent.
+    // Live collectors use the flag; usage-history import uses the persisted intervals.
     fun isLiveCollectionPaused(): Boolean = sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
 
-    fun setLiveCollectionPaused(paused: Boolean) {
+    fun setLiveCollectionPaused(paused: Boolean): Boolean {
         // Record the history interval *before* flipping the flag: the usage importer
         // subtracts these intervals from every import window, so the boundary is effective
         // before any later import can observe the pause. Ordering is what keeps a session
@@ -37,13 +37,14 @@ class AWPreferences(context: Context) {
             // Fail closed: stay in the current state rather than report a pause that does
             // not hold.
             Log.e("AWPreferences", "Unable to persist the pause interval; not changing collection state")
-            return
+            return false
         }
 
         sharedPreferences.edit()
             .putBoolean(LIVE_COLLECTION_PAUSED, paused)
             .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)
             .apply()
+        return true
     }
 
     fun liveCollectionGeneration(): Long = sharedPreferences.getLong("liveCollectionGeneration", 0L)

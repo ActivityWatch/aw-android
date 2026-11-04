@@ -184,6 +184,26 @@ class CollectionPauseIntervalsTest {
     }
 
     @Test
+    fun replayAtPauseEndIsBoundedByParserMaximumAndFlooredAtEpoch() {
+        val boundary = 48 * hour
+        val pauses = listOf(PauseInterval(boundary - hour, boundary))
+        assertEquals(
+            boundary - net.activitywatch.android.parser.MAX_REASONABLE_SESSION_DURATION,
+            PauseIntervals.sessionReplayStart(pauses, boundary, window(boundary, boundary + hour)),
+        )
+        assertEquals(
+            0L,
+            PauseIntervals.sessionReplayStart(listOf(PauseInterval(hour, 2 * hour)), 2 * hour, window(2 * hour, 3 * hour)),
+        )
+        // An ordinary session cursor is not rewound. Only a persisted pause boundary
+        // needs recovery, avoiding extra reads during normal foreground replay.
+        assertEquals(
+            boundary + minute,
+            PauseIntervals.sessionReplayStart(pauses, boundary + minute, window(boundary + minute, boundary + hour)),
+        )
+    }
+
+    @Test
     fun emptyRangeYieldsNoWindow() {
         assertTrue(PauseIntervals.allowedWindows(emptyList(), hour, hour).isEmpty())
         assertTrue(PauseIntervals.allowedWindows(emptyList(), hour, hour - 1).isEmpty())

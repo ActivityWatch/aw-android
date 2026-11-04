@@ -390,18 +390,26 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
     private fun toggleLiveCollection() {
         val prefs = AWPreferences(this)
         if (prefs.isLiveCollectionPaused()) {
-            prefs.setLiveCollectionPaused(false)
+            val saved = prefs.setLiveCollectionPaused(false)
             updateCollectionMenu()
-            Snackbar.make(binding.coordinatorLayout, R.string.live_collection_resumed, Snackbar.LENGTH_LONG).show()
+            Snackbar.make(
+                binding.coordinatorLayout,
+                if (saved) R.string.live_collection_resumed else R.string.live_collection_resume_failed,
+                Snackbar.LENGTH_LONG,
+            ).show()
         } else {
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle(R.string.pause_live_collection)
                 .setMessage(R.string.live_collection_scope)
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(R.string.pause_live_collection) { _, _ ->
-                    prefs.setLiveCollectionPaused(true)
+                    val saved = prefs.setLiveCollectionPaused(true)
                     updateCollectionMenu()
-                    Snackbar.make(binding.coordinatorLayout, R.string.live_collection_paused, Snackbar.LENGTH_LONG).show()
+                    Snackbar.make(
+                        binding.coordinatorLayout,
+                        if (saved) R.string.live_collection_paused else R.string.live_collection_pause_failed,
+                        Snackbar.LENGTH_LONG,
+                    ).show()
                 }
                 .show()
         }
