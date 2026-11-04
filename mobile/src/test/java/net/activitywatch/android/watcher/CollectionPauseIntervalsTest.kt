@@ -148,19 +148,39 @@ class CollectionPauseIntervalsTest {
     }
 
     @Test
-    fun newestClosedEndIgnoresTheOpenInterval() {
-        val pauses = listOf(
-            PauseInterval(startMs = 0L, endMs = 5 * minute),
-            PauseInterval(startMs = 10 * minute, endMs = 30 * minute),
-            PauseInterval(startMs = 40 * minute, endMs = null),
+    fun clipToWindowKeepsOnlyTheOverlap() {
+        // A window parsed from further back than its own start must store only its part:
+        // this is the app that resumed during a pause and is still open after resume.
+        val clipped = PauseIntervals.clipToWindow(
+            session(start = hour, end = 3 * hour),
+            window(2 * hour, 4 * hour),
         )
-        assertEquals(30 * minute, PauseIntervals.newestClosedEnd(pauses))
+        assertEquals(Triple("chat", 2 * hour, 3 * hour), clipped?.let { Triple(it.packageName, it.startTime, it.endTime) })
+        assertEquals(1 * hour, clipped?.durationMs)
     }
 
     @Test
-    fun newestClosedEndIsNullWhenNothingIsClosed() {
-        assertEquals(null, PauseIntervals.newestClosedEnd(listOf(PauseInterval(0L, null))))
-        assertEquals(null, PauseIntervals.newestClosedEnd(emptyList()))
+    fun clipToWindowDropsSessionsOutsideIt() {
+        // The pre-pause part of a session that straddles the gap is not importable.
+        assertEquals(
+            null,
+            PauseIntervals.clipToWindow(session(start = hour, end = 2 * hour), window(3 * hour, 4 * hour)),
+        )
+        assertEquals(
+            null,
+            PauseIntervals.clipToWindow(session(start = hour, end = 2 * hour), window(2 * hour, 4 * hour)),
+        )
+    }
+
+    @Test
+    fun crossesPauseDetectsAbridgingMerge() {
+        val pauses = listOf(PauseInterval(startMs = 10 * minute, endMs = 20 * minute))
+        assertTrue(PauseIntervals.crossesPause(pauses, 5 * minute, 25 * minute))
+        // Both events on one side of the pause: no bridge.
+        assertFalse(PauseIntervals.crossesPause(pauses, 0L, 10 * minute))
+        assertFalse(PauseIntervals.crossesPause(pauses, 20 * minute, 30 * minute))
+        // An open interval never needs the guard: nothing after it is imported.
+        assertFalse(PauseIntervals.crossesPause(listOf(PauseInterval(10 * minute, null)), 0L, 30 * minute))
     }
 
     @Test

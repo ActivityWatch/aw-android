@@ -89,9 +89,19 @@ internal object PauseIntervals {
         return windows
     }
 
-    /** End of the newest closed interval, or null when there is none. Used for cursor floors. */
-    fun newestClosedEnd(pauses: List<PauseInterval>): Long? =
-        normalize(pauses).mapNotNull { it.endMs }.maxOrNull()
+    /**
+     * Clip a session to [window], returning null when it falls entirely outside.
+     *
+     * Needed when a window is parsed from further back than its own start: the parser needs
+     * the events that establish which app is in the foreground, but only the part of that
+     * session inside the window may be stored.
+     */
+    fun clipToWindow(session: AppSession, window: AllowedWindow): AppSession? {
+        val start = maxOf(session.startTime, window.startMs)
+        val end = minOf(session.endTime, window.endMs)
+        if (end <= start) return null
+        return session.copy(startTime = start, endTime = end, durationMs = end - start)
+    }
 
     /**
      * Split a session that straddles a pause into its importable parts.
@@ -110,6 +120,16 @@ internal object PauseIntervals {
                 startTime = window.startMs,
                 endTime = window.endMs,
             )
+        }
+
+    /**
+     * True when a closed pause lies strictly between two consecutive inserts, so a heartbeat
+     * merge from the first to the second would bridge the private window.
+     */
+    fun crossesPause(pauses: List<PauseInterval>, fromMs: Long, toMs: Long): Boolean =
+        normalize(pauses).any { pause ->
+            val end = pause.endMs
+            end != null && pause.startMs >= fromMs && end <= toMs
         }
 
     /** True when [timestampMs] falls inside a pause. Unlock points inside one are dropped. */

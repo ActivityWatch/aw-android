@@ -235,9 +235,12 @@ class UsageStatsWatcher constructor(val context: Context) {
                 nowMs = System.currentTimeMillis(),
             )
             val queryFrom = lastUpdated?.toEpochMilli() ?: 0L
-            // Only an interval that closed inside this run's query range can have left the
-            // stored last event ending at its start. Anything older cannot be bridged.
-            var avoidMergeAcrossPause = pauseIntervals.any { (it.endMs ?: Long.MAX_VALUE) >= queryFrom }
+            // Timestamp of the previously inserted event (or the resume cursor). The merge
+            // guard is computed per event from this, not from a flag consumed once: a pause
+            // can contain no Android events at all (pause and resume without leaving
+            // ActivityWatch), in which case a flag would be spent on the pre-pause event and
+            // the post-pause one would merge across the gap with pulsetime 24h.
+            var lastInsertedAt = queryFrom
             val usageEvents = usm.queryEvents(queryFrom, Long.MAX_VALUE)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
@@ -247,7 +250,6 @@ class UsageStatsWatcher constructor(val context: Context) {
                 // point, not the activity, not a heartbeat that could extend an older event
                 // into the interval.
                 if (PauseIntervals.isExcluded(pauseIntervals, event.timeStamp)) {
-                    avoidMergeAcrossPause = true
                     continue@nextEvent
                 }
 
@@ -285,8 +287,10 @@ class UsageStatsWatcher constructor(val context: Context) {
 
                 // pulsetime 0 stops the server from bridging the gap: it merges only
                 // exactly-adjacent events, which an excluded interval cannot produce.
-                val pulsetime = if (avoidMergeAcrossPause) 0.0 else mergePulsetime
-                avoidMergeAcrossPause = false
+                val pulsetime =
+                    if (PauseIntervals.crossesPause(pauseIntervals, lastInsertedAt, event.timeStamp)) 0.0
+                    else mergePulsetime
+                lastInsertedAt = event.timeStamp
 
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 if(heartbeatsSent % 100 == 0) {
