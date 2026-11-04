@@ -99,8 +99,12 @@ class SessionParser(private val context: Context) {
         sessionsSince: Long,
         unlocksSince: Long,
         storedSessionStart: Long? = null,
+        // Exclusive upper bound of the import window. Defaults to now for a single wide
+        // range; the pause exclusion passes each allowed sub-window's own end so a session
+        // is never assembled across a private interval.
+        until: Long = System.currentTimeMillis(),
     ): IngestBatch {
-        val currentTime = System.currentTimeMillis()
+        val currentTime = until
         val usageEvents = usageStatsManager.queryEvents(minOf(sessionsSince, unlocksSince), currentTime)
         val rawEvents = mutableListOf<UsageEvent>()
         val unlockTimestamps = mutableListOf<Long>()
