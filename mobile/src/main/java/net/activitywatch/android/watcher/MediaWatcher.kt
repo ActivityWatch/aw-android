@@ -76,6 +76,15 @@ class MediaWatcher : NotificationListenerService() {
         if (generation != collectionGeneration || collectionPrefs.isLiveCollectionPaused()) {
             segments.clear()
             collectionGeneration = generation
+            // A callback carries the generation in which Android queued its payload.
+            // Replace registrations at the boundary; already queued old callbacks can
+            // only request a fresh sample, never submit their historical payloads.
+            for ((token, controller) in activeControllers) {
+                activeCallbacks.remove(token)?.let { controller.unregisterCallback(it) }
+                val callback = createMediaCallback(controller)
+                controller.registerCallback(callback, handler)
+                activeCallbacks[token] = callback
+            }
         }
         return !collectionPrefs.isLiveCollectionPaused()
     }
@@ -221,15 +230,35 @@ class MediaWatcher : NotificationListenerService() {
      * Create a MediaController.Callback that logs playback state changes.
      */
     private fun createMediaCallback(controller: MediaController): MediaController.Callback {
+        val generation = collectionPrefs.liveCollectionGeneration()
         return object : MediaController.Callback() {
-            // Callback payloads may have been queued during a private interval. Treat them
-            // as invalidations and sample current state, never replay their historical data.
+            private fun acceptsPayload(): Boolean {
+                if (generation != collectionPrefs.liveCollectionGeneration()) {
+                    readPlayback(controller)
+                    return false
+                }
+                return connected && canCollect() && isCurrentObservation(generation)
+            }
+
             override fun onPlaybackStateChanged(state: PlaybackState?) {
-                readPlayback(controller)
+                if (!acceptsPayload() || state == null) return
+                val metadata = controller.metadata
+                if (!isCurrentObservation(generation)) return
+                if (metadata == null) {
+                    if (state.state != PlaybackState.STATE_PLAYING) {
+                        segments.end(controller.sessionToken, Instant.now())
+                    }
+                    return
+                }
+                handlePlaybackChange(controller, state, metadata, generation)
             }
 
             override fun onMetadataChanged(metadata: MediaMetadata?) {
-                readPlayback(controller)
+                if (!acceptsPayload() || metadata == null) return
+                val state = controller.playbackState ?: return
+                if (isCurrentObservation(generation)) {
+                    handlePlaybackChange(controller, state, metadata, generation)
+                }
             }
 
             override fun onSessionDestroyed() {
