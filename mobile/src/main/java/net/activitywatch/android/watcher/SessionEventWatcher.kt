@@ -155,25 +155,37 @@ class SessionEventWatcher(val context: Context) {
         // heartbeat into the newest event, so all but the last were inserted again.
         val lastUnlock = lastUnlockEvent?.let(::eventStart)
         var unlockCursor = queryStartAfter(lastUnlock)
-        // Unlocks inside a pause are suppressed and advance no stored event, so the cursor
-        // would stay behind and re-query the whole gap on every cycle. Anchor it to the
-        // newest fully processed interval end — app metadata, not a synthetic bucket event.
-        PauseIntervals.newestClosedEnd(pauses)?.let { unlockCursor = maxOf(unlockCursor, it) }
 
         var eventsSent = 0
         var unlocksSent = 0
+        var previousWindowEnd: Long? = null
 
         for (window in windows) {
+            // Unlocks inside a pause are suppressed and advance no stored event, so leave the
+            // cursor alone until the window before the gap has actually been processed.
+            // Floors it to the newest interval end instead would skip valid unlocks that
+            // happened before the pause.
+            previousWindowEnd?.let { unlockCursor = maxOf(unlockCursor, it) }
+
+            // A window after a gap starts with no foreground app. If an app resumed during
+            // the pause and is still open, its ACTIVITY_RESUMED is outside this window, so
+            // parse from the last stored session start and clip the result to the window.
+            // Without this, the app's usage after resume is dropped until it next pauses.
+            val sessionsSince = if (previousWindowEnd == null) window.startMs
+                else minOf(storedStart ?: window.startMs, window.startMs)
+
             val batch = sessionParser.parseSessionsAndUnlocksSince(
-                window.startMs,
+                sessionsSince,
                 maxOf(unlockCursor, window.startMs),
                 storedStart,
                 until = window.endMs,
             )
             for (session in batch.sessions) {
+                val clipped = if (previousWindowEnd == null) session
+                    else PauseIntervals.clipToWindow(session, window) ?: continue
                 // Insert session as individual event
-                val storedData = lastStoredData.takeIf { session.startTime == storedStart }
-                insertSessionAsEvent(session, storedData)
+                val storedData = lastStoredData.takeIf { clipped.startTime == storedStart }
+                insertSessionAsEvent(clipped, storedData)
                 eventsSent++
             }
             for (timestamp in batch.unlockTimestamps) {
@@ -181,6 +193,7 @@ class SessionEventWatcher(val context: Context) {
                 ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
                 unlocksSent++
             }
+            previousWindowEnd = window.endMs
         }
 
         // Only after a successful cycle: an import can never rewind past the last stored

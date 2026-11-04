@@ -27,31 +27,42 @@ internal class PauseIntervalStore(context: Context) {
         const val FILE_NAME = "collection-pause-intervals.json"
         private const val VERSION = 1
 
-        /** Second bound on the log's size; the age-based prune is the primary one. */
-        private const val MAX_INTERVALS = 200
+        /**
+         * Serializes every read-modify-write across store instances. The UI records a pause
+         * outside the import lock, so an unserialized prune could read the file before that
+         * pause and write back without it — deleting a private interval that a later import
+         * would then store.
+         */
+        private val lock = Any()
     }
 
-    /** Record a pause. Idempotent: an already-open interval is kept as-is. */
-    fun recordPause(atMs: Long) {
+    /**
+     * Record a pause. Idempotent: an already-open interval is kept as-is.
+     *
+     * Returns false when the interval could not be persisted; the caller must not flip the
+     * live flag in that case, because a flag without an interval would let the next import
+     * backfill the pause from a later start.
+     */
+    fun recordPause(atMs: Long): Boolean = synchronized(lock) {
         val current = read()
-        if (current.any { it.endMs == null }) return
+        if (current.any { it.endMs == null }) return@synchronized true
         write(current + PauseInterval(startMs = atMs, endMs = null))
     }
 
-    /** Close the open interval at [atMs]. No-op when nothing is open — never a zero-length one. */
-    fun recordResume(atMs: Long) {
+    /** Close the open interval at [atMs]. No-op (true) when nothing is open. */
+    fun recordResume(atMs: Long): Boolean = synchronized(lock) {
         val current = read()
         val openIndex = current.indexOfFirst { it.endMs == null }
-        if (openIndex < 0) return
+        if (openIndex < 0) return@synchronized true
         val open = current[openIndex]
         val end = if (atMs > open.startMs) atMs else null
         if (end == null) {
             // Resume at or before the pause start: a backwards clock jump. Dropping the
-            // interval keeps the log valid; the live flag still says "resumed".
+            // interval keeps the log valid and stops it excluding history forever.
             write(current.filterIndexed { index, _ -> index != openIndex })
-            return
+        } else {
+            write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) })
         }
-        write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) })
     }
 
     /**
@@ -63,14 +74,14 @@ internal class PauseIntervalStore(context: Context) {
      * backdate to epoch or first launch — that would quietly delete real history instead of
      * honouring the user's pause.
      */
-    fun loadOrMigrate(flagPaused: Boolean, nowMs: Long): List<PauseInterval> {
+    fun loadOrMigrate(flagPaused: Boolean, nowMs: Long): List<PauseInterval> = synchronized(lock) {
         val current = PauseIntervals.normalize(read())
-        if (!flagPaused) return current
-        if (current.any { it.endMs == null }) return current
+        if (!flagPaused) return@synchronized current
+        if (current.any { it.endMs == null }) return@synchronized current
         val migrated = current + PauseInterval(startMs = nowMs, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $nowMs")
         write(migrated)
-        return PauseIntervals.normalize(migrated)
+        PauseIntervals.normalize(migrated)
     }
 
     /**
@@ -80,16 +91,13 @@ internal class PauseIntervalStore(context: Context) {
      * no longer affect any window. Never prune an open interval. Call only after a successful
      * import cycle.
      */
-    fun prune(keepFromMs: Long) {
+    fun prune(keepFromMs: Long) = synchronized(lock) {
         val current = PauseIntervals.normalize(read())
         val kept = current.filter { it.endMs == null || it.endMs >= keepFromMs }
-        val bounded = if (kept.size > MAX_INTERVALS) {
-            val open = kept.filter { it.endMs == null }
-            kept.filter { it.endMs != null }.takeLast(MAX_INTERVALS - open.size) + open
-        } else {
-            kept
-        }
-        if (bounded != current) write(bounded)
+        // No count-based cap: every remaining interval still overlaps a range a later import
+        // can query, so dropping one to bound the file would store private history. The
+        // age-based filter is the only safe bound.
+        if (kept != current) write(kept)
     }
 
     private fun read(): List<PauseInterval> {
@@ -113,8 +121,11 @@ internal class PauseIntervalStore(context: Context) {
         }
     }
 
-    /** Atomic write: `.tmp` + rename, so a kill mid-write cannot truncate the log. */
-    private fun write(intervals: List<PauseInterval>) {
+    /**
+     * Atomic write: `.tmp` + rename, so a kill mid-write cannot truncate the log.
+     * Returns false when nothing could be persisted.
+     */
+    private fun write(intervals: List<PauseInterval>): Boolean {
         val normalized = PauseIntervals.normalize(intervals)
         val array = JSONArray()
         for (interval in normalized) {
@@ -130,15 +141,17 @@ internal class PauseIntervalStore(context: Context) {
             put("intervals", array)
         }
         val tmp = File(file.parentFile, "$FILE_NAME.tmp")
-        try {
+        return try {
             tmp.writeText(root.toString())
             if (!tmp.renameTo(file)) {
                 file.writeText(root.toString())
                 tmp.delete()
             }
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Unable to persist pause intervals: ${e.message}")
             tmp.delete()
+            false
         }
     }
 }
