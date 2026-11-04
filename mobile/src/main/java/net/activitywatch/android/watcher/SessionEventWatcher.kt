@@ -167,12 +167,10 @@ class SessionEventWatcher(val context: Context) {
             // happened before the pause.
             previousWindowEnd?.let { unlockCursor = maxOf(unlockCursor, it) }
 
-            // A window after a gap starts with no foreground app. If an app resumed during
-            // the pause and is still open, its ACTIVITY_RESUMED is outside this window, so
-            // parse from the last stored session start and clip the result to the window.
-            // Without this, the app's usage after resume is dropped until it next pauses.
-            val sessionsSince = if (previousWindowEnd == null) window.startMs
-                else minOf(storedStart ?: window.startMs, window.startMs)
+            // A clipped event starts at the pause's end, not at its original RESUMED.
+            // Recover foreground state even for the FIRST window after restart; using
+            // only storedStart would filter out RESUMED and permanently stop extension.
+            val sessionsSince = PauseIntervals.sessionReplayStart(pauses, storedStart, window)
 
             val batch = sessionParser.parseSessionsAndUnlocksSince(
                 sessionsSince,
@@ -181,8 +179,9 @@ class SessionEventWatcher(val context: Context) {
                 until = window.endMs,
             )
             for (session in batch.sessions) {
-                val clipped = if (previousWindowEnd == null) session
-                    else PauseIntervals.clipToWindow(session, window) ?: continue
+                // Replay can include private/previously imported history. Never persist
+                // that lookback, even in the first window of a subsequent import.
+                val clipped = PauseIntervals.clipToWindow(session, window) ?: continue
                 // Insert session as individual event
                 val storedData = lastStoredData.takeIf { clipped.startTime == storedStart }
                 insertSessionAsEvent(clipped, storedData)
@@ -196,8 +195,8 @@ class SessionEventWatcher(val context: Context) {
             previousWindowEnd = window.endMs
         }
 
-        // Only after a successful cycle: an import can never rewind past the last stored
-        // session start, so older closed intervals can no longer influence a window.
+        // Keep the boundary needed to recover clipped foreground state. Output windows
+        // never rewind past storedStart; the retention margin also covers replay lookback.
         storedStart?.let { pauseStore.prune(it - PAUSE_INTERVAL_RETENTION_MARGIN_MS) }
 
         Log.i(TAG, "Finished processing events, sent $eventsSent session events and $unlocksSent unlock events in ${windows.size} window(s)")
