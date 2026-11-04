@@ -230,9 +230,12 @@ class UsageStatsWatcher constructor(val context: Context) {
             // event inserted after a gap therefore uses insertEvent (pulsetime 0). Starting
             // in that mode whenever intervals exist is the conservative direction for a
             // privacy filter: at worst one merge into an older event is skipped.
+            // Bound the query BEFORE sampling intervals. A pause recorded after the snapshot
+            // cannot expose newer Android events through an otherwise unbounded query.
+            val queryUntil = System.currentTimeMillis()
             val pauseIntervals = PauseIntervalStore(context).loadOrMigrate(
                 flagPaused = net.activitywatch.android.AWPreferences(context).isLiveCollectionPaused(),
-                nowMs = System.currentTimeMillis(),
+                nowMs = queryUntil,
             )
             val queryFrom = lastUpdated?.toEpochMilli() ?: 0L
             // Timestamp of the previously inserted event (or the resume cursor). The merge
@@ -241,7 +244,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             // ActivityWatch), in which case a flag would be spent on the pre-pause event and
             // the post-pause one would merge across the gap with pulsetime 24h.
             var lastInsertedAt = queryFrom
-            val usageEvents = usm.queryEvents(queryFrom, Long.MAX_VALUE)
+            val usageEvents = usm.queryEvents(queryFrom, queryUntil)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)

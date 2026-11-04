@@ -65,6 +65,7 @@ class LegacyPauseImportTest {
     @Before
     fun setup() {
         Datastore.events.clear()
+        android.os.SystemClock.setCurrentTimeMillis(60 * minute)
         val ops = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         shadowOf(ops).setMode(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
     }
@@ -124,6 +125,16 @@ class LegacyPauseImportTest {
         assertEquals(listOf(5L to 9L, 25L to 25L), ranges())
         importLegacy()
         assertEquals(listOf(5L to 9L, 25L to 25L), ranges())
+    }
+
+    @Test
+    fun importDoesNotReadBeyondThePauseSnapshotTime() {
+        android.os.SystemClock.setCurrentTimeMillis(70 * minute)
+        event(UsageEvents.Event.ACTIVITY_RESUMED, 5)
+        // Models an event returned after the snapshot while a user can start a new pause.
+        event(UsageEvents.Event.ACTIVITY_PAUSED, 75)
+        importLegacy()
+        assertEquals(listOf(5L to 5L), ranges())
     }
 
     @Test

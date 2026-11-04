@@ -9,10 +9,11 @@ import java.io.File
 /**
  * Append-only log of private wall-clock intervals (#385).
  *
- * This is the authoritative *history* gate; `AWPreferences.LIVE_COLLECTION_PAUSED` stays the
- * authoritative *live collector* gate. Both are written from the same pause/resume action so
- * they cannot disagree about "now", and [loadOrMigrate] re-derives an open interval if a
- * pause was recorded while only the live flag existed (i.e. before this shipped).
+ * This is the authoritative history and current-state gate after migration. The legacy
+ * `AWPreferences.LIVE_COLLECTION_PAUSED` flag supplies the migration fallback and collector
+ * notifications, not a second durable state: a kill between the file and preference writes
+ * must not leave live collection disagreeing with history import. [loadOrMigrate] creates
+ * an open interval if a pause was recorded while only that flag existed.
  *
  * A boolean is not enough: both import paths resume from the last stored event, so simply not
  * importing while paused backfills the private window on resume. The window has to be
@@ -34,6 +35,11 @@ internal class PauseIntervalStore(context: Context) {
          * would then store.
          */
         private val lock = Any()
+    }
+
+    /** Once migrated, the interval file is the durable collection-state authority too. */
+    fun isPaused(fallback: Boolean): Boolean = synchronized(lock) {
+        if (file.exists()) read().any { it.endMs == null } else fallback
     }
 
     /**

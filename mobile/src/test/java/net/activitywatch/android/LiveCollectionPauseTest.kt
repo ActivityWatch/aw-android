@@ -40,6 +40,23 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun intervalHistoryRecoversCollectionStateAfterInterruptedPreferenceWrite() {
+        val context = RuntimeEnvironment.getApplication()
+        val preferences = context.getSharedPreferences(AWPreferences.PREFERENCES_NAME, android.content.Context.MODE_PRIVATE)
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(10_000L))
+        // Process death between the interval rename and preference write on pause.
+        assertFalse(preferences.getBoolean(AWPreferences.LIVE_COLLECTION_PAUSED, false))
+        assertTrue(AWPreferences(context).isLiveCollectionPaused())
+        preferences.edit().putBoolean(AWPreferences.LIVE_COLLECTION_PAUSED, true).commit()
+        assertTrue(store.recordResume(20_000L))
+        // The reverse crash window on resume must not leave the UI/live gate paused
+        // while history is already importing again.
+        assertTrue(preferences.getBoolean(AWPreferences.LIVE_COLLECTION_PAUSED, false))
+        assertFalse(AWPreferences(context).isLiveCollectionPaused())
+    }
+
+    @Test
     fun failedPauseDoesNotReportSuccessOrNotifyCollectors() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = AWPreferences(context)
