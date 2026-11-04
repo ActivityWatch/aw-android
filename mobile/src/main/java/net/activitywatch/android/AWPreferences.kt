@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import net.activitywatch.android.watcher.PauseIntervalStore
 
 class AWPreferences(context: Context) {
     private val sharedPreferences: SharedPreferences =
@@ -20,6 +21,16 @@ class AWPreferences(context: Context) {
     fun isLiveCollectionPaused(): Boolean = sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
 
     fun setLiveCollectionPaused(paused: Boolean) {
+        // Record the history interval *before* flipping the flag: the usage importer
+        // subtracts these intervals from every import window, so the boundary is effective
+        // before any later import can observe the pause. Ordering is what keeps a session
+        // that is open at pause time from being persisted with an end inside the private
+        // window (heartbeat merge never shortens a stored event, so that could not be
+        // repaired afterwards).
+        val store = PauseIntervalStore(appContext)
+        val now = System.currentTimeMillis()
+        if (paused) store.recordPause(now) else store.recordResume(now)
+
         sharedPreferences.edit()
             .putBoolean(LIVE_COLLECTION_PAUSED, paused)
             .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)

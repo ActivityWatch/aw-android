@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.content.Context
 import android.util.Log
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
@@ -30,12 +31,16 @@ class SessionEventWatcher(val context: Context) {
         ) { RustInterface(context.applicationContext) }
     }
     private val sessionParser = SessionParser(context)
+    private val pauseStore = PauseIntervalStore(context.applicationContext)
 
     var lastUpdated: Instant? = null
 
     companion object {
         const val TAG = "SessionEventWatcher"
         private val lock = java.util.concurrent.locks.ReentrantLock()
+
+        /** Keep a day of closed intervals past the last stored session start. */
+        internal const val PAUSE_INTERVAL_RETENTION_MARGIN_MS = 24 * 60 * 60 * 1000L
     }
 
     // Resume from the last stored session's start, inclusive. The parser emits the
@@ -135,35 +140,62 @@ class SessionEventWatcher(val context: Context) {
         lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-        val startTimestamp = nextQueryStartTimestamp()
         val storedStart = lastUpdated?.toEpochMilli()
+        val now = System.currentTimeMillis()
+
+        // Import only the windows outside the user's private pause intervals (#385). Each
+        // window is parsed with its own end, so a session is never assembled across a
+        // paused gap and the clip happens before the end is ever persisted — a later
+        // replay cannot shrink a stored event, because heartbeat merge keeps the longer end.
+        val pauses = pauseIntervals()
+        val windows = PauseIntervals.allowedWindows(pauses, nextQueryStartTimestamp(), now)
+
         // Unlocks need their own cursor. Resuming them from the last *session* start
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
         val lastUnlock = lastUnlockEvent?.let(::eventStart)
-        val batch = sessionParser.parseSessionsAndUnlocksSince(
-            startTimestamp, queryStartAfter(lastUnlock), storedStart
-        )
-        val sessions = batch.sessions
-        val unlockTimestamps = batch.unlockTimestamps
+        var unlockCursor = queryStartAfter(lastUnlock)
+        // Unlocks inside a pause are suppressed and advance no stored event, so the cursor
+        // would stay behind and re-query the whole gap on every cycle. Anchor it to the
+        // newest fully processed interval end — app metadata, not a synthetic bucket event.
+        PauseIntervals.newestClosedEnd(pauses)?.let { unlockCursor = maxOf(unlockCursor, it) }
 
         var eventsSent = 0
+        var unlocksSent = 0
 
-        for (session in sessions) {
-            // Insert session as individual event
-            val storedData = lastStoredData.takeIf { session.startTime == storedStart }
-            insertSessionAsEvent(session, storedData)
-            eventsSent++
+        for (window in windows) {
+            val batch = sessionParser.parseSessionsAndUnlocksSince(
+                window.startMs,
+                maxOf(unlockCursor, window.startMs),
+                storedStart,
+                until = window.endMs,
+            )
+            for (session in batch.sessions) {
+                // Insert session as individual event
+                val storedData = lastStoredData.takeIf { session.startTime == storedStart }
+                insertSessionAsEvent(session, storedData)
+                eventsSent++
+            }
+            for (timestamp in batch.unlockTimestamps) {
+                val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+                ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+                unlocksSent++
+            }
         }
-        
-        for (timestamp in unlockTimestamps) {
-            val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
-            ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
-        }
-        
-        Log.i(TAG, "Finished processing events, sent $eventsSent session events and ${unlockTimestamps.size} unlock events")
+
+        // Only after a successful cycle: an import can never rewind past the last stored
+        // session start, so older closed intervals can no longer influence a window.
+        storedStart?.let { pauseStore.prune(it - PAUSE_INTERVAL_RETENTION_MARGIN_MS) }
+
+        Log.i(TAG, "Finished processing events, sent $eventsSent session events and $unlocksSent unlock events in ${windows.size} window(s)")
         return eventsSent
     }
+
+    private fun pauseIntervals(): List<PauseInterval> =
+        pauseStore.loadOrMigrate(
+            flagPaused = AWPreferences(context).isLiveCollectionPaused(),
+            nowMs = System.currentTimeMillis(),
+        )
 
 
 
