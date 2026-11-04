@@ -63,9 +63,10 @@ internal class PauseIntervalStore(context: Context) {
         val open = current[openIndex]
         val end = if (atMs > open.startMs) atMs else null
         if (end == null) {
-            // Resume at or before the pause start: a backwards clock jump. Dropping the
-            // interval keeps the log valid and stops it excluding history forever.
-            write(current.filterIndexed { index, _ -> index != openIndex })
+            // A backwards clock jump cannot close this wall-clock interval safely.
+            // Preserve the durable boundary and report failure instead of silently
+            // deleting private history. The caller keeps collectors paused.
+            false
         } else {
             write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) })
         }
