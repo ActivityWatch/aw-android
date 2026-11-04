@@ -50,7 +50,7 @@
     <string name="export_save_failed">Could not save export</string>
     <string name="pause_live_collection">Pause web and media logging</string>
     <string name="resume_live_collection">Resume web and media logging</string>
-    <string name="live_collection_scope">This pauses ActivityWatch\'s web browsing and media collectors only. Android app-usage and unlock history will still be imported. Unfinished web visits and media segments are discarded. Resume logging from this menu when ready.</string>
-    <string name="live_collection_paused">Web and media logging paused. App-usage history is still imported.</string>
-    <string name="live_collection_resumed">Web and media logging resumed</string>
+    <string name="live_collection_scope">This pauses ActivityWatch\'s web browsing, media, and app-usage recording. App-usage and unlock history from paused intervals is not imported, and unfinished web visits and media segments are discarded. Resume logging from this menu when ready.</string>
+    <string name="live_collection_paused">Logging paused. Web, media, and app-usage history are not recorded.</string>
+    <string name="live_collection_resumed">Logging resumed</string>
 </resources>
