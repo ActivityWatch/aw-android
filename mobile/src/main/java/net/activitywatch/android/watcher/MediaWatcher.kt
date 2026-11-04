@@ -212,12 +212,7 @@ class MediaWatcher : NotificationListenerService() {
                 activeCallbacks[token] = callback
                 Log.i(TAG, "Registered callback for ${controller.packageName}")
 
-                // Send initial state if already playing
-                val state = controller.playbackState
-                val metadata = controller.metadata
-                if (state != null && metadata != null) {
-                    handlePlaybackChange(controller, state, metadata)
-                }
+                readPlayback(controller)
             }
         }
     }
@@ -227,25 +222,14 @@ class MediaWatcher : NotificationListenerService() {
      */
     private fun createMediaCallback(controller: MediaController): MediaController.Callback {
         return object : MediaController.Callback() {
+            // Callback payloads may have been queued during a private interval. Treat them
+            // as invalidations and sample current state, never replay their historical data.
             override fun onPlaybackStateChanged(state: PlaybackState?) {
-                if (!canCollect() || state == null) return
-                val metadata = controller.metadata
-                if (metadata == null) {
-                    // Some players clear metadata when they pause or stop. Nothing can be
-                    // logged without it, but playback has still ended.
-                    if (state.state != PlaybackState.STATE_PLAYING) {
-                        segments.end(controller.sessionToken, Instant.now())
-                    }
-                    return
-                }
-                handlePlaybackChange(controller, state, metadata)
+                readPlayback(controller)
             }
 
             override fun onMetadataChanged(metadata: MediaMetadata?) {
-                val state = controller.playbackState ?: return
-                if (metadata != null) {
-                    handlePlaybackChange(controller, state, metadata)
-                }
+                readPlayback(controller)
             }
 
             override fun onSessionDestroyed() {
@@ -259,15 +243,44 @@ class MediaWatcher : NotificationListenerService() {
         }
     }
 
+    // Capture the generation BEFORE any controller read (Binder calls can block).
+    // All acquisition paths use this boundary, including initial registration and callbacks.
+    private fun readPlayback(controller: MediaController, onlyPlaying: Boolean = false) {
+        if (!connected || !canCollect()) return
+        val generation = collectionGeneration
+        val state = controller.playbackState ?: return
+        val metadata = controller.metadata
+        if (!isCurrentObservation(generation)) return
+        if (metadata == null) {
+            // Some players clear metadata when playback ends.
+            if (state.state != PlaybackState.STATE_PLAYING) {
+                segments.end(controller.sessionToken, Instant.now())
+            }
+            return
+        }
+        if (!onlyPlaying || state.state == PlaybackState.STATE_PLAYING) {
+            handlePlaybackChange(controller, state, metadata, generation)
+        }
+    }
+
+    private fun isCurrentObservation(generation: Long): Boolean {
+        if (generation != collectionPrefs.liveCollectionGeneration() || collectionPrefs.isLiveCollectionPaused()) {
+            canCollect()
+            return false
+        }
+        return true
+    }
+
     /**
      * Process a playback state or metadata change and send an event.
      */
     private fun handlePlaybackChange(
         controller: MediaController,
         state: PlaybackState,
-        metadata: MediaMetadata
+        metadata: MediaMetadata,
+        generation: Long
     ) {
-        if (!connected || !canCollect()) return
+        if (!connected || !isCurrentObservation(generation)) return
         val packageName = controller.packageName ?: return
         val token = controller.sessionToken
 
@@ -319,10 +332,7 @@ class MediaWatcher : NotificationListenerService() {
         // Everything written to the event, so a segment never outlives the data it records.
         val eventKey = "$packageName|$title|$artist|$album|$playbackState"
         // Don't admit metadata read before a pause into a fresh post-resume segment.
-        if (collectionGeneration != collectionPrefs.liveCollectionGeneration() || collectionPrefs.isLiveCollectionPaused()) {
-            canCollect()
-            return
-        }
+        if (!isCurrentObservation(generation)) return
         val changed = segments.observe(token, eventKey, data, playbackState == "playing", Instant.now())
         if (changed) {
             Log.i(TAG, "Media event: $playbackState — $artist - $title ($appName)")
@@ -332,11 +342,7 @@ class MediaWatcher : NotificationListenerService() {
     private fun pollActiveSessions() {
         if (!canCollect()) return
         for (controller in activeControllers.values) {
-            val state = controller.playbackState
-            val metadata = controller.metadata
-            if (state != null && state.state == PlaybackState.STATE_PLAYING && metadata != null) {
-                handlePlaybackChange(controller, state, metadata)
-            }
+            readPlayback(controller, onlyPlaying = true)
         }
     }
 
