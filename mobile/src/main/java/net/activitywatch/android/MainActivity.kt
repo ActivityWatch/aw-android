@@ -237,6 +237,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         usw.setupAlarm()
 
         binding.navView.setNavigationItemSelectedListener(this)
+        updateCollectionMenu()
 
         // Ensure API key exists in config before the server starts so it picks it up at init.
         dashboardApiKey = ensureDashboardApiKey(this)
@@ -379,6 +380,33 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         return true
     }
 
+    private fun updateCollectionMenu() {
+        binding.navView.menu.findItem(R.id.nav_pause_live_collection).setTitle(
+            if (AWPreferences(this).isLiveCollectionPaused()) R.string.resume_live_collection
+            else R.string.pause_live_collection
+        )
+    }
+
+    private fun toggleLiveCollection() {
+        val prefs = AWPreferences(this)
+        if (prefs.isLiveCollectionPaused()) {
+            prefs.setLiveCollectionPaused(false)
+            updateCollectionMenu()
+            Snackbar.make(binding.coordinatorLayout, R.string.live_collection_resumed, Snackbar.LENGTH_LONG).show()
+        } else {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.pause_live_collection)
+                .setMessage(R.string.live_collection_scope)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.pause_live_collection) { _, _ ->
+                    prefs.setLiveCollectionPaused(true)
+                    updateCollectionMenu()
+                    Snackbar.make(binding.coordinatorLayout, R.string.live_collection_paused, Snackbar.LENGTH_LONG).show()
+                }
+                .show()
+        }
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
@@ -402,6 +430,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         // Handle navigation view item clicks here.
         when (item.itemId) {
+            R.id.nav_pause_live_collection -> toggleLiveCollection()
             R.id.nav_dashboard -> {
                 fragmentClass = TestFragment::class.java
             }
