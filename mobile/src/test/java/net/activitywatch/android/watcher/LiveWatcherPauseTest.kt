@@ -19,6 +19,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowMediaController
 import org.robolectric.annotation.LooperMode
 import org.threeten.bp.Instant
 import java.util.concurrent.TimeUnit
@@ -87,14 +91,15 @@ class LiveWatcherPauseTest {
         prefs.registerListener(listener)
         val session = MediaSession(context, "pause-test")
         shadowOf(session.controller).setPackageName(context.packageName)
-        val playback = service.javaClass.getDeclaredMethod(
-            "handlePlaybackChange", android.media.session.MediaController::class.java,
-            PlaybackState::class.java, MediaMetadata::class.java
-        ).apply { isAccessible = true }
+        val callback = service.javaClass.getDeclaredMethod(
+            "createMediaCallback", android.media.session.MediaController::class.java
+        ).apply { isAccessible = true }.invoke(service, session.controller) as android.media.session.MediaController.Callback
         fun observe(title: String) {
-            playback.invoke(service, session.controller,
-                PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build(),
-                MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title).build())
+            val state = PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build()
+            val metadata = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title).build()
+            shadowOf(session.controller).setPlaybackState(state)
+            shadowOf(session.controller).setMetadata(metadata)
+            callback.onMetadataChanged(metadata)
         }
         try {
             observe("before")
@@ -121,6 +126,91 @@ class LiveWatcherPauseTest {
             assertEquals(listOf("after-quick-pause"), emitted)
         } finally {
             prefs.unregisterListener(listener)
+            session.release()
+            (field(service, "handlerThread").get(service) as android.os.HandlerThread).quitSafely()
+        }
+    }
+
+    @Implements(android.media.session.MediaController::class)
+    class RacingMediaController : ShadowMediaController() {
+        var duringMetadataRead: (() -> Unit)? = null
+
+        @Implementation
+        public override fun getMetadata(): MediaMetadata? {
+            val result = super.getMetadata()
+            val race = duringMetadataRead
+            duringMetadataRead = null
+            race?.invoke()
+            return result
+        }
+    }
+
+    @Test
+    fun mediaQueuedCallbacksDoNotReplayPrivatePayloadsAfterResume() {
+        val context = RuntimeEnvironment.getApplication()
+        val service = Robolectric.buildService(MediaWatcher::class.java).get()
+        val emitted = mutableListOf<String>()
+        val segments = MediaPlaybackSegments<MediaSession.Token> { _, _, data -> emitted += data.getString("title") }
+        field(service, "segments").set(service, segments)
+        field(service, "connected").set(service, true)
+        val session = MediaSession(context, "queued-pause-test")
+        val controller = session.controller
+        shadowOf(controller).setPackageName(context.packageName)
+        val callback = service.javaClass.getDeclaredMethod("createMediaCallback", android.media.session.MediaController::class.java)
+            .apply { isAccessible = true }.invoke(service, controller) as android.media.session.MediaController.Callback
+        fun metadata(title: String) = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title).build()
+        try {
+            prefs.setLiveCollectionPaused(true)
+            val privateMetadata = metadata("private")
+            val privatePlayback = PlaybackState.Builder().setState(PlaybackState.STATE_PAUSED, 0, 0f).build()
+            // Model payloads already queued on a blocked media handler while collection is paused.
+            val queuedMetadata = Runnable { callback.onMetadataChanged(privateMetadata) }
+            val queuedPlayback = Runnable { callback.onPlaybackStateChanged(privatePlayback) }
+            prefs.setLiveCollectionPaused(false)
+            shadowOf(controller).setMetadata(metadata("after"))
+            shadowOf(controller).setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
+            queuedMetadata.run()
+            queuedPlayback.run()
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertEquals(listOf("after"), emitted)
+        } finally {
+            session.release()
+            (field(service, "handlerThread").get(service) as android.os.HandlerThread).quitSafely()
+        }
+    }
+
+    @Test
+    @Config(shadows = [RacingMediaController::class])
+    fun mediaPollDiscardsReadThatCrossesPauseResume() {
+        val context = RuntimeEnvironment.getApplication()
+        val service = Robolectric.buildService(MediaWatcher::class.java).get()
+        val emitted = mutableListOf<String>()
+        val segments = MediaPlaybackSegments<MediaSession.Token> { _, _, data -> emitted += data.getString("title") }
+        field(service, "segments").set(service, segments)
+        field(service, "connected").set(service, true)
+        val session = MediaSession(context, "racing-pause-test")
+        val controller = session.controller
+        val shadow = Shadow.extract<RacingMediaController>(controller)
+        shadow.setPackageName(context.packageName)
+        shadow.setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
+        shadow.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "private").build())
+        @Suppress("UNCHECKED_CAST")
+        val controllers = field(service, "activeControllers").get(service) as MutableMap<MediaSession.Token, android.media.session.MediaController>
+        controllers[controller.sessionToken] = controller
+        shadow.duringMetadataRead = {
+            prefs.setLiveCollectionPaused(true)
+            prefs.setLiveCollectionPaused(false)
+        }
+        val poll = service.javaClass.getDeclaredMethod("pollActiveSessions").apply { isAccessible = true }
+        try {
+            poll.invoke(service)
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertTrue("Observation spanning the private interval must be discarded: $emitted", emitted.isEmpty())
+            shadow.setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "after").build())
+            poll.invoke(service)
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertEquals(listOf("after"), emitted)
+        } finally {
             session.release()
             (field(service, "handlerThread").get(service) as android.os.HandlerThread).quitSafely()
         }
