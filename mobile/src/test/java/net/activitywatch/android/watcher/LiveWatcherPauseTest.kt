@@ -131,6 +131,35 @@ class LiveWatcherPauseTest {
         }
     }
 
+    @Test
+    fun mediaDelayedPlaybackCallbacksPreserveTransitionsWithoutCollectionPause() {
+        val context = RuntimeEnvironment.getApplication()
+        val service = Robolectric.buildService(MediaWatcher::class.java).get()
+        val emitted = mutableListOf<String>()
+        val segments = MediaPlaybackSegments<MediaSession.Token> { _, _, data -> emitted += data.getString("state") }
+        field(service, "segments").set(service, segments)
+        field(service, "connected").set(service, true)
+        val session = MediaSession(context, "delayed-playback-test")
+        val controller = session.controller
+        shadowOf(controller).setPackageName(context.packageName)
+        shadowOf(controller).setMetadata(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "public").build())
+        val playing = PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build()
+        val paused = PlaybackState.Builder().setState(PlaybackState.STATE_PAUSED, 0, 0f).build()
+        shadowOf(controller).setPlaybackState(playing)
+        val callback = service.javaClass.getDeclaredMethod("createMediaCallback", android.media.session.MediaController::class.java)
+            .apply { isAccessible = true }.invoke(service, controller) as android.media.session.MediaController.Callback
+        try {
+            // The current controller has already resumed by the time both callbacks drain.
+            callback.onPlaybackStateChanged(paused)
+            callback.onPlaybackStateChanged(playing)
+            segments.endAll(Instant.now().plusSeconds(5))
+            assertEquals(listOf("paused", "playing"), emitted)
+        } finally {
+            session.release()
+            (field(service, "handlerThread").get(service) as android.os.HandlerThread).quitSafely()
+        }
+    }
+
     @Implements(android.media.session.MediaController::class)
     class RacingMediaController : ShadowMediaController() {
         var duringMetadataRead: (() -> Unit)? = null
