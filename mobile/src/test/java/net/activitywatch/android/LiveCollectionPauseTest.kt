@@ -26,6 +26,25 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun backwardsClockResumeDoesNotEraseThePrivacyBoundaryOrReportSuccess() {
+        val context = RuntimeEnvironment.getApplication()
+        // Robolectric refuses backwards setCurrentTimeMillis calls. Persist a future
+        // pause boundary to model the file restored after a wall-clock correction.
+        val pauseStart = System.currentTimeMillis() + 60_000L
+        assertTrue(PauseIntervalStore(context).recordPause(pauseStart))
+        val prefs = AWPreferences(context)
+        assertTrue(prefs.isLiveCollectionPaused())
+        val generation = prefs.liveCollectionGeneration()
+        assertFalse(prefs.setLiveCollectionPaused(false))
+        assertTrue(AWPreferences(context).isLiveCollectionPaused())
+        assertEquals(generation, prefs.liveCollectionGeneration())
+        val intervals = PauseIntervalStore(context).loadOrMigrate(true, 550_000L)
+        assertEquals(pauseStart, intervals.single().startMs)
+        assertNull(intervals.single().endMs)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, pauseStart + 5_000L))
+    }
+
+    @Test
     fun stalePausedFlagCannotReopenACompletedPause() {
         val context = RuntimeEnvironment.getApplication()
         val store = PauseIntervalStore(context)

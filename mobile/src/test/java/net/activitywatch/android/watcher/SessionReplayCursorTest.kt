@@ -51,6 +51,9 @@ class SessionReplayCursorTest {
                 list += JSONObject().put("timestamp", timestamp.toString()).put("duration", duration).put("data", data)
             }
         }
+        @Implementation fun heartbeatHelper(bucket: String, timestamp: Instant, duration: Double, data: JSONObject, pulsetime: Double) {
+            insertEvent(bucket, timestamp, duration, data)
+        }
         companion object {
             val events = mutableMapOf<String, MutableList<JSONObject>>()
         }
@@ -76,6 +79,53 @@ class SessionReplayCursorTest {
     private fun sessions(): List<Pair<Long, Long>> = Datastore.events[SESSION_BUCKET_ID].orEmpty().map {
         val start = Instant.parse(it.getString("timestamp")).toEpochMilli()
         start / minute to (start + (it.getDouble("duration") * 1000).toLong()) / minute
+    }
+
+    private fun unlocks(): List<Long> = Datastore.events[UNLOCK_BUCKET_ID].orEmpty().map {
+        Instant.parse(it.getString("timestamp")).toEpochMilli() / minute
+    }
+
+    @Test
+    fun interruptedImportRecoversUnlocksBeforeSessionCursorWithoutReplayingSessions() {
+        Datastore.events.clear()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(10 * minute))
+        assertTrue(store.recordResume(20 * minute))
+        event(UsageEvents.Event.ACTIVITY_RESUMED, 1, "before")
+        event(UsageEvents.Event.ACTIVITY_PAUSED, 5, "before")
+        event(UsageEvents.Event.ACTIVITY_RESUMED, 21, "after")
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 6)
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 9)
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 15) // private
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 20) // resume boundary is allowed
+        importAt(25)
+        assertEquals(listOf(1L to 5L, 21L to 25L), sessions())
+        // Model a killed import: sessions persisted, but only the first unlock saved.
+        Datastore.events[UNLOCK_BUCKET_ID] = mutableListOf(JSONObject()
+            .put("timestamp", Instant.ofEpochMilli(6 * minute).toString())
+            .put("duration", 0.0).put("data", JSONObject()))
+        importAt(30)
+        assertEquals(listOf(6L, 9L, 20L), unlocks())
+        assertEquals(listOf(1L to 5L, 21L to 30L), sessions())
+        importAt(35)
+        assertEquals(listOf(6L, 9L, 20L), unlocks())
+        assertEquals(listOf(1L to 5L, 21L to 35L), sessions())
+    }
+
+    @Test
+    fun unlocksImportWithoutAnyAppSessions() {
+        Datastore.events.clear()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(10 * minute))
+        assertTrue(store.recordResume(20 * minute))
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 9)
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 10)
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 15)
+        event(UsageEvents.Event.KEYGUARD_HIDDEN, 20)
+        importAt(25)
+        importAt(30)
+        assertEquals(listOf(9L, 20L), unlocks())
+        assertTrue(sessions().isEmpty())
     }
 
     @Test
