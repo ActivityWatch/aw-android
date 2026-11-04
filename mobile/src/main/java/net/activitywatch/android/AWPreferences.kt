@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import net.activitywatch.android.watcher.PauseIntervalStore
 
 class AWPreferences(context: Context) {
@@ -29,7 +30,15 @@ class AWPreferences(context: Context) {
         // repaired afterwards).
         val store = PauseIntervalStore(appContext)
         val now = System.currentTimeMillis()
-        if (paused) store.recordPause(now) else store.recordResume(now)
+        val persisted = if (paused) store.recordPause(now) else store.recordResume(now)
+        if (!persisted) {
+            // Flipping the flag without the interval would let the next import start the
+            // exclusion at a later time and store the interval since the user's pause.
+            // Fail closed: stay in the current state rather than report a pause that does
+            // not hold.
+            Log.e("AWPreferences", "Unable to persist the pause interval; not changing collection state")
+            return
+        }
 
         sharedPreferences.edit()
             .putBoolean(LIVE_COLLECTION_PAUSED, paused)
