@@ -18,8 +18,11 @@ class AWPreferences(context: Context) {
 
     private val appContext = context.applicationContext
 
-    // Live collectors use the flag; usage-history import uses the persisted intervals.
-    fun isLiveCollectionPaused(): Boolean = sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
+    // The interval rename commits the state. The preference remains the migration fallback
+    // and listener notification, not a second authority after a process dies mid-transition.
+    fun isLiveCollectionPaused(): Boolean = PauseIntervalStore(appContext).isPaused(
+        sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
+    )
 
     fun setLiveCollectionPaused(paused: Boolean): Boolean {
         // Record the history interval *before* flipping the flag: the usage importer
