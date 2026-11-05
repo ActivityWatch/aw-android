@@ -19,9 +19,10 @@ class LiveCollectionPauseTest {
         val context = RuntimeEnvironment.getApplication()
         val prefs = AWPreferences(context)
         assertFalse(prefs.isLiveCollectionPaused())
-        prefs.setLiveCollectionPaused(true)
+        assertTrue(prefs.setLiveCollectionPaused(true))
         assertTrue(AWPreferences(context).isLiveCollectionPaused())
-        prefs.setLiveCollectionPaused(false)
+        android.os.SystemClock.setCurrentTimeMillis(System.currentTimeMillis() + 1_000L)
+        assertTrue(prefs.setLiveCollectionPaused(false))
         assertFalse(AWPreferences(context).isLiveCollectionPaused())
     }
 
@@ -184,6 +185,7 @@ class LiveCollectionPauseTest {
         val intervals = store.loadOrMigrate(true, System.currentTimeMillis())
         val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
         assertTrue(tmp.mkdir())
+        android.os.SystemClock.setCurrentTimeMillis(System.currentTimeMillis() + 1_000L)
         try {
             assertFalse(prefs.setLiveCollectionPaused(false))
             assertTrue(prefs.isLiveCollectionPaused())
@@ -202,10 +204,11 @@ class LiveCollectionPauseTest {
             if (key == AWPreferences.LIVE_COLLECTION_PAUSED) observed += prefs.isLiveCollectionPaused()
         }
         prefs.registerListener(listener)
-        prefs.setLiveCollectionPaused(true)
-        prefs.setLiveCollectionPaused(false)
+        assertTrue(prefs.setLiveCollectionPaused(true))
+        android.os.SystemClock.setCurrentTimeMillis(System.currentTimeMillis() + 1_000L)
+        assertTrue(prefs.setLiveCollectionPaused(false))
         prefs.unregisterListener(listener)
-        prefs.setLiveCollectionPaused(true)
+        assertTrue(prefs.setLiveCollectionPaused(true))
         assertEquals(listOf(true, false), observed)
     }
 }

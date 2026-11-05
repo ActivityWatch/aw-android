@@ -38,9 +38,6 @@ class SessionEventWatcher(val context: Context) {
     companion object {
         const val TAG = "SessionEventWatcher"
         private val lock = java.util.concurrent.locks.ReentrantLock()
-
-        /** Keep a day of closed intervals past the last stored session start. */
-        internal const val PAUSE_INTERVAL_RETENTION_MARGIN_MS = 24 * 60 * 60 * 1000L
     }
 
     // Resume from the last stored session's start, inclusive. The parser emits the
@@ -192,11 +189,9 @@ class SessionEventWatcher(val context: Context) {
             }
         }
 
-        // Neither independent cursor may lose an exclusion it could still query. Keep the
-        // session lookback margin too, for recovering clipped foreground state.
-        storedStart?.let {
-            pauseStore.prune(minOf(it, unlockCursor) - PAUSE_INTERVAL_RETENTION_MARGIN_MS)
-        }
+        // Do not prune from usage/unlock progress: a browser visit can finish days after
+        // its start and still need an older boundary to prevent heartbeat gap merging.
+        // Retain privacy evidence until every consumer has a proven durable safe floor.
 
         Log.i(TAG, "Finished processing events, sent $eventsSent session events and $unlocksSent unlock events in ${windows.size} window(s)")
         return eventsSent
