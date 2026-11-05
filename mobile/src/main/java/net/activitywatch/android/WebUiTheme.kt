@@ -1,6 +1,29 @@
 package net.activitywatch.android
 
 import android.content.res.Configuration
+import android.webkit.WebView
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+
+/** Record terminal events before onPageFinished, without reporting an untagged navigation. */
+internal fun installThemeStylesheetRecorder(view: WebView) {
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        WebViewCompat.addDocumentStartJavaScript(view, ANDROID_THEME_STYLESHEET_RECORDER_JS, setOf("*"))
+    }
+}
+
+internal val ANDROID_THEME_STYLESHEET_RECORDER_JS = """
+(function () {
+  if (window !== window.top || window.__awThemeStylesheetRecorder) return;
+  window.__awThemeStylesheetRecorder = true;
+  function terminal(event) {
+    var link = event.target;
+    if (link && link.tagName === 'LINK') link.__awSettled = true;
+  }
+  document.addEventListener('load', terminal, true);
+  document.addEventListener('error', terminal, true);
+})();
+""".trimIndent()
 
 /**
  * Resolve aw-webui's stored theme (`light` / `dark` / `auto`) to a dark chrome
@@ -62,13 +85,6 @@ internal val ANDROID_THEME_HOOK_JS = """
 
   var settledReported = false;
 
-  // This hook is injected from onPageFinished, after the window load event, so
-  // a dark.css link already in the document has already fired load or error.
-  // Its listener would then never fire, leaving the document hidden until the
-  // failsafe. Mark it so a null sheet is read as "failed" below.
-  var linkAtInstall = document.querySelector('link[href*="dark.css"]');
-  if (linkAtInstall) linkAtInstall.__awPresentAtHookInstall = true;
-
   function darkStylesheetSettled(link) {
     if (link.__awSettled) return true;
     try {
@@ -77,11 +93,22 @@ internal val ANDROID_THEME_HOOK_JS = """
       // The sheet exists but its rules are unreadable (cross-origin): loaded.
       return true;
     }
-    if (link.__awPresentAtHookInstall && document.readyState === 'complete') {
-      // Present before this hook ran and the document finished loading, so the
-      // link has already loaded or failed. A null sheet means it failed and the
-      // readable light fallback must reveal now.
-      return true;
+    if (!window.__awThemeStylesheetRecorder && !link.__awWatched) {
+      // Old WebViews cannot record events at document start. A missing/empty
+      // sheet is ambiguous (pending, failed or empty), even after window load.
+      // Restart this one link with listeners installed before insertion rather
+      // than guessing. Preserve attributes and cascade position; no loaded CSS
+      // is removed. Modern WebViews never need this extra request.
+      var replacement = link.cloneNode(false);
+      replacement.__awWatched = true;
+      var completed = function () {
+        replacement.__awSettled = true;
+        checkSettled();
+      };
+      replacement.addEventListener('load', completed);
+      replacement.addEventListener('error', completed);
+      link.parentNode.replaceChild(replacement, link);
+      return false;
     }
     if (!link.__awWatched) {
       link.__awWatched = true;
