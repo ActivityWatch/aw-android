@@ -34,6 +34,15 @@ class LiveWatcherPauseTest {
     private fun field(target: Any, name: String) = target.javaClass.getDeclaredField(name).apply { isAccessible = true }
     private val prefs get() = AWPreferences(RuntimeEnvironment.getApplication())
 
+    private fun pause() {
+        assertTrue("Pause must persist before exercising private callbacks", prefs.setLiveCollectionPaused(true))
+    }
+
+    private fun resume() {
+        android.os.SystemClock.setCurrentTimeMillis(System.currentTimeMillis() + 1_000L)
+        assertTrue("Resume must succeed before exercising public callbacks", prefs.setLiveCollectionPaused(false))
+    }
+
     @Test
     fun webDropsOpenVisitAndIgnoresPrivateEventsThenStartsFresh() {
         // No onCreate: JNI initialization is unrelated to collection and unavailable in JVM tests.
@@ -44,11 +53,11 @@ class LiveWatcherPauseTest {
         try {
             tracker.handleUrl("before.example", "org.mozilla.firefox")
             tracker.handleWindowTitle("Before")
-            prefs.setLiveCollectionPaused(true)
+            pause()
             assertNull(tracker.currentBrowser)
             browserEvent(service, "private.example")
             assertNull(tracker.currentBrowser)
-            prefs.setLiveCollectionPaused(false)
+            resume()
             browserEvent(service, "after.example")
             val completed = tracker.handleUrl(null, null)!!
             assertEquals("after.example", completed.url)
@@ -69,7 +78,7 @@ class LiveWatcherPauseTest {
             service.javaClass.getDeclaredMethod("scheduleTitleLookup", String::class.java, Long::class.javaPrimitiveType)
                 .apply { isAccessible = true }.invoke(service, "com.android.chrome", 500L)
             assertNotNull(field(service, "titleFollowUp").get(service))
-            prefs.setLiveCollectionPaused(true)
+            pause()
             shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
             assertNull(field(service, "titleFollowUp").get(service))
             assertNull(tracker.currentBrowser)
@@ -103,12 +112,12 @@ class LiveWatcherPauseTest {
         }
         try {
             observe("before")
-            prefs.setLiveCollectionPaused(true)
+            pause()
             // Run a callback BEFORE the queued preference reset, as on a busy media looper.
             observe("private")
             segments.endAll(Instant.now().plusSeconds(5))
             assertTrue(emitted.isEmpty())
-            prefs.setLiveCollectionPaused(false)
+            resume()
             shadowOf(Looper.getMainLooper()).idle()
             observe("after")
             segments.endAll(Instant.now().plusSeconds(5))
@@ -118,8 +127,8 @@ class LiveWatcherPauseTest {
             // invalidates the open segment; it cannot span the private interval.
             emitted.clear()
             observe("before-quick-pause")
-            prefs.setLiveCollectionPaused(true)
-            prefs.setLiveCollectionPaused(false)
+            pause()
+            resume()
             (field(service, "handler").get(service) as Handler).removeCallbacksAndMessages(null)
             observe("after-quick-pause")
             segments.endAll(Instant.now().plusSeconds(5))
@@ -151,7 +160,7 @@ class LiveWatcherPauseTest {
         controllers[controller.sessionToken] = controller
         val poll = service.javaClass.getDeclaredMethod("pollActiveSessions").apply { isAccessible = true }
         try {
-            prefs.setLiveCollectionPaused(true)
+            pause()
             poll.invoke(service)
             val pausedCallback = callbacks[controller.sessionToken]
             assertNotNull("Entering a new generation must replace callback registrations", pausedCallback)
@@ -160,7 +169,7 @@ class LiveWatcherPauseTest {
             segments.endAll(Instant.now().plusSeconds(5))
             assertTrue("Paused polls must not collect playback", emitted.isEmpty())
 
-            prefs.setLiveCollectionPaused(false)
+            resume()
             poll.invoke(service)
             assertNotSame("Resume must replace the paused generation's callback", pausedCallback, callbacks[controller.sessionToken])
             segments.endAll(Instant.now().plusSeconds(5))
@@ -230,13 +239,13 @@ class LiveWatcherPauseTest {
             .apply { isAccessible = true }.invoke(service, controller) as android.media.session.MediaController.Callback
         fun metadata(title: String) = MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title).build()
         try {
-            prefs.setLiveCollectionPaused(true)
+            pause()
             val privateMetadata = metadata("private")
             val privatePlayback = PlaybackState.Builder().setState(PlaybackState.STATE_PAUSED, 0, 0f).build()
             // Model payloads already queued on a blocked media handler while collection is paused.
             val queuedMetadata = Runnable { callback.onMetadataChanged(privateMetadata) }
             val queuedPlayback = Runnable { callback.onPlaybackStateChanged(privatePlayback) }
-            prefs.setLiveCollectionPaused(false)
+            resume()
             shadowOf(controller).setMetadata(metadata("after"))
             shadowOf(controller).setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
             queuedMetadata.run()
@@ -268,8 +277,8 @@ class LiveWatcherPauseTest {
         val controllers = field(service, "activeControllers").get(service) as MutableMap<MediaSession.Token, android.media.session.MediaController>
         controllers[controller.sessionToken] = controller
         shadow.duringMetadataRead = {
-            prefs.setLiveCollectionPaused(true)
-            prefs.setLiveCollectionPaused(false)
+            pause()
+            resume()
         }
         val poll = service.javaClass.getDeclaredMethod("pollActiveSessions").apply { isAccessible = true }
         try {
