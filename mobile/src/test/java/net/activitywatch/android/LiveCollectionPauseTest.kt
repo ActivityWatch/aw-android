@@ -89,6 +89,23 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun refusedResumePersistsObservedRollbackBeforeClockCatchUp() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(600_000L))
+        // No importer observes the rollback before a later successful resume.
+        assertFalse(store.recordResume(550_000L))
+        assertTrue(PauseIntervalStore(context).isPaused(false))
+        // Restart before catch-up: evidence and the original refusal floor must survive.
+        assertFalse(PauseIntervalStore(context).recordResume(560_000L))
+        assertTrue(PauseIntervalStore(context).recordResume(650_000L))
+        val intervals = PauseIntervalStore(context).loadOrMigrate(false, 700_000L)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 550_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 620_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 650_000L))
+    }
+
+    @Test
     fun staleImportCutoffDoesNotTurnAConcurrentPauseIntoClockRollback() {
         val context = RuntimeEnvironment.getApplication()
         val store = PauseIntervalStore(context)
