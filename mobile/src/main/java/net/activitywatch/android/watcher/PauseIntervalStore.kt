@@ -78,7 +78,9 @@ internal class PauseIntervalStore(
             }
             false
         } else {
-            write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) })
+            // The refusal floor belongs only to this open pause. Retain its exclusion,
+            // but do not apply the completed pause's clock floor to a later pause.
+            write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) }, resumeAfterMs = 0L)
         }
     }
 
