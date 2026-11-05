@@ -106,6 +106,23 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun completedRollbackFloorDoesNotBlockALaterPauseOnAnEarlierTimeline() {
+        val context = RuntimeEnvironment.getApplication()
+        assertTrue(PauseIntervalStore(context).recordPause(600_000L))
+        assertFalse(PauseIntervalStore(context).recordResume(550_000L))
+        assertTrue(PauseIntervalStore(context).recordResume(700_000L))
+        // The old refusal floor belongs to the completed pause, not this new one.
+        assertTrue(PauseIntervalStore(context).recordPause(100_000L))
+        assertTrue(PauseIntervalStore(context).recordResume(200_000L))
+        val intervals = PauseIntervalStore(context).loadOrMigrate(false, 800_000L)
+        // Clearing the floor must not discard the old conservative exclusion.
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 550_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 150_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 700_000L))
+        assertFalse(PauseIntervalStore(context).isPaused(false))
+    }
+
+    @Test
     fun staleImportCutoffDoesNotTurnAConcurrentPauseIntoClockRollback() {
         val context = RuntimeEnvironment.getApplication()
         val store = PauseIntervalStore(context)
