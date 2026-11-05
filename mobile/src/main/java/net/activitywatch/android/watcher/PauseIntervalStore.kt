@@ -109,7 +109,13 @@ internal class PauseIntervalStore(
         if (!flagPaused || file.exists()) return@synchronized current
         val migrated = current + PauseInterval(startMs = nowMs, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $nowMs")
-        write(migrated)
+        if (!write(migrated)) {
+            // The interval exists only in memory: the file still has no boundary, so a
+            // later import would see an empty history and backfill the private window.
+            // Fail closed exactly as an unreadable file does. The migration is retried on
+            // the next call once the obstruction is gone, so public history is not lost.
+            return@synchronized listOf(PauseInterval(0L))
+        }
         PauseIntervals.normalize(migrated)
     }
 

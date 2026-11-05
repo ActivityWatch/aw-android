@@ -47,6 +47,17 @@ class RootlessThemeHookTest {
 
     private fun pendingStylesheet(withRecorder: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        if (withRecorder) {
+            // The assumption must run on the test thread: inside runOnMainSync an
+            // AssumptionViolatedException escapes the runnable and can kill the
+            // instrumentation process instead of skipping the test.
+            org.junit.Assume.assumeTrue(
+                "DOCUMENT_START_SCRIPT is not supported on this WebView",
+                androidx.webkit.WebViewFeature.isFeatureSupported(
+                    androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+                ),
+            )
+        }
         val bridge = ThemeBridge()
         val loaded = CountDownLatch(1)
         val requested = CountDownLatch(1)
@@ -74,12 +85,7 @@ class RootlessThemeHookTest {
                     )
                 }
             }
-            if (withRecorder) {
-                org.junit.Assume.assumeTrue(androidx.webkit.WebViewFeature.isFeatureSupported(
-                    androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
-                ))
-                installThemeStylesheetRecorder(webView)
-            }
+            if (withRecorder) installThemeStylesheetRecorder(webView)
             webView.loadDataWithBaseURL(
                 "https://theme-hook.invalid/",
                 "<html><head></head><body style='color: black'><div id='app'></div></body></html>",
@@ -126,6 +132,17 @@ class RootlessThemeHookTest {
 
     private fun failedStylesheet(withRecorder: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        if (withRecorder) {
+            // The assumption must run on the test thread: inside runOnMainSync an
+            // AssumptionViolatedException escapes the runnable and can kill the
+            // instrumentation process instead of skipping the test.
+            org.junit.Assume.assumeTrue(
+                "DOCUMENT_START_SCRIPT is not supported on this WebView",
+                androidx.webkit.WebViewFeature.isFeatureSupported(
+                    androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+                ),
+            )
+        }
         val bridge = ThemeBridge()
         val loaded = CountDownLatch(1)
         lateinit var webView: WebView
@@ -143,12 +160,7 @@ class RootlessThemeHookTest {
                         "text/css", "UTF-8", 404, "Not Found", emptyMap(), "".byteInputStream(),
                     ) else null
             }
-            if (withRecorder) {
-                org.junit.Assume.assumeTrue(androidx.webkit.WebViewFeature.isFeatureSupported(
-                    androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
-                ))
-                installThemeStylesheetRecorder(webView)
-            }
+            if (withRecorder) installThemeStylesheetRecorder(webView)
             webView.loadDataWithBaseURL(
                 "https://theme-hook.invalid/",
                 """
