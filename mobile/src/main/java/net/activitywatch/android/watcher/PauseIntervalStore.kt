@@ -68,8 +68,14 @@ internal class PauseIntervalStore(
         val end = if (atMs > resumeFloor) atMs else null
         if (end == null) {
             // A backwards clock jump cannot close this wall-clock interval safely.
-            // Preserve the durable boundary and report failure instead of silently
-            // deleting private history. The caller keeps collectors paused.
+            // Retain this rollback observation before a later catch-up/resume hides it
+            // from the importers. Match loadOrMigrate's conservative exclusion and keep
+            // the original resume floor. A failed write still cannot promise restart-safe
+            // recovery; the caller must keep collectors paused either way.
+            if (atMs < open.startMs) {
+                val expanded = current.filter { it.endMs != null } + PauseInterval(0L)
+                write(expanded, resumeFloor)
+            }
             false
         } else {
             write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) })
