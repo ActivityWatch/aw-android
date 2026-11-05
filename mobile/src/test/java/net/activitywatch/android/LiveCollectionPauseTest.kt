@@ -27,6 +27,56 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun resumeDoesNotExposeUnpausedStateBeforeItsGenerationIsPublished() {
+        val context = RuntimeEnvironment.getApplication()
+        val preferences = context.getSharedPreferences(AWPreferences.PREFERENCES_NAME, android.content.Context.MODE_PRIVATE)
+        val editingResume = java.util.concurrent.CountDownLatch(1)
+        val finishResume = java.util.concurrent.CountDownLatch(1)
+        val readStarted = java.util.concurrent.CountDownLatch(1)
+        val readFinished = java.util.concurrent.CountDownLatch(1)
+        val wrapped = object : android.content.ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                object : SharedPreferences by preferences {
+                    override fun edit(): SharedPreferences.Editor {
+                        editingResume.countDown()
+                        check(finishResume.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                        return preferences.edit()
+                    }
+                }
+        }
+        val prefs = AWPreferences(context)
+        assertTrue(prefs.setLiveCollectionPaused(true))
+        val pausedGeneration = prefs.liveCollectionGeneration()
+        android.os.SystemClock.setCurrentTimeMillis(System.currentTimeMillis() + 1_000L)
+        val resumeResult = java.util.concurrent.atomic.AtomicBoolean(false)
+        val resumed = Thread { resumeResult.set(AWPreferences(wrapped).setLiveCollectionPaused(false)) }
+        var observedGeneration = -1L
+        var observedPaused = true
+        val reader = Thread {
+            readStarted.countDown()
+            observedPaused = prefs.isLiveCollectionPaused()
+            observedGeneration = prefs.liveCollectionGeneration()
+            readFinished.countDown()
+        }
+        try {
+            resumed.start()
+            assertTrue(editingResume.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            // The interval file is already closed, but the resume generation is not yet
+            // published. A collector must not observe that half-committed transition.
+            reader.start()
+            assertTrue(readStarted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse("Collector read escaped the resume transition", readFinished.await(200, java.util.concurrent.TimeUnit.MILLISECONDS))
+        } finally {
+            finishResume.countDown()
+            resumed.join(5_000)
+            reader.join(5_000)
+        }
+        assertTrue(resumeResult.get())
+        assertFalse(observedPaused)
+        assertEquals(pausedGeneration + 1L, observedGeneration)
+    }
+
+    @Test
     fun backwardsClockResumeDoesNotEraseThePrivacyBoundaryOrReportSuccess() {
         val context = RuntimeEnvironment.getApplication()
         // Robolectric refuses backwards setCurrentTimeMillis calls. Persist a future
