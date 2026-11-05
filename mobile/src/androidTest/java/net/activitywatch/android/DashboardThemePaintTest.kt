@@ -167,11 +167,17 @@ class DashboardThemePaintTest {
                 // already dispatched its error event. The hook must read the
                 // null sheet as settled instead of waiting for a listener that
                 // can never fire (the failsafe is disabled here).
-                evaluate(webView, "location.href = '/early'")
+                evaluate(webView, "window.__previousDocument = true; location.href = '/early'")
                 await {
                     var visible = false
                     scenario.onActivity { visible = webView.visibility == View.VISIBLE }
-                    visible && evaluate(webView, "document.readyState") == "\"complete\""
+                    // Visibility and readyState can still belong to the previous page
+                    // while the new navigation is queued. Require the target document.
+                    visible && evaluate(
+                        webView,
+                        "!window.__previousDocument && location.pathname === '/early' && " +
+                            "document.readyState === 'complete' && !!document.body",
+                    ) == "true"
                 }
                 assertEquals(
                     "\"rgb(247, 250, 252)\"",
@@ -256,7 +262,7 @@ class DashboardThemePaintTest {
         // injected from onPageFinished).
         val PAGE_EARLY = """
             <!doctype html>
-            <html><head><script>
+            <html><head><style>body { background: rgb(247, 250, 252); }</style><script>
               var link = document.createElement('link');
               link.rel = 'stylesheet';
               link.href = '/dark.css';
