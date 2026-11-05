@@ -308,8 +308,10 @@ internal const val MIN_SESSION_DURATION = 1000L // 1 second minimum
  * stored event (same start and data) instead of inserting a duplicate.
  *
  * [storedSessionStart] is the start of the session already stored (possibly while it was
- * still open). That session is capped at the maximum duration instead of being dropped:
- * dropping it would leave its earlier, shorter stored value in place for good.
+ * still open), or the start of its allowed segment after pause clipping. The session
+ * containing that cursor is capped at the maximum duration instead of being dropped:
+ * dropping it would leave its earlier, shorter stored value in place for good. The cap
+ * remains relative to the original RESUMED, not the clipped segment's start.
  */
 internal fun parseForegroundSessions(
     events: List<UsageEvent>,
@@ -326,7 +328,8 @@ internal fun parseForegroundSessions(
     fun closeSession(sessionEnd: Long) {
         val pkg = openPackage ?: return
         openPackage = null
-        val endTime = if (openStart == storedSessionStart) {
+        val endTime = if (storedSessionStart != null &&
+            storedSessionStart >= openStart && storedSessionStart < sessionEnd) {
             minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
         } else {
             sessionEnd

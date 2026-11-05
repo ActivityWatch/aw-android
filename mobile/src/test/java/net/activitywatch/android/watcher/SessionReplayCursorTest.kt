@@ -164,6 +164,34 @@ class SessionReplayCursorTest {
     }
 
     @Test
+    fun clippedSessionReplayPast24HoursExtendsToOriginalSessionCap() {
+        Datastore.events.clear()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(60 * minute))
+        assertTrue(store.recordResume(120 * minute))
+        event(UsageEvents.Event.ACTIVITY_RESUMED, 0)
+        importAt(23 * 60L)
+        assertEquals(listOf(0L to 60L, 120L to 23 * 60L), sessions())
+
+        importAt(25 * 60L)
+        val cappedEnd = 24 * 60 * minute - 1
+        fun assertCapped() {
+            val events = Datastore.events[SESSION_BUCKET_ID].orEmpty()
+            assertEquals("Replay must extend the clipped event, not duplicate it", 2, events.size)
+            val clipped = events.last()
+            assertEquals(120 * minute, Instant.parse(clipped.getString("timestamp")).toEpochMilli())
+            assertEquals("Cap is relative to the original RESUMED, not the clipped start",
+                (cappedEnd - 120 * minute) / 1000.0, clipped.getDouble("duration"), 0.000001)
+        }
+        assertCapped()
+        importAt(26 * 60L)
+        assertCapped()
+        event(UsageEvents.Event.ACTIVITY_PAUSED, 27 * 60L)
+        importAt(28 * 60L)
+        assertCapped()
+    }
+
+    @Test
     fun multiplePausesDoNotLeakPrivateSessionsOrReplayEarlierSegments() {
         Datastore.events.clear()
         val store = PauseIntervalStore(context)

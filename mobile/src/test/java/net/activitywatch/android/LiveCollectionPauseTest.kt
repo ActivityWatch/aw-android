@@ -39,9 +39,50 @@ class LiveCollectionPauseTest {
         assertTrue(AWPreferences(context).isLiveCollectionPaused())
         assertEquals(generation, prefs.liveCollectionGeneration())
         val intervals = PauseIntervalStore(context).loadOrMigrate(true, 550_000L)
-        assertEquals(pauseStart, intervals.single().startMs)
+        assertEquals(0L, intervals.single().startMs)
         assertNull(intervals.single().endMs)
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, pauseStart + 5_000L))
+    }
+
+    @Test
+    fun corruptHistoryFailsClosedWithoutOverwritingPrivacyEvidence() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val corruptions = listOf(
+            "{",
+            "{\"version\":99,\"intervals\":[]}",
+            "{\"version\":1}",
+            "{\"version\":1,\"intervals\":[{\"startMs\":-1}]}",
+            "{\"version\":1,\"intervals\":[{\"startMs\":100,\"endMs\":50}]}"
+        )
+        for (contents in corruptions) {
+            file.writeText(contents)
+            val store = PauseIntervalStore(context)
+            assertTrue("Corruption must not authorize live collection: $contents", store.isPaused(false))
+            val pauses = store.loadOrMigrate(false, 30_000L)
+            assertTrue(net.activitywatch.android.watcher.PauseIntervals.allowedWindows(pauses, 0L, 30_000L).isEmpty())
+            assertFalse(store.recordPause(31_000L))
+            assertFalse(store.recordResume(32_000L))
+            store.prune(40_000L)
+            assertEquals(contents, file.readText())
+        }
+    }
+
+    @Test
+    fun rollbackExpandsAndPersistsTheExclusionBeforeHistoryImport() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(600_000L))
+        val pauses = store.loadOrMigrate(false, 550_000L)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.allowedWindows(pauses, 0L, 550_000L).isEmpty())
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(pauses, 540_000L))
+        // Preserve the original resume refusal floor even though exclusion now starts at epoch.
+        assertFalse(PauseIntervalStore(context).recordResume(560_000L))
+        // Once detected, catching up and resuming must not expose rolled-back timestamps.
+        assertTrue(store.recordResume(700_000L))
+        val persisted = PauseIntervalStore(context).loadOrMigrate(false, 710_000L)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(persisted, 540_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(persisted, 700_000L))
     }
 
     @Test

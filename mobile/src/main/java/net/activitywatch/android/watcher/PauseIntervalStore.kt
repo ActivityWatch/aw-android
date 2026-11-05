@@ -39,7 +39,7 @@ internal class PauseIntervalStore(context: Context) {
 
     /** Once migrated, the interval file is the durable collection-state authority too. */
     fun isPaused(fallback: Boolean): Boolean = synchronized(lock) {
-        if (file.exists()) read().any { it.endMs == null } else fallback
+        if (file.exists()) read()?.any { it.endMs == null } ?: true else fallback
     }
 
     /**
@@ -50,18 +50,19 @@ internal class PauseIntervalStore(context: Context) {
      * backfill the pause from a later start.
      */
     fun recordPause(atMs: Long): Boolean = synchronized(lock) {
-        val current = read()
+        val current = read() ?: return@synchronized false
         if (current.any { it.endMs == null }) return@synchronized true
         write(current + PauseInterval(startMs = atMs, endMs = null))
     }
 
     /** Close the open interval at [atMs]. No-op (true) when nothing is open. */
     fun recordResume(atMs: Long): Boolean = synchronized(lock) {
-        val current = read()
+        val current = read() ?: return@synchronized false
         val openIndex = current.indexOfFirst { it.endMs == null }
         if (openIndex < 0) return@synchronized true
         val open = current[openIndex]
-        val end = if (atMs > open.startMs) atMs else null
+        val resumeFloor = maxOf(open.startMs, rollbackResumeFloor())
+        val end = if (atMs > resumeFloor) atMs else null
         if (end == null) {
             // A backwards clock jump cannot close this wall-clock interval safely.
             // Preserve the durable boundary and report failure instead of silently
@@ -87,7 +88,15 @@ internal class PauseIntervalStore(context: Context) {
      * honouring the user's pause.
      */
     fun loadOrMigrate(flagPaused: Boolean, nowMs: Long): List<PauseInterval> = synchronized(lock) {
-        val current = PauseIntervals.normalize(read())
+        val current = read() ?: return@synchronized listOf(PauseInterval(0L))
+        // Wall-clock timestamps cannot distinguish earlier public events from private
+        // events after a rollback. Persist an epoch floor before authorizing any import;
+        // merely skipping this cycle would expose those events after resume/catch-up.
+        if (current.any { it.endMs == null && nowMs < it.startMs }) {
+            val expanded = listOf(PauseInterval(0L))
+            write(expanded, current.last().startMs)
+            return@synchronized expanded
+        }
         if (!flagPaused || file.exists()) return@synchronized current
         val migrated = current + PauseInterval(startMs = nowMs, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $nowMs")
@@ -103,7 +112,7 @@ internal class PauseIntervalStore(context: Context) {
      * import cycle.
      */
     fun prune(keepFromMs: Long) = synchronized(lock) {
-        val current = PauseIntervals.normalize(read())
+        val current = read() ?: return@synchronized
         val kept = current.filter { it.endMs == null || it.endMs >= keepFromMs }
         // No count-based cap: every remaining interval still overlaps a range a later import
         // can query, so dropping one to bound the file would store private history. The
@@ -111,24 +120,25 @@ internal class PauseIntervalStore(context: Context) {
         if (kept != current) write(kept)
     }
 
-    private fun read(): List<PauseInterval> {
+    /** Null is unreadable privacy evidence, never permission to collect or overwrite. */
+    private fun read(): List<PauseInterval>? {
         if (!file.exists()) return emptyList()
         return try {
             val root = JSONObject(file.readText())
-            if (root.optInt("version", 0) != VERSION) return emptyList()
-            val array = root.optJSONArray("intervals") ?: JSONArray()
-            (0 until array.length()).mapNotNull { index ->
-                val entry = array.optJSONObject(index) ?: return@mapNotNull null
-                val start = entry.optLong("startMs", -1L)
-                if (start < 0L) return@mapNotNull null
-                val end = if (entry.has("endMs") && !entry.isNull("endMs")) entry.optLong("endMs") else null
+            require(root.getInt("version") == VERSION) { "Unsupported pause history version" }
+            val array = root.getJSONArray("intervals")
+            PauseIntervals.normalize((0 until array.length()).map { index ->
+                val entry = array.getJSONObject(index)
+                val start = entry.getLong("startMs")
+                require(start >= 0L) { "Invalid pause start" }
+                require(entry.has("endMs")) { "Missing pause end" }
+                val end = if (entry.isNull("endMs")) null else entry.getLong("endMs")
+                require(end == null || end > start) { "Invalid pause end" }
                 PauseInterval(startMs = start, endMs = end)
-            }
+            })
         } catch (e: Exception) {
-            // A corrupt log must not stop collection; the live flag still gates live
-            // collectors, and the next pause/resume rewrites the file.
-            Log.w(TAG, "Unable to read pause intervals, treating as empty: ${e.message}")
-            emptyList()
+            Log.w(TAG, "Unable to read pause intervals; collection remains blocked: ${e.message}")
+            null
         }
     }
 
@@ -136,7 +146,15 @@ internal class PauseIntervalStore(context: Context) {
      * Atomic write: `.tmp` + rename, so a kill mid-write cannot truncate the log.
      * Returns false when nothing could be persisted.
      */
-    private fun write(intervals: List<PauseInterval>): Boolean {
+    private fun rollbackResumeFloor(): Long = if (file.exists()) {
+        try {
+            JSONObject(file.readText()).optLong("resumeAfterMs", 0L)
+        } catch (e: Exception) {
+            Long.MAX_VALUE
+        }
+    } else 0L
+
+    private fun write(intervals: List<PauseInterval>, resumeAfterMs: Long = rollbackResumeFloor()): Boolean {
         val normalized = PauseIntervals.normalize(intervals)
         val array = JSONArray()
         for (interval in normalized) {
@@ -150,6 +168,7 @@ internal class PauseIntervalStore(context: Context) {
         val root = JSONObject().apply {
             put("version", VERSION)
             put("intervals", array)
+            put("resumeAfterMs", resumeAfterMs)
         }
         val tmp = File(file.parentFile, "$FILE_NAME.tmp")
         return try {
