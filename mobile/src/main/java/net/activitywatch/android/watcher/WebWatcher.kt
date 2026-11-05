@@ -419,7 +419,19 @@ class WebWatcher : AccessibilityService() {
 
         Log.i(TAG, "Registered event: $data")
         writer.execute {
-            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+            val startMs = session.start.toEpochMilli()
+            val pauses = PauseIntervalStore(applicationContext).loadOrMigrate(
+                collectionPrefs.isLiveCollectionPaused(), System.currentTimeMillis()
+            )
+            // The datastore can join identical visits up to one second apart. A reset of
+            // the in-memory tracker alone cannot stop that merge, including after restart.
+            // Read durable boundaries on the writer thread, not the accessibility callback.
+            if (PauseIntervals.isExcluded(pauses, startMs)) return@execute
+            val pulsetime = if (pauses.any { pause ->
+                val end = pause.endMs
+                end != null && end > startMs - 1_000L && end <= startMs
+            }) 0.0 else 1.0
+            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, pulsetime)
         }
     }
 

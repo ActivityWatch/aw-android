@@ -71,7 +71,9 @@ class LiveCollectionPauseTest {
     @Test
     fun rollbackExpandsAndPersistsTheExclusionBeforeHistoryImport() {
         val context = RuntimeEnvironment.getApplication()
-        val store = PauseIntervalStore(context)
+        // The query cutoff alone is not clock evidence; model a fresh observation of
+        // the rolled-back wall clock independently of the importer's cutoff.
+        val store = PauseIntervalStore(context, wallClockMs = { 550_000L })
         assertTrue(store.recordPause(600_000L))
         val pauses = store.loadOrMigrate(false, 550_000L)
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.allowedWindows(pauses, 0L, 550_000L).isEmpty())
@@ -83,6 +85,35 @@ class LiveCollectionPauseTest {
         val persisted = PauseIntervalStore(context).loadOrMigrate(false, 710_000L)
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(persisted, 540_000L))
         assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(persisted, 700_000L))
+    }
+
+    @Test
+    fun staleImportCutoffDoesNotTurnAConcurrentPauseIntoClockRollback() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = PauseIntervalStore(context)
+        val cutoff = System.currentTimeMillis() - 10_000L
+        val pauseStart = System.currentTimeMillis() - 1_000L
+        assertTrue(store.recordPause(pauseStart))
+        // The importer sampled its query cutoff before the UI recorded this pause.
+        val intervals = store.loadOrMigrate(false, cutoff)
+        assertEquals(pauseStart, intervals.single().startMs)
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, cutoff - 1L))
+    }
+
+    @Test
+    fun earlierOpenPauseCannotEraseFutureClosedExclusionsOnResume() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(store.recordResume(700_000L))
+        // A new pause starts on an earlier wall-clock timeline. Normalizing an open
+        // [100000, infinity) must not discard the durable closed [600000,700000).
+        assertTrue(store.recordPause(100_000L))
+        assertTrue(PauseIntervalStore(context).recordResume(200_000L))
+        val intervals = store.loadOrMigrate(false, 800_000L)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 650_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 150_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(intervals, 300_000L))
     }
 
     @Test
