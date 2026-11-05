@@ -116,16 +116,16 @@ internal class PauseIntervalStore(
     /**
      * Drop closed intervals that end before [keepFromMs].
      *
-     * An import can never rewind before the last stored session start, so those intervals can
-     * no longer affect any window. Never prune an open interval. Call only after a successful
-     * import cycle.
+     * [keepFromMs] must be safe for EVERY consumer, including delayed browser writes, not
+     * just session/unlock replay. No production caller currently proves that floor, so
+     * automatic pruning is disabled. Never prune an open interval.
      */
     fun prune(keepFromMs: Long) = synchronized(lock) {
         val current = read() ?: return@synchronized
         val kept = current.filter { it.endMs == null || it.endMs >= keepFromMs }
         // No count-based cap: every remaining interval still overlaps a range a later import
         // can query, so dropping one to bound the file would store private history. The
-        // age-based filter is the only safe bound.
+        // age-based filter is safe only with the all-consumer floor described above.
         if (kept != current) write(kept)
     }
 
