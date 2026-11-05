@@ -176,6 +176,33 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun failedMigrationWriteFailsClosedAndRetriesAfterTheObstruction() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        assertTrue(tmp.mkdir())
+        try {
+            // The migration cannot be persisted, so it must not be reported as applied:
+            // an empty history here would backfill the private window on the next import.
+            val intervals = PauseIntervalStore(context).loadOrMigrate(true, 10_000L)
+            assertEquals(0L, intervals.single().startMs)
+            assertNull(intervals.single().endMs)
+            assertFalse(file.exists())
+        } finally {
+            tmp.delete()
+        }
+        // Once the obstruction is gone the same call migrates and only hides later history.
+        val migrated = PauseIntervalStore(context).loadOrMigrate(true, 20_000L)
+        assertEquals(20_000L, migrated.single().startMs)
+        assertNull(migrated.single().endMs)
+        assertTrue(file.exists())
+        assertFalse(
+            net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 15_000L)
+        )
+    }
+
+    @Test
     fun failedResumeKeepsTheOpenIntervalAndPausedCollectors() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = AWPreferences(context)
