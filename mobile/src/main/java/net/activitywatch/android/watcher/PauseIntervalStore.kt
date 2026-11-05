@@ -19,7 +19,10 @@ import java.io.File
  * importing while paused backfills the private window on resume. The window has to be
  * persisted and subtracted from every import range.
  */
-internal class PauseIntervalStore(context: Context) {
+internal class PauseIntervalStore(
+    context: Context,
+    private val wallClockMs: () -> Long = { System.currentTimeMillis() },
+) {
 
     private val file = File(context.applicationContext.filesDir, FILE_NAME)
 
@@ -89,12 +92,18 @@ internal class PauseIntervalStore(context: Context) {
      */
     fun loadOrMigrate(flagPaused: Boolean, nowMs: Long): List<PauseInterval> = synchronized(lock) {
         val current = read() ?: return@synchronized listOf(PauseInterval(0L))
-        // Wall-clock timestamps cannot distinguish earlier public events from private
-        // events after a rollback. Persist an epoch floor before authorizing any import;
-        // merely skipping this cycle would expose those events after resume/catch-up.
-        if (current.any { it.endMs == null && nowMs < it.startMs }) {
-            val expanded = listOf(PauseInterval(0L))
-            write(expanded, current.last().startMs)
+        // nowMs is a query cutoff sampled before acquiring this lock. A concurrent UI
+        // pause can legitimately start after that cutoff: only a fresh clock sample can
+        // provide evidence of rollback. Endpoint samples cannot detect a rollback that
+        // catches up entirely between observations; this is not arbitrary clock recovery.
+        val observedNow = wallClockMs()
+        val open = current.firstOrNull { it.endMs == null }
+        if (open != null && observedNow < open.startMs) {
+            // Wall-clock timestamps cannot distinguish public from rolled-back private
+            // events. Preserve closed evidence too: after resume an older closed interval
+            // can extend beyond the newly closed epoch-based exclusion.
+            val expanded = normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
+            write(expanded, maxOf(open.startMs, rollbackResumeFloor()))
             return@synchronized expanded
         }
         if (!flagPaused || file.exists()) return@synchronized current
@@ -127,7 +136,7 @@ internal class PauseIntervalStore(context: Context) {
             val root = JSONObject(file.readText())
             require(root.getInt("version") == VERSION) { "Unsupported pause history version" }
             val array = root.getJSONArray("intervals")
-            PauseIntervals.normalize((0 until array.length()).map { index ->
+            normalizeForStorage((0 until array.length()).map { index ->
                 val entry = array.getJSONObject(index)
                 val start = entry.getLong("startMs")
                 require(start >= 0L) { "Invalid pause start" }
@@ -154,8 +163,19 @@ internal class PauseIntervalStore(context: Context) {
         }
     } else 0L
 
+    /**
+     * Unlike the query union, durable evidence must retain closed ranges hidden beneath
+     * an open range. Closing an earlier pause after a clock correction must not erase a
+     * later closed exclusion. Query callers may still union this redundant representation.
+     */
+    private fun normalizeForStorage(intervals: List<PauseInterval>): List<PauseInterval> {
+        val closed = PauseIntervals.normalize(intervals.filter { it.endMs != null })
+        val open = intervals.filter { it.endMs == null }.minByOrNull { it.startMs }
+        return (closed + listOfNotNull(open)).sortedBy { it.startMs }
+    }
+
     private fun write(intervals: List<PauseInterval>, resumeAfterMs: Long = rollbackResumeFloor()): Boolean {
-        val normalized = PauseIntervals.normalize(intervals)
+        val normalized = normalizeForStorage(intervals)
         val array = JSONArray()
         for (interval in normalized) {
             array.put(
