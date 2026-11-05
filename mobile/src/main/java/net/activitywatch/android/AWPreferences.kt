@@ -10,6 +10,9 @@ class AWPreferences(context: Context) {
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     companion object {
+        // Live readers must not see a closed interval with the preceding generation.
+        // Shared across instances; interval-store operations never acquire this lock.
+        private val collectionTransitionLock = Any()
         const val PREFERENCES_NAME = "AWPreferences"
         const val LIVE_COLLECTION_PAUSED = "liveCollectionPaused"
         const val LAST_SYNC_STATUS_CHANGED_ACTION =
@@ -20,11 +23,13 @@ class AWPreferences(context: Context) {
 
     // The interval rename commits the state. The preference remains the migration fallback
     // and listener notification, not a second authority after a process dies mid-transition.
-    fun isLiveCollectionPaused(): Boolean = PauseIntervalStore(appContext).isPaused(
-        sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
-    )
+    fun isLiveCollectionPaused(): Boolean = synchronized(collectionTransitionLock) {
+        PauseIntervalStore(appContext).isPaused(
+            sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
+        )
+    }
 
-    fun setLiveCollectionPaused(paused: Boolean): Boolean {
+    fun setLiveCollectionPaused(paused: Boolean): Boolean = synchronized(collectionTransitionLock) {
         // Record the history interval *before* flipping the flag: the usage importer
         // subtracts these intervals from every import window, so the boundary is effective
         // before any later import can observe the pause. Ordering is what keeps a session
@@ -40,17 +45,19 @@ class AWPreferences(context: Context) {
             // Fail closed: stay in the current state rather than report a pause that does
             // not hold.
             Log.e("AWPreferences", "Unable to persist the pause interval; not changing collection state")
-            return false
+            return@synchronized false
         }
 
         sharedPreferences.edit()
             .putBoolean(LIVE_COLLECTION_PAUSED, paused)
             .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)
             .apply()
-        return true
+        true
     }
 
-    fun liveCollectionGeneration(): Long = sharedPreferences.getLong("liveCollectionGeneration", 0L)
+    fun liveCollectionGeneration(): Long = synchronized(collectionTransitionLock) {
+        sharedPreferences.getLong("liveCollectionGeneration", 0L)
+    }
 
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
