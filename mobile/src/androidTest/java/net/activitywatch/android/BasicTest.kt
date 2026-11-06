@@ -7,7 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 import org.junit.Assert.*
-import java.lang.Thread.sleep
+import java.util.UUID
 import java.time.Instant
 
 /**
@@ -26,23 +26,27 @@ class BasicTest {
 
     @Test
     fun getBuckets() {
-        // TODO: Clear test buckets before test
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val ri = RustInterface(appContext)
-        val bucketId = "test-${Math.random()}"
-        val oldLen = ri.getBucketsJSON().length()
+        val bucketId = "test-${UUID.randomUUID()}"
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")
-        assertEquals(oldLen + 1, ri.getBucketsJSON().length())
+        // Other tests and background watchers may create buckets concurrently.
+        val bucket = ri.getBucketsJSON().getJSONObject(bucketId)
+        assertEquals(bucketId, bucket.getString("id"))
+        assertEquals("test", bucket.getString("type"))
+        assertEquals("test", bucket.getString("hostname"))
+        assertEquals("test", bucket.getString("client"))
     }
 
     @Test
     fun createHeartbeat() {
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
         val ri = RustInterface(appContext)
-        val bucketId = "test-${Math.random()}"
+        val bucketId = "test-${UUID.randomUUID()}"
         ri.createBucket("""{"id": "$bucketId", "type": "test", "hostname": "test", "client": "test"}""")
-        val oldLen = ri.getEventsJSON(bucketId, 3).length()
         ri.heartbeat(bucketId, """{"timestamp": "${Instant.now()}", "duration": 0, "data": {"key": "value"}}""", 1.0)
-        assertEquals(oldLen + 1, ri.getEventsJSON(bucketId, 3).length())
+        val events = ri.getEventsJSON(bucketId, 3)
+        assertEquals(1, events.length())
+        assertEquals("value", events.getJSONObject(0).getJSONObject("data").getString("key"))
     }
 }
