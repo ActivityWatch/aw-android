@@ -64,6 +64,12 @@ internal class MediaPlaybackSegments<P>(
         lastStateKeys.remove(player)
     }
 
+    // A user collection pause drops unfinished segments, including deduplication state.
+    fun clear() {
+        open.clear()
+        lastStateKeys.clear()
+    }
+
     fun endAll(now: Instant) {
         open.values.forEach { flush(it, now) }
         open.clear()

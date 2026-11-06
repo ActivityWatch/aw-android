@@ -9,11 +9,32 @@ class AWPreferences(context: Context) {
 
     companion object {
         const val PREFERENCES_NAME = "AWPreferences"
+        const val LIVE_COLLECTION_PAUSED = "liveCollectionPaused"
         const val LAST_SYNC_STATUS_CHANGED_ACTION =
             "net.activitywatch.android.LAST_SYNC_STATUS_CHANGED"
     }
 
     private val appContext = context.applicationContext
+
+    // Only AW's live web/media collectors; Android usage-history import is independent.
+    fun isLiveCollectionPaused(): Boolean = sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
+
+    fun setLiveCollectionPaused(paused: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(LIVE_COLLECTION_PAUSED, paused)
+            .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)
+            .apply()
+    }
+
+    fun liveCollectionGeneration(): Long = sharedPreferences.getLong("liveCollectionGeneration", 0L)
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
+    }
 
     // To check if it is the first time the app is being run
     // Set to false when user finishes onboarding
