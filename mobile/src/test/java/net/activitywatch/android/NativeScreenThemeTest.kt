@@ -18,6 +18,10 @@ class NativeScreenThemeTest {
         for (activity in listOf("AuthSettingsActivity", "SyncSettingsActivity")) {
             val source = File("src/main/java/net/activitywatch/android/$activity.kt").readText()
             assert(source.contains("applySafeWindowInsets(followNightMode = true)")) { activity }
+            assert(source.contains("applyPersistedWebUiNightMode()")) { activity }
+            assert(
+                source.indexOf("applyPersistedWebUiNightMode()") < source.indexOf("super.onCreate"),
+            ) { "$activity must apply the in-app theme before super.onCreate" }
             assertEquals(activity, "AppTheme.FollowNight", themeOf(activity))
         }
     }

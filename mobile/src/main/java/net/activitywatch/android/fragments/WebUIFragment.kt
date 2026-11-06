@@ -34,6 +34,7 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import net.activitywatch.android.ANDROID_THEME_HOOK_JS
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.R
 import net.activitywatch.android.baseURL
 import net.activitywatch.android.ensureDashboardApiKey
@@ -627,10 +628,17 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
+        val appContext = requireContext().applicationContext
         myWebView.addJavascriptInterface(
-            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl) { navigation ->
-                navigation.toLongOrNull()?.let { postToUi { onThemeSettled(it) } }
-            },
+            WebAppInterface(
+                ::queueExport,
+                ::onColorSchemeReported,
+                ::onExportFromUrl,
+                { navigation ->
+                    navigation.toLongOrNull()?.let { postToUi { onThemeSettled(it) } }
+                },
+                { AWPreferences(appContext).setWebUiTheme(it) },
+            ),
             "Android",
         )
         installNativeBridge(myWebView)
@@ -1072,6 +1080,7 @@ class WebAppInterface(
     private val onColorScheme: (String) -> Unit = {},
     private val onExportUrl: (url: String, filename: String) -> Unit = { _, _ -> },
     private val onThemeSettled: (navigation: String) -> Unit = {},
+    private val onThemeSetting: (String) -> Unit = {},
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -1121,6 +1130,11 @@ class WebAppInterface(
     @JavascriptInterface
     fun reportColorScheme(scheme: String) {
         onColorScheme(scheme)
+    }
+
+    @JavascriptInterface
+    fun reportThemeSetting(setting: String) {
+        onThemeSetting(setting)
     }
 
     @JavascriptInterface
