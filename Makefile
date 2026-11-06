@@ -65,15 +65,29 @@ test-unit:
 # The upgrade test seeds a large legacy database before the datastore opens, so it
 # needs its own instrumentation process: run it after the rest, in a separate
 # gradle invocation (see UpgradeWithHistoryTest).
-test-e2e: test-e2e-main test-e2e-upgrade
+test-e2e: test-e2e-main test-e2e-upgrade test-e2e-sync
 
 test-e2e-main:
 	./gradlew connectedStandardDebugAndroidTest --stacktrace \
-		-Pandroid.testInstrumentationRunnerArguments.notClass=net.activitywatch.android.UpgradeWithHistoryTest
+		-Pandroid.testInstrumentationRunnerArguments.notClass=net.activitywatch.android.UpgradeWithHistoryTest,net.activitywatch.android.ColdStartSyncTest
 
 test-e2e-upgrade:
 	./gradlew connectedStandardDebugAndroidTest --stacktrace \
 		-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.UpgradeWithHistoryTest
+
+# An unstopped app can receive deferred BOOT_COMPLETED on Android 16, starting
+# BackgroundService before this test. Disable only that receiver for the run;
+# restore its default state even when Gradle/test execution fails.
+test-e2e-sync:
+	./gradlew installStandardDebug installStandardDebugAndroidTest --stacktrace
+	@set -eu; \
+		pkg=net.activitywatch.android.debug; \
+		receiver=$$pkg/net.activitywatch.android.watcher.AlarmReceiver; \
+		adb shell run-as $$pkg pm disable $$receiver; \
+		trap 'adb shell run-as "$$pkg" pm default-state "$$receiver"' EXIT; \
+		adb shell am force-stop $$pkg; \
+		./gradlew connectedStandardDebugAndroidTest --stacktrace \
+			-Pandroid.testInstrumentationRunnerArguments.class=net.activitywatch.android.ColdStartSyncTest
 
 test-e2e-screenshot-only:
 	@# To only run screenshot test:
