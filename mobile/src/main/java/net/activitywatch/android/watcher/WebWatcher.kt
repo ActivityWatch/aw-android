@@ -223,7 +223,7 @@ class WebWatcher : AccessibilityService() {
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (collectionPrefs.isLiveCollectionPaused()) return
+        if (!collectionPrefs.acceptsAccessibilityEvent(event.eventTime)) return
         if (shouldIgnoreEvent(event)) {
             return
         }
@@ -259,7 +259,7 @@ class WebWatcher : AccessibilityService() {
     }
 
     private fun processBrowserEvent(browser: String, event: AccessibilityEvent, windowChanged: Boolean) {
-        if (collectionPrefs.isLiveCollectionPaused()) return
+        if (!collectionPrefs.acceptsAccessibilityEvent(event.eventTime)) return
         try {
             val newUrl = extractUrl(browser, event)
             if (newUrl == null) {
@@ -308,6 +308,7 @@ class WebWatcher : AccessibilityService() {
             val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
             try {
                 event.packageName = browser
+                event.eventTime = SystemClock.uptimeMillis()
                 processBrowserEvent(browser, event, windowChanged = false)
             } finally {
                 event.recycle()

@@ -68,6 +68,21 @@ class LiveWatcherPauseTest {
     }
 
     @Test
+    fun webRejectsAccessibilityPayloadQueuedDuringPauseAfterResume() {
+        val service = Robolectric.buildService(WebWatcher::class.java).get()
+        val tracker = field(service, "sessionTracker").get(service) as BrowserSessionTracker
+        pause()
+        val queuedAt = android.os.SystemClock.uptimeMillis()
+        // AccessibilityEvent.eventTime is uptime, not the wall clock used by history.
+        shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
+        resume()
+        browserEvent(service, "private.example", queuedAt)
+        assertNull("A private queued payload must not start a public visit", tracker.currentBrowser)
+        browserEvent(service, "after.example")
+        assertEquals("after.example", tracker.handleUrl(null, null)!!.url)
+    }
+
+    @Test
     fun webPauseCancelsPendingTitleLookup() {
         val service = Robolectric.buildService(WebWatcher::class.java).get()
         val listener = field(service, "pauseListener").get(service) as SharedPreferences.OnSharedPreferenceChangeListener
@@ -295,7 +310,8 @@ class LiveWatcherPauseTest {
         }
     }
 
-    private fun browserEvent(service: WebWatcher, url: String) {
+    private fun browserEvent(service: WebWatcher, url: String, queuedAt: Long? = null) {
+        shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS)
         val root = AccessibilityNodeInfo.obtain().apply {
             packageName = "org.mozilla.firefox"
             val bar = AccessibilityNodeInfo.obtain().apply {
@@ -307,6 +323,7 @@ class LiveWatcherPauseTest {
         shadowOf(service).setRootInActiveWindow(root)
         service.onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
             packageName = "org.mozilla.firefox"
+            eventTime = queuedAt ?: android.os.SystemClock.uptimeMillis()
         })
     }
 }
