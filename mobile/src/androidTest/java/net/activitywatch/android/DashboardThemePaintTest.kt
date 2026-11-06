@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.IOException
 import java.net.ServerSocket
 import java.net.SocketException
 import java.util.concurrent.CountDownLatch
@@ -56,33 +57,44 @@ class DashboardThemePaintTest {
                 while (true) {
                     val socket = server.accept()
                     thread(isDaemon = true) {
-                        socket.use { conn ->
-                            conn.soTimeout = 5000
-                            val input = conn.getInputStream().bufferedReader()
-                            val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
-                            while (!input.readLine().isNullOrEmpty()) { }
-                            if (path == "/dark.css" && stylesheetMissing.get()) {
-                                conn.getOutputStream().write(
-                                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
-                                )
-                                return@use
-                            }
-                            val (type, body) = when (path) {
-                                "/" -> "text/html" to PAGE
-                                "/early" -> "text/html" to PAGE_EARLY
-                                "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
-                                "/dark.css" -> {
-                                    val release = releaseStylesheet.get()
-                                    stylesheetRequests.incrementAndGet()
-                                    release.await(15, TimeUnit.SECONDS)
-                                    "text/css" to "body { background: rgb(15, 19, 26); }"
+                        // Per-connection failures must not escape this thread:
+                        // an uncaught exception here hits Android's default
+                        // handler and terminates the instrumentation process.
+                        // Navigation cancels held /dark.css requests on
+                        // purpose, so a reset connection throwing from the
+                        // buffered read or the response write is expected.
+                        try {
+                            socket.use { conn ->
+                                conn.soTimeout = 5000
+                                val input = conn.getInputStream().bufferedReader()
+                                val path = input.readLine()?.split(" ")?.getOrNull(1) ?: "/"
+                                while (!input.readLine().isNullOrEmpty()) { }
+                                if (path == "/dark.css" && stylesheetMissing.get()) {
+                                    conn.getOutputStream().write(
+                                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
+                                    )
+                                    return@use
                                 }
-                                else -> "text/plain" to ""
+                                val (type, body) = when (path) {
+                                    "/" -> "text/html" to PAGE
+                                    "/early" -> "text/html" to PAGE_EARLY
+                                    "/settings" -> "application/json" to "{\"theme\":\"dark\"}"
+                                    "/dark.css" -> {
+                                        val release = releaseStylesheet.get()
+                                        stylesheetRequests.incrementAndGet()
+                                        release.await(15, TimeUnit.SECONDS)
+                                        "text/css" to "body { background: rgb(15, 19, 26); }"
+                                    }
+                                    else -> "text/plain" to ""
+                                }
+                                val response = "HTTP/1.1 200 OK\r\nContent-Type: $type\r\n" +
+                                    "Content-Length: ${body.toByteArray().size}\r\n" +
+                                    "Cache-Control: no-store\r\nConnection: close\r\n\r\n$body"
+                                conn.getOutputStream().write(response.toByteArray())
                             }
-                            val response = "HTTP/1.1 200 OK\r\nContent-Type: $type\r\n" +
-                                "Content-Length: ${body.toByteArray().size}\r\n" +
-                                "Cache-Control: no-store\r\nConnection: close\r\n\r\n$body"
-                            conn.getOutputStream().write(response.toByteArray())
+                        } catch (_: IOException) {
+                            // Client went away (navigation cancels held
+                            // requests); nothing to serve and nothing to fail.
                         }
                     }
                 }
