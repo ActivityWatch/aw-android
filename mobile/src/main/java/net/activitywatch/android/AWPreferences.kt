@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
 import android.util.Log
 import net.activitywatch.android.watcher.PauseIntervalStore
 
@@ -13,6 +14,9 @@ class AWPreferences(context: Context) {
         // Live readers must not see a closed interval with the preceding generation.
         // Shared across instances; interval-store operations never acquire this lock.
         private val collectionTransitionLock = Any()
+        // Accessibility payload times use uptime. No callbacks survive process death;
+        // never interpret a persisted uptime from a previous boot as a boundary.
+        private var accessibilityBoundaryUptime = Long.MIN_VALUE
         const val PREFERENCES_NAME = "AWPreferences"
         const val LIVE_COLLECTION_PAUSED = "liveCollectionPaused"
         const val LAST_SYNC_STATUS_CHANGED_ACTION =
@@ -48,11 +52,16 @@ class AWPreferences(context: Context) {
             return@synchronized false
         }
 
+        accessibilityBoundaryUptime = SystemClock.uptimeMillis()
         sharedPreferences.edit()
             .putBoolean(LIVE_COLLECTION_PAUSED, paused)
             .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)
             .apply()
         true
+    }
+
+    fun acceptsAccessibilityEvent(eventUptime: Long): Boolean = synchronized(collectionTransitionLock) {
+        !isLiveCollectionPaused() && eventUptime > accessibilityBoundaryUptime
     }
 
     fun liveCollectionGeneration(): Long = synchronized(collectionTransitionLock) {
