@@ -23,6 +23,7 @@ import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
 import net.activitywatch.android.watcher.SessionEventWatcher
+import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
@@ -162,7 +163,14 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     private fun getLastEvent(): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(bucket_id, limit=1)
+        val events = try {
+            ri.getEventsJSON(bucket_id, limit=1)
+        } catch (e: JSONException) {
+            // A failed read must not look like an empty bucket: the caller would treat
+            // it as "no previous event" and re-send a heartbeat for time already stored.
+            Log.e(TAG, "Could not read the last event from '$bucket_id': ${e.message}")
+            return null
+        }
         return if (events.length() == 1) {
             //Log.d(TAG, "Last event: ${events[0]}")
             events[0] as JSONObject

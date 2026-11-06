@@ -7,6 +7,7 @@ import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
 import net.activitywatch.android.parser.SessionParser
 import net.activitywatch.android.utils.SessionUtils
+import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
@@ -67,7 +68,14 @@ class SessionEventWatcher(val context: Context) {
 
     private fun getLastEvent(bucketId: String): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(bucketId, limit = 1)
+        val events = try {
+            ri.getEventsJSON(bucketId, limit = 1)
+        } catch (e: JSONException) {
+            // Distinct from the empty-bucket case below: the read failed, so the caller
+            // must not treat this as "no session stored yet" and re-derive one.
+            Log.e(TAG, "Could not read the last event from '$bucketId': ${e.message}")
+            return null
+        }
         return if (events.length() == 1) {
             events[0] as JSONObject
         } else if (events.length() == 0) {
@@ -207,7 +215,11 @@ class SessionEventWatcher(val context: Context) {
      */
     fun getSessionEventCount(): Int {
         val ri = rustInterface() ?: return 0
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID)
-        return events.length()
+        return try {
+            ri.getEventsJSON(SESSION_BUCKET_ID).length()
+        } catch (e: JSONException) {
+            Log.e(TAG, "Could not read session events: ${e.message}")
+            0
+        }
     }
 }
