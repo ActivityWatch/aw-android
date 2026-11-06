@@ -35,12 +35,12 @@ class WebUiThemeTest {
     }
 
     @Test
-    fun themeHookTreatsAStylesheetThatFailedBeforeInjectionAsSettled() {
-        // The hook runs from onPageFinished, after window load: a link already in
-        // the document has already fired load/error, so a null sheet means it
-        // failed and the light fallback must reveal without waiting.
-        assertTrue(ANDROID_THEME_HOOK_JS.contains("__awPresentAtHookInstall"))
-        assertTrue(ANDROID_THEME_HOOK_JS.contains("document.readyState === 'complete'"))
+    fun themeHookUsesTerminalEventsRatherThanDocumentReadiness() {
+        // Actual pending/early-error behavior is exercised by RootlessThemeHookTest
+        // in a WebView. A complete document does not imply a dynamic link settled.
+        assertFalse(ANDROID_THEME_HOOK_JS.contains("__awPresentAtHookInstall"))
+        assertTrue(ANDROID_THEME_STYLESHEET_RECORDER_JS.contains("document.addEventListener('error', terminal, true)"))
+        assertTrue(ANDROID_THEME_STYLESHEET_RECORDER_JS.contains("document.addEventListener('load', terminal, true)"))
     }
 
     @Test

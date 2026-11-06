@@ -48,9 +48,17 @@ class BrowserProbeRetryTest {
 
     private fun event() = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
         packageName = browser
+        eventTime = android.os.SystemClock.uptimeMillis()
     }
 
     private fun beginBackoff() {
+        // Exercise ordinary probing after a collection transition too. Synthetic events
+        // must originate after resume, just like newly delivered framework events.
+        val prefs = net.activitywatch.android.AWPreferences(service)
+        org.junit.Assert.assertTrue(prefs.setLiveCollectionPaused(true))
+        shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
+        org.junit.Assert.assertTrue(prefs.setLiveCollectionPaused(false))
+        shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS)
         setField("probeMemory", memory)
         setField("detectedBrowsers", mapOf(browser to 1L))
         shadowOf(service).setRootInActiveWindow(root(browser))

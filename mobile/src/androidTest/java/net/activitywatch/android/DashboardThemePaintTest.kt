@@ -47,6 +47,7 @@ class DashboardThemePaintTest {
         val stylesheetRequests = AtomicInteger()
         val releaseStylesheet = AtomicReference(CountDownLatch(1))
         val stylesheetMissing = AtomicBoolean(false)
+        val stylesheetHoldExpired = AtomicBoolean(false)
         val server = ServerSocket(0)
         val responder = thread(isDaemon = true) {
             try {
@@ -69,7 +70,13 @@ class DashboardThemePaintTest {
                             "/dark.css" -> {
                                 val release = releaseStylesheet.get()
                                 stylesheetRequests.incrementAndGet()
-                                release.await(15, TimeUnit.SECONDS)
+                                if (!release.await(15, TimeUnit.SECONDS)) {
+                                    stylesheetHoldExpired.set(true)
+                                    socket.getOutputStream().write(
+                                        "HTTP/1.1 504 Hold Expired\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
+                                    )
+                                    return@use
+                                }
                                 "text/css" to "body { background: rgb(15, 19, 26); }"
                             }
                             else -> "text/plain" to ""
@@ -167,11 +174,17 @@ class DashboardThemePaintTest {
                 // already dispatched its error event. The hook must read the
                 // null sheet as settled instead of waiting for a listener that
                 // can never fire (the failsafe is disabled here).
-                evaluate(webView, "location.href = '/early'")
+                evaluate(webView, "window.__previousDocument = true; location.href = '/early'")
                 await {
                     var visible = false
                     scenario.onActivity { visible = webView.visibility == View.VISIBLE }
-                    visible && evaluate(webView, "document.readyState") == "\"complete\""
+                    // Visibility and readyState can still belong to the previous page
+                    // while the new navigation is queued. Require the target document.
+                    visible && evaluate(
+                        webView,
+                        "!window.__previousDocument && location.pathname === '/early' && " +
+                            "document.readyState === 'complete' && !!document.body",
+                    ) == "true"
                 }
                 assertEquals(
                     "\"rgb(247, 250, 252)\"",
@@ -191,6 +204,7 @@ class DashboardThemePaintTest {
                 // Past every polling attempt plus scheduling margin, not just
                 // the first extension. The old cap revealed this light page.
                 Thread.sleep(themeSettleFailsafeMs * (THEME_SETTLE_MAX_EXTENSIONS + 1) + 1_500)
+                assertTrue("Stylesheet fixture hold expired", !stylesheetHoldExpired.get())
                 assertEquals(
                     "The held stylesheet must still be pending after the cap",
                     "\"pending\"", evaluate(webView, "window.__awAndroidThemeState()")
@@ -215,6 +229,7 @@ class DashboardThemePaintTest {
                     "\"rgb(15, 19, 26)\"",
                     evaluate(webView, "getComputedStyle(document.body).backgroundColor")
                 )
+                assertTrue("Stylesheet fixture hold expired", !stylesheetHoldExpired.get())
             }
         } finally {
             themeSettleFailsafeMs = originalFailsafeMs
@@ -256,7 +271,7 @@ class DashboardThemePaintTest {
         // injected from onPageFinished).
         val PAGE_EARLY = """
             <!doctype html>
-            <html><head><script>
+            <html><head><style>body { background: rgb(247, 250, 252); }</style><script>
               var link = document.createElement('link');
               link.rel = 'stylesheet';
               link.href = '/dark.css';

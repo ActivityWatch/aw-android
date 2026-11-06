@@ -73,6 +73,20 @@ class WebWatcher : AccessibilityService() {
     @Volatile private var ri : RustInterface? = null
     private var lastWindowId: Int? = null
     private val sessionTracker = BrowserSessionTracker()
+    private val collectionPrefs by lazy { AWPreferences(this) }
+    private val pauseListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == AWPreferences.LIVE_COLLECTION_PAUSED) resetLiveCollection()
+    }
+
+    // Discard the unfinished visit rather than risk extending it across a private interval.
+    private fun resetLiveCollection() {
+        titleFollowUp?.let { mainHandler.removeCallbacks(it.runnable) }
+        probeFollowUp?.let { mainHandler.removeCallbacks(it.runnable) }
+        titleFollowUp = null
+        probeFollowUp = null
+        sessionTracker.handleUrl(null, null)
+        lastWindowId = null
+    }
     private val titleGate = TitleLookupGate()
     private val mainHandler = Handler(Looper.getMainLooper())
     // The scheduled follow-up lookup, the browser it is for and when it runs (uptime ms).
@@ -176,6 +190,7 @@ class WebWatcher : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "Creating WebWatcher")
+        collectionPrefs.registerListener(pauseListener)
         val prefs = AWPreferences(this)
         probeMemory = BrowserProbeMemory(prefs.getBrowserProbeState(), prefs::setBrowserProbeState)
         detectionExecutor.execute { refreshDetectedBrowsers() }
@@ -208,6 +223,7 @@ class WebWatcher : AccessibilityService() {
 
     // TODO: This method is called very often, which might affect performance. Future optimizations needed.
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (!collectionPrefs.acceptsAccessibilityEvent(event.eventTime)) return
         if (shouldIgnoreEvent(event)) {
             return
         }
@@ -243,6 +259,7 @@ class WebWatcher : AccessibilityService() {
     }
 
     private fun processBrowserEvent(browser: String, event: AccessibilityEvent, windowChanged: Boolean) {
+        if (!collectionPrefs.acceptsAccessibilityEvent(event.eventTime)) return
         try {
             val newUrl = extractUrl(browser, event)
             if (newUrl == null) {
@@ -291,6 +308,7 @@ class WebWatcher : AccessibilityService() {
             val event = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
             try {
                 event.packageName = browser
+                event.eventTime = SystemClock.uptimeMillis()
                 processBrowserEvent(browser, event, windowChanged = false)
             } finally {
                 event.recycle()
@@ -318,6 +336,7 @@ class WebWatcher : AccessibilityService() {
         }
         val followUp = Runnable {
             titleFollowUp = null
+            if (collectionPrefs.isLiveCollectionPaused()) return@Runnable
             if (sessionTracker.currentBrowser != browser) return@Runnable
             if (titleGate.delayBeforeLookup(browser, sessionTracker.hasTitle) != 0L) return@Runnable
             val root = rootInActiveWindow ?: return@Runnable
@@ -401,13 +420,26 @@ class WebWatcher : AccessibilityService() {
 
         Log.i(TAG, "Registered event: $data")
         writer.execute {
-            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+            val startMs = session.start.toEpochMilli()
+            val pauses = PauseIntervalStore(applicationContext).loadOrMigrate(
+                collectionPrefs.isLiveCollectionPaused(), System.currentTimeMillis()
+            )
+            // The datastore can join identical visits up to one second apart. A reset of
+            // the in-memory tracker alone cannot stop that merge, including after restart.
+            // Read durable boundaries on the writer thread, not the accessibility callback.
+            if (PauseIntervals.isExcluded(pauses, startMs)) return@execute
+            val pulsetime = if (pauses.any { pause ->
+                val end = pause.endMs
+                end != null && end > startMs - 1_000L && end <= startMs
+            }) 0.0 else 1.0
+            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, pulsetime)
         }
     }
 
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        collectionPrefs.unregisterListener(pauseListener)
         mainHandler.removeCallbacksAndMessages(null)
         // Lets already-queued events finish writing.
         writer.shutdown()
