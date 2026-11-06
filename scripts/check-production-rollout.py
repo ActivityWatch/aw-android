@@ -195,7 +195,7 @@ def report_failure(exc: BaseException, allow_inprogress: bool) -> tuple[int, lis
     msg = (
         f"Could not read the Play {TRACK} track ({type(exc).__name__}: {exc}). "
         "Refusing to start a stable release without knowing whether a staged rollout "
-        "is in progress. Check the KEY_FASTLANE_API secret and the service account's "
+        "is in progress. Check the KEY_FASTLANE_API_B64 secret and the service account's "
         "Play Console permissions, or re-run with allow_inprogress_rollout=true."
     )
     if allow_inprogress:
