@@ -74,7 +74,7 @@ class SessionEventWatcher(val context: Context) {
             // Distinct from the empty-bucket case below: the read failed, so the caller
             // must not treat this as "no session stored yet" and re-derive one.
             Log.e(TAG, "Could not read the last event from '$bucketId': ${e.message}")
-            return null
+            throw e
         }
         return if (events.length() == 1) {
             events[0] as JSONObject
@@ -123,7 +123,14 @@ class SessionEventWatcher(val context: Context) {
             mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
         )
 
-        val lastSession = getLastEvent(SESSION_BUCKET_ID)
+        // Read both cursors before changing state or querying Android history. A failed
+        // lookup is not an empty bucket: skip this batch rather than replay from zero.
+        val (lastSession, lastUnlockEvent) = try {
+            getLastEvent(SESSION_BUCKET_ID) to getLastEvent(UNLOCK_BUCKET_ID)
+        } catch (e: JSONException) {
+            Log.w(TAG, "Skipping session batch after a failed cursor read", e)
+            return 0
+        }
         lastStoredData = lastSession?.optJSONObject("data")
         lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
@@ -133,7 +140,7 @@ class SessionEventWatcher(val context: Context) {
         // Unlocks need their own cursor. Resuming them from the last *session* start
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
-        val lastUnlock = getLastEvent(UNLOCK_BUCKET_ID)?.let(::eventStart)
+        val lastUnlock = lastUnlockEvent?.let(::eventStart)
         val batch = sessionParser.parseSessionsAndUnlocksSince(
             startTimestamp, queryStartAfter(lastUnlock), storedStart
         )

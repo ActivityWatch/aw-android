@@ -169,7 +169,7 @@ class UsageStatsWatcher constructor(val context: Context) {
             // A failed read must not look like an empty bucket: the caller would treat
             // it as "no previous event" and re-send a heartbeat for time already stored.
             Log.e(TAG, "Could not read the last event from '$bucket_id': ${e.message}")
-            return null
+            throw e
         }
         return if (events.length() == 1) {
             //Log.d(TAG, "Last event: ${events[0]}")
@@ -208,7 +208,12 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
             ri.createBucketHelper(unlock_bucket_id, "os.lockscreen.unlocks")
-            lastUpdated = getLastEventTime()
+            lastUpdated = try {
+                getLastEventTime()
+            } catch (e: JSONException) {
+                Log.w(TAG, "Skipping heartbeat batch after a failed cursor read", e)
+                return 0
+            }
             Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
             val usm = getUSM() ?: return 0
