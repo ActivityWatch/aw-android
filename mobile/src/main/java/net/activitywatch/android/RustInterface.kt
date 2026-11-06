@@ -322,15 +322,13 @@ class RustInterface(context: Context? = null) {
      */
     fun getBucketsJSON(): JSONObject = parseBucketsJSON(getBuckets())
 
-    fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
-        val result = getEvents(bucket_id, limit)
-        return try {
-            JSONArray(result)
-        } catch (e: JSONException) {
-            Log.e(TAG, "Error when trying to fetch events from bucket: $result")
-            JSONArray()
-        }
-    }
+    /**
+     * @throws JSONException when the datastore could not be read. The JNI reports that as
+     *   `{"error": "..."}`, which is not an event list; it used to be swallowed into an
+     *   empty array, making a failed read indistinguishable from a bucket with no events.
+     */
+    fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray =
+        parseEventsJSON(getEvents(bucket_id, limit))
 
     fun getDeviceName(context: Context): String = deviceHostname(context)
 
@@ -346,4 +344,26 @@ internal fun parseBucketsJSON(response: String): JSONObject {
         throw JSONException("getBuckets failed: ${json.getString("error")}")
     }
     return json
+}
+
+/**
+ * Parses a JNI `getEvents` response.
+ *
+ * An event list is always a JSON array, so an `{"error": …}` object (aw-server-rust's
+ * `create_error_object`) cannot be a valid result: it is raised as a [JSONException]
+ * instead of being read as an empty bucket.
+ */
+internal fun parseEventsJSON(response: String): JSONArray {
+    val trimmed = response.trim()
+    if (trimmed.startsWith("{")) {
+        val error = try {
+            JSONObject(trimmed).opt("error")
+        } catch (e: JSONException) {
+            null
+        }
+        if (error is String) {
+            throw JSONException("getEvents failed: $error")
+        }
+    }
+    return JSONArray(trimmed)
 }

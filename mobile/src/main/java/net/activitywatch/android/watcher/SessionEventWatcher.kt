@@ -7,6 +7,7 @@ import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
 import net.activitywatch.android.parser.SessionParser
 import net.activitywatch.android.utils.SessionUtils
+import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
@@ -67,7 +68,14 @@ class SessionEventWatcher(val context: Context) {
 
     private fun getLastEvent(bucketId: String): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(bucketId, limit = 1)
+        val events = try {
+            ri.getEventsJSON(bucketId, limit = 1)
+        } catch (e: JSONException) {
+            // Distinct from the empty-bucket case below: the read failed, so the caller
+            // must not treat this as "no session stored yet" and re-derive one.
+            Log.e(TAG, "Could not read the last event from '$bucketId': ${e.message}")
+            throw e
+        }
         return if (events.length() == 1) {
             events[0] as JSONObject
         } else if (events.length() == 0) {
@@ -115,7 +123,14 @@ class SessionEventWatcher(val context: Context) {
             mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
         )
 
-        val lastSession = getLastEvent(SESSION_BUCKET_ID)
+        // Read both cursors before changing state or querying Android history. A failed
+        // lookup is not an empty bucket: skip this batch rather than replay from zero.
+        val (lastSession, lastUnlockEvent) = try {
+            getLastEvent(SESSION_BUCKET_ID) to getLastEvent(UNLOCK_BUCKET_ID)
+        } catch (e: JSONException) {
+            Log.w(TAG, "Skipping session batch after a failed cursor read", e)
+            return 0
+        }
         lastStoredData = lastSession?.optJSONObject("data")
         lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
@@ -125,7 +140,7 @@ class SessionEventWatcher(val context: Context) {
         // Unlocks need their own cursor. Resuming them from the last *session* start
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
-        val lastUnlock = getLastEvent(UNLOCK_BUCKET_ID)?.let(::eventStart)
+        val lastUnlock = lastUnlockEvent?.let(::eventStart)
         val batch = sessionParser.parseSessionsAndUnlocksSince(
             startTimestamp, queryStartAfter(lastUnlock), storedStart
         )
@@ -207,7 +222,11 @@ class SessionEventWatcher(val context: Context) {
      */
     fun getSessionEventCount(): Int {
         val ri = rustInterface() ?: return 0
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID)
-        return events.length()
+        return try {
+            ri.getEventsJSON(SESSION_BUCKET_ID).length()
+        } catch (e: JSONException) {
+            Log.e(TAG, "Could not read session events: ${e.message}")
+            0
+        }
     }
 }
