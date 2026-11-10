@@ -289,7 +289,7 @@ class SyncInterface(context: Context) {
     fun syncPullAllAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
         performSyncAsync("Pull All", callback) {
-            syncPullAll(BuildConfig.SERVER_PORT, hostname)
+            syncPullAll(ServerPort.value, hostname)
         }
     }
     
@@ -297,7 +297,7 @@ class SyncInterface(context: Context) {
     fun syncPushAsync(callback: (Boolean, String) -> Unit) {
         val hostname = getDeviceName()
         performSyncAsync("Push", callback) {
-            syncPush(BuildConfig.SERVER_PORT, hostname)
+            syncPush(ServerPort.value, hostname)
         }
     }
     
@@ -332,7 +332,7 @@ class SyncInterface(context: Context) {
             mirrorBeforeCallback
         ) {
             resetStagingOnce(hostname)
-            syncBoth(BuildConfig.SERVER_PORT, hostname)
+            syncBoth(ServerPort.value, hostname)
         }
     }
     

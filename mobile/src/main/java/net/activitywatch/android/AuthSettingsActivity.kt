@@ -56,7 +56,7 @@ class AuthSettingsActivity : AppCompatActivity() {
         tvHelp.text = (
             "When enabled, ActivityWatch clients (browser, desktop app) must include " +
             "this key to access data. Use the key in the URL:\n\n" +
-            "http://localhost:${BuildConfig.SERVER_PORT}/?token=YOUR_KEY\n\n" +
+            "http://localhost:${ServerPort.value}/?token=YOUR_KEY\n\n" +
             "Changes take effect after restarting the app."
         )
         btnCopy = findViewById(R.id.btn_copy_key)
