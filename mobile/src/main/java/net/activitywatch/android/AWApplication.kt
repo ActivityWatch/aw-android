@@ -6,6 +6,8 @@ import androidx.appcompat.app.AppCompatDelegate
 class AWApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Before anything reads baseURL or starts the server (aw-android#68).
+        ServerPort.initFromProcess()
         // Follow the OS dark/light setting from process start so that:
         // - WebView correctly reports prefers-color-scheme: dark when system is dark
         // - The initial chrome (applyWebUiChrome in MainActivity) matches the system
