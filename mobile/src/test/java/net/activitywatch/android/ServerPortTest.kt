@@ -30,6 +30,27 @@ class ServerPortTest {
     }
 
     @Test
+    fun workProfileBaseAndExportUrlsFollowTheResolvedPort() {
+        // Exercise the process-initialized value without calling Android's Process
+        // stub in a plain JVM test. Restore it even if an assertion fails.
+        val portField = ServerPort::class.java.getDeclaredField("value").apply {
+            isAccessible = true
+        }
+        val originalPort = ServerPort.value
+        try {
+            val workPort = ServerPort.forUid(1_010_123)
+            portField.setInt(null, workPort)
+            assertEquals("http://127.0.0.1:$workPort", baseURL)
+            assertEquals(
+                "http://127.0.0.1:$workPort/api/0/export",
+                resolveEmbeddedExportUrl("/api/0/export"),
+            )
+        } finally {
+            portField.setInt(null, originalPort)
+        }
+    }
+
+    @Test
     fun exportUrlDefaultBaseFollowsTheServerPort() {
         assertEquals(
             "http://127.0.0.1:${ServerPort.value}/api/0/export",
