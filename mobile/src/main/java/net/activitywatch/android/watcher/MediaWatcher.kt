@@ -139,45 +139,72 @@ class MediaWatcher : NotificationListenerService() {
     // never its text.
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null || sbn.packageName == packageName) return
-        val call = CallNotificationClassifier.classify(sbn) ?: return
-
+        val call = CallNotificationClassifier.classify(sbn)
         val key = sbn.key
         val callerPackage = sbn.packageName
         val postedAt = Instant.ofEpochMilli(sbn.postTime)
         val now = Instant.now()
-        Log.d(TAG, "Call notification posted: pkg=$callerPackage phase=${call.phase} ${call.description}")
 
         handler?.post {
             if (!connected) return@post
-            callTracker.onPosted(key, callerPackage, appLabel(callerPackage), call.phase, postedAt, now)
+            if (call != null) {
+                Log.d(TAG, "Call notification posted: pkg=$callerPackage phase=${call.phase} ${call.description}")
+                callTracker.onPosted(key, callerPackage, appLabel(callerPackage), call.phase, postedAt, now)
+            } else {
+                // A tracked notification updated in place into something that is not a live
+                // call (missed call, "call ended"). Updates keep the key, so treat it as gone.
+                endCallNotification(key, callerPackage, now)
+            }
         }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         if (sbn == null) return
-        // Only the key and package are used, so nothing about other apps' notifications is read.
         val key = sbn.key
         val callerPackage = sbn.packageName
         val now = Instant.now()
-
         handler?.post {
             if (!connected) return@post
-            if (callTracker.onRemoved(key, callerPackage, now)) {
-                Log.d(TAG, "Call notification removed: pkg=$callerPackage")
-                // Wait out the grace window: the dialer may be about to post a replacement.
-                handler?.postDelayed(
-                    { callTracker.flushExpired(Instant.now()) },
-                    CALL_GRACE_MILLIS + 250L
-                )
-            }
+            endCallNotification(key, callerPackage, now)
         }
     }
 
+    // Handler thread only. Ignores notifications the tracker never saw, so this reads
+    // nothing about other apps' notifications beyond their key and package.
+    private fun endCallNotification(key: String, callerPackage: String, now: Instant) {
+        if (callTracker.onRemoved(key, callerPackage, now)) {
+            Log.d(TAG, "Call notification ended: pkg=$callerPackage")
+            // Wait out the grace window: the dialer may be about to post a replacement.
+            handler?.postDelayed(
+                { callTracker.flushExpired(Instant.now()) },
+                CALL_GRACE_MILLIS + 250L
+            )
+        }
+    }
     private fun appLabel(packageName: String): String = try {
         val pm = applicationContext.packageManager
         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
     } catch (e: PackageManager.NameNotFoundException) {
         packageName
+    }
+
+    // Handler thread only. Android does not replay existing notifications to the listener,
+    // so a call already showing when it connects would otherwise be invisible. It is
+    // recorded from now on, so a reconnect does not double-count time already written.
+    private fun scanActiveCallNotifications() {
+        val now = Instant.now()
+        try {
+            for (sbn in activeNotifications ?: return) {
+                if (sbn.packageName == packageName) continue
+                val call = CallNotificationClassifier.classify(sbn) ?: continue
+                Log.d(TAG, "Call already showing at connect: pkg=${sbn.packageName} phase=${call.phase} ${call.description}")
+                callTracker.onPosted(
+                    sbn.key, sbn.packageName, appLabel(sbn.packageName), call.phase, now, now
+                )
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Could not read active notifications", e)
+        }
     }
 
     /**
@@ -186,6 +213,7 @@ class MediaWatcher : NotificationListenerService() {
      */
     private fun registerActiveSessionListener() {
         connected = true
+        scanActiveCallNotifications()
         val componentName = ComponentName(this, MediaWatcher::class.java)
         try {
             val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->

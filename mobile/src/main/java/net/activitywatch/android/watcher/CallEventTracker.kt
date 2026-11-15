@@ -43,9 +43,11 @@ internal class CallEventTracker(
     private class OpenCall(
         val packageName: String,
         val appName: String,
-        val start: Instant,
-        val direction: String,
+        val start: Instant
     ) {
+        /** "incoming" once ringing evidence has been seen at any point; otherwise "unknown". */
+        var direction = "unknown"
+
         /** Notification keys of this call that are still showing. */
         val keys = HashSet<String>()
         var connectedAt: Instant? = null
@@ -81,17 +83,14 @@ internal class CallEventTracker(
         }
 
         if (call == null) {
-            val direction = when (phase) {
-                CallPhase.RINGING -> "incoming"
-                CallPhase.UNKNOWN -> "outgoing"
-                // We only saw the call once it was already running (listener started mid-call).
-                CallPhase.ACTIVE -> "unknown"
-            }
+
             val start = if (postedAt.isBefore(now)) postedAt else now
-            call = OpenCall(packageName, appName, start, direction)
+            call = OpenCall(packageName, appName, start)
             open[packageName] = call
         }
 
+        // Ringing evidence can arrive after the first notification, so upgrade, never downgrade.
+        if (phase == CallPhase.RINGING) call.direction = "incoming"
         call.keys += key
         call.closedAt = null
         if (phase == CallPhase.ACTIVE && call.connectedAt == null) {

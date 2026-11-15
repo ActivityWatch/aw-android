@@ -15,7 +15,6 @@ internal object CallNotificationClassifier {
     // written out so this compiles and behaves the same on every supported API level.
     private const val EXTRA_CALL_TYPE = "android.callType"
     private const val CALL_TYPE_INCOMING = 1
-    private const val CALL_TYPE_OUTGOING = 2
     private const val CALL_TYPE_SCREENING = 3
 
     class Result(val phase: CallPhase, val description: String)
@@ -42,8 +41,8 @@ internal object CallNotificationClassifier {
         val chronometer = extras?.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false) == true
 
         val phase = when {
+            // A running timer means the other side answered.
             chronometer -> CallPhase.ACTIVE
-            callType == CALL_TYPE_OUTGOING -> CallPhase.UNKNOWN
             callType == CALL_TYPE_INCOMING || callType == CALL_TYPE_SCREENING -> CallPhase.RINGING
             hasFullScreenIntent -> CallPhase.RINGING
             else -> CallPhase.UNKNOWN
