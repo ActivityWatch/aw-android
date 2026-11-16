@@ -38,6 +38,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.baseURL
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.initialWebViewBackgroundRes
+import net.activitywatch.android.utils.startActivityOrToast
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -587,9 +588,10 @@ class WebUIFragment : Fragment() {
                 if (URLUtil.isNetworkUrl(url)) {
                     if (url.startsWith("http://") || url.startsWith("https://")) {
                         if (!isEmbeddedActivityWatchUrl(url)) {
-                            // Open the URL in an external browser
+                            // Open the URL in an external browser; a device
+                            // without one gets a toast instead of a crash.
                             val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            startActivity(i)
+                            view?.context?.startActivityOrToast(i, R.string.no_browser_found)
                             return true
                         }
                     }
