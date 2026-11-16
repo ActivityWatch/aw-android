@@ -44,7 +44,9 @@ internal object CallNotificationClassifier {
             // A running timer means the other side answered.
             chronometer -> CallPhase.ACTIVE
             callType == CALL_TYPE_INCOMING || callType == CALL_TYPE_SCREENING -> CallPhase.RINGING
-            hasFullScreenIntent -> CallPhase.RINGING
+            // With CallStyle, callType is authoritative: 2 is "ongoing", either direction.
+            // Only a legacy notification without CallStyle is read by its full-screen intent.
+            hasFullScreenIntent && !isCallStyle -> CallPhase.RINGING
             else -> CallPhase.UNKNOWN
         }
 
