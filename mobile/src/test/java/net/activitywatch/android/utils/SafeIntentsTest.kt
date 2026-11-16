@@ -30,11 +30,15 @@ class SafeIntentsTest {
         shadowOf(app).checkActivities(true)
     }
 
+    // Production callers pass an Activity context; starting from the Application
+    // context needs NEW_TASK or Android throws AndroidRuntimeException first.
+    private fun Intent.newTask(): Intent = addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
     @Test
     fun returnsFalseWhenNothingHandlesTheIntent() {
-        val browse = Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.activitywatch.net"))
+        val browse = Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.activitywatch.net")).newTask()
 
-        assertFalse(app.startActivitySafely(browse, settingsHomeIntent()))
+        assertFalse(app.startActivitySafely(browse, settingsHomeIntent().newTask()))
         assertNull(shadowOf(app).nextStartedActivity)
     }
 
@@ -47,8 +51,8 @@ class SafeIntentsTest {
             IntentFilter(Settings.ACTION_SETTINGS).apply { addCategory(Intent.CATEGORY_DEFAULT) },
         )
 
-        val missing = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        assertTrue(app.startActivitySafely(missing, settingsHomeIntent()))
+        val missing = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).newTask()
+        assertTrue(app.startActivitySafely(missing, settingsHomeIntent().newTask()))
         assertEquals(Settings.ACTION_SETTINGS, shadowOf(app).nextStartedActivity.action)
     }
 }
