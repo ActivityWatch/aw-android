@@ -28,9 +28,9 @@ object SessionUtils {
     /**
      * Open usage access settings
      */
-    fun openUsageAccessSettings(context: Context) {
+    fun openUsageAccessSettings(context: Context): Boolean {
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-        context.startActivity(intent)
+        return context.startActivitySafely(intent, settingsHomeIntent())
     }
 
     /**
