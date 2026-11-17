@@ -128,6 +128,28 @@ class LegacyPauseImportTest {
     }
 
     @Test
+    fun cursorInsidePauseCannotExtendAnAlreadyStoredEventAcrossTheRemainingPrivateTime() {
+        // An in-flight import may have stored this before the pause boundary became visible.
+        // A new watcher must not extend that existing event through the rest of the pause.
+        Datastore.events[SESSION_BUCKET_ID] = mutableListOf(
+            JSONObject().put("timestamp", Instant.ofEpochMilli(15 * minute).toString())
+                .put("duration", 0.0).put("data", net.activitywatch.android.models.Event.fromUsageEvent(
+                    EventBuilder.buildEvent().setEventType(UsageEvents.Event.ACTIVITY_RESUMED)
+                        .setTimeStamp(15 * minute).setPackage(context.packageName).setClass("Main").build(),
+                    context,
+                ).data)
+        )
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(10 * minute))
+        assertTrue(store.recordResume(20 * minute))
+        event(UsageEvents.Event.ACTIVITY_PAUSED, 25)
+        importLegacy()
+        assertEquals(listOf(15L to 15L, 25L to 25L), ranges())
+        importLegacy()
+        assertEquals("Restart/replay must preserve the split", listOf(15L to 15L, 25L to 25L), ranges())
+    }
+
+    @Test
     fun importDoesNotReadBeyondThePauseSnapshotTime() {
         android.os.SystemClock.setCurrentTimeMillis(70 * minute)
         event(UsageEvents.Event.ACTIVITY_RESUMED, 5)

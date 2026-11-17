@@ -184,6 +184,15 @@ class CollectionPauseIntervalsTest {
     }
 
     @Test
+    fun crossesPauseIncludesThePrivateRemainderWhenCursorIsInside() {
+        val pauses = listOf(PauseInterval(10 * minute, 20 * minute))
+        assertTrue(PauseIntervals.crossesPause(pauses, 15 * minute, 25 * minute))
+        assertTrue(PauseIntervals.crossesPause(pauses, 15 * minute, 20 * minute))
+        assertTrue(PauseIntervals.crossesPause(pauses, 10 * minute, 25 * minute))
+        assertFalse(PauseIntervals.crossesPause(pauses, 20 * minute, 25 * minute))
+    }
+
+    @Test
     fun replayAtPauseEndIsBoundedByParserMaximumAndFlooredAtEpoch() {
         val boundary = 48 * hour
         val pauses = listOf(PauseInterval(boundary - hour, boundary))
