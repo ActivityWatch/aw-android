@@ -67,6 +67,23 @@ class AWPreferences(context: Context) {
             .apply()
     }
 
+    fun hasMigratedNotifyOptIn(): Boolean {
+        return sharedPreferences.getBoolean("hasMigratedNotifyOptIn", false)
+    }
+
+    fun setNotifyOptInMigrated() {
+        sharedPreferences.edit().putBoolean("hasMigratedNotifyOptIn", true).apply()
+    }
+
+    // Per hostname, since staging lives under {sync_dir}/{hostname}/ (see StagingReset).
+    fun isStagingResetDone(hostname: String): Boolean {
+        return sharedPreferences.getBoolean(StagingReset.prefKey(hostname), false)
+    }
+
+    fun setStagingResetDone(hostname: String) {
+        sharedPreferences.edit().putBoolean(StagingReset.prefKey(hostname), true).apply()
+    }
+
     fun hasRequestedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
     }
@@ -141,6 +158,9 @@ class AWPreferences(context: Context) {
                 ?.split("\n")
                 ?.filter { it.isNotEmpty() }
                 ?: emptyList(),
+            peers = SyncStatus.decodePeers(
+                sharedPreferences.getString("lastSyncPeers", null),
+            ),
         )
     }
 
@@ -171,6 +191,12 @@ class AWPreferences(context: Context) {
         } else {
             editor.putString("lastSyncWarnings", status.warnings.joinToString("\n"))
         }
+        val peersEncoded = SyncStatus.encodePeers(status.peers)
+        if (peersEncoded == null) {
+            editor.remove("lastSyncPeers")
+        } else {
+            editor.putString("lastSyncPeers", peersEncoded)
+        }
         editor.apply()
         appContext.sendBroadcast(
             android.content.Intent(LAST_SYNC_STATUS_CHANGED_ACTION).setPackage(appContext.packageName)
@@ -189,6 +215,24 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putLong("schedulerNextRunAt", epochMs).apply()
     }
 
+    // When the in-process Handler chain last ran a pass (epoch-ms), or null: whether it
+    // synced or found a sync already in flight, it has scheduled its next pass. Only that
+    // chain records it. The AlarmManager fallback uses it to tell whether the chain is still
+    // on schedule, and its own syncs must not make the chain look alive.
+    fun getHandlerPassAt(): Long? =
+        sharedPreferences.getLong("handlerPassAt", 0L).takeIf { it > 0L }
+
+    fun setHandlerPassAt(epochMs: Long) {
+        sharedPreferences.edit().putLong("handlerPassAt", epochMs).apply()
+    }
+
+    // BrowserProbeMemory state for PackageManager-detected browsers, as its own JSON.
+    fun getBrowserProbeState(): String? = sharedPreferences.getString("browserProbeState", null)
+
+    fun setBrowserProbeState(json: String) {
+        sharedPreferences.edit().putString("browserProbeState", json).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the
@@ -199,5 +243,15 @@ class AWPreferences(context: Context) {
 
     fun setDashboardAuthEnabled(enabled: Boolean) {
         sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).commit()
+    }
+
+    // aw-webui Appearance setting (`light` / `dark` / `auto`). Native Auth/Sync
+    // screens read this because they cannot see WebView localStorage.
+    fun getWebUiTheme(): String {
+        return normalizeWebUiTheme(sharedPreferences.getString("webUiTheme", "auto"))
+    }
+
+    fun setWebUiTheme(setting: String) {
+        sharedPreferences.edit().putString("webUiTheme", normalizeWebUiTheme(setting)).apply()
     }
 }

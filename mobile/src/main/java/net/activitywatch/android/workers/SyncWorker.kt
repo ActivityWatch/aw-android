@@ -8,6 +8,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.SYNC_INTERVAL_MS
 import net.activitywatch.android.SyncInterface
+import net.activitywatch.android.alarmSyncIsRedundant
 import kotlin.coroutines.resume
 
 private const val TAG = "SyncWorker"
@@ -15,6 +16,13 @@ private const val TAG = "SyncWorker"
 /** Keeps alarm-triggered sync and SAF mirroring inside WorkManager's process lifecycle. */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        // Checked again here, not only when the alarm was delivered: a worker can start
+        // after a Handler pass that began or finished in between, and would then repeat it.
+        val lastHandlerPassAt = AWPreferences(applicationContext).getHandlerPassAt()
+        if (alarmSyncIsRedundant(lastHandlerPassAt, System.currentTimeMillis())) {
+            Log.i(TAG, "Scheduler synced since the alarm; skipping fallback sync")
+            return Result.success()
+        }
         val syncInterface = SyncInterface(applicationContext)
         return suspendCancellableCoroutine { continuation ->
             // When WorkManager stops or cancels this worker, propagate the cancellation to the

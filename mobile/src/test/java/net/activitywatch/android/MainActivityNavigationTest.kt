@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class MainActivityNavigationTest {
     @Test
@@ -54,6 +56,38 @@ class MainActivityNavigationTest {
         assertFalse(
             shouldOpenActivityViewImmediately(openActivityView = true, isResumed = false),
         )
+    }
+
+    @Test
+    fun back_closesOpenDrawerBeforeAnythingElse() {
+        assertEquals(BackAction.CLOSE_DRAWER, backAction(drawerOpen = true, webViewCanGoBack = true))
+        assertEquals(BackAction.CLOSE_DRAWER, backAction(drawerOpen = true, webViewCanGoBack = false))
+    }
+
+    @Test
+    fun back_closesSharedWebMenuBeforeWebViewHistory() {
+        assertEquals(
+            BackAction.CLOSE_WEB_MENU,
+            backAction(drawerOpen = false, webViewCanGoBack = true, webMenuOpen = true),
+        )
+        assertEquals(
+            BackAction.CLOSE_WEB_MENU,
+            backAction(drawerOpen = false, webViewCanGoBack = false, webMenuOpen = true),
+        )
+        assertEquals(
+            BackAction.CLOSE_DRAWER,
+            backAction(drawerOpen = true, webViewCanGoBack = true, webMenuOpen = true),
+        )
+    }
+
+    @Test
+    fun back_walksWebViewHistoryBeforeFinishing() {
+        assertEquals(BackAction.WEBVIEW_BACK, backAction(drawerOpen = false, webViewCanGoBack = true))
+    }
+
+    @Test
+    fun back_finishesOnlyWhenNothingLeftToGoBackTo() {
+        assertEquals(BackAction.FINISH, backAction(drawerOpen = false, webViewCanGoBack = false))
     }
 
     @Test
@@ -112,5 +146,36 @@ class MainActivityNavigationTest {
                 systemNight = true,
             ),
         )
+    }
+
+    @Test
+    fun bugReportUrl_pointsAtNewIssueFormWithSingleBodyParam() {
+        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34, device = "Google Pixel 8")
+
+        assertTrue(url.startsWith("$BUG_REPORT_ISSUE_URL?body="))
+        assertFalse(url.substringAfter("?body=").contains("&"))
+    }
+
+    @Test
+    fun bugReportUrl_bodyDecodesToOutlineWithEnvironmentDetails() {
+        val url = bugReportUrl(appVersion = "0.12.3", androidVersion = "14", apiLevel = 34, device = "Google Pixel 8")
+        val body = URLDecoder.decode(url.substringAfter("?body="), StandardCharsets.UTF_8.name())
+
+        assertTrue(body.startsWith("## Description\n"))
+        assertTrue(body.contains("## Steps to reproduce\n"))
+        assertTrue(body.contains("## Expected behavior\n"))
+        assertTrue(body.endsWith("## Environment\n\n- App version: 0.12.3\n- Android version: 14 (API 34)\n- Device: Google Pixel 8"))
+    }
+
+    @Test
+    fun bugReportUrl_encodesReservedCharactersInVersions() {
+        val url = bugReportUrl(appVersion = "1.0-rc&1 #2", androidVersion = "?", apiLevel = 1, device = "A&B #1?")
+        val encoded = url.substringAfter("?body=")
+        val body = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+
+        assertFalse(encoded.contains("&"))
+        assertFalse(encoded.contains("#"))
+        assertFalse(encoded.contains("?"))
+        assertTrue(body.contains("- App version: 1.0-rc&1 #2\n- Android version: ? (API 1)\n- Device: A&B #1?"))
     }
 }

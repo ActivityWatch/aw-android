@@ -117,6 +117,18 @@ class WebUIFragmentTest {
     }
 
     @Test
+    fun `WebAppInterface reports the stored appearance setting`() {
+        val settings = mutableListOf<String>()
+        val bridge = WebAppInterface(
+            onExport = { _, _, _ -> error("export must not run") },
+            onThemeSetting = { settings.add(it) },
+        )
+        bridge.reportThemeSetting("dark")
+        bridge.reportThemeSetting("auto")
+        assertEquals(listOf("dark", "auto"), settings)
+    }
+
+    @Test
     fun `WebAppInterface download helpers keep explicit mime types`() {
         val received = mutableListOf<Triple<String, String, String>>()
         val bridge = WebAppInterface(onExport = { content, filename, mimeType ->
@@ -186,8 +198,8 @@ class WebUIFragmentTest {
         assertEquals(first, restored.inFlight)
         assertEquals(first, restored.completeInFlight())
         assertEquals(second, restored.beginNext())
-        assertEquals("one", first.readContent())
-        assertEquals("two", second.readContent())
+        assertEquals("one", first.cacheFile.readText())
+        assertEquals("two", second.cacheFile.readText())
     }
 
     @Test
@@ -274,6 +286,35 @@ class WebUIFragmentTest {
         assertEquals(listOf("/api/0/export" to "aw-bucket-export.json"), received)
     }
 
+    @Test
+    fun `shared exports with the same filename don't overwrite each other`() {
+        val cache = createTempDir()
+        val sharedRoot = File(cache, SHARED_EXPORTS_DIR)
+        val first = cachedExport(File(cache, "a").apply { mkdirs() }, "aw-bucket-export.json", "one")
+        val second = cachedExport(File(cache, "b").apply { mkdirs() }, "aw-bucket-export.json", "two")
+
+        val firstShared = moveExportForSharing(sharedRoot, first)!!
+        val secondShared = moveExportForSharing(sharedRoot, second)!!
+
+        assertEquals("aw-bucket-export.json", firstShared.name)
+        assertEquals("one", firstShared.readText())
+        assertEquals("two", secondShared.readText())
+        assertFalse(first.cacheFile.exists())
+    }
+
+    @Test
+    fun `sharing an export removes shared exports older than a day`() {
+        val cache = createTempDir()
+        val sharedRoot = File(cache, SHARED_EXPORTS_DIR)
+        val old = File(sharedRoot, "old").apply { mkdirs() }
+        File(old, "stale.json").writeText("stale")
+        val now = old.lastModified() + SHARED_EXPORT_MAX_AGE_MS + 1
+
+        moveExportForSharing(sharedRoot, cachedExport(cache, "fresh.json", "fresh"), now)
+
+        assertFalse(old.exists())
+    }
+
     private fun cachedExport(dir: File, name: String, content: String): PendingExport {
         return PendingExport(name, "application/json", File(dir, name).also { it.writeText(content) })
     }
@@ -325,5 +366,32 @@ class WebUIFragmentTest {
         policy.onPageFinished()
         policy.onPageStarted()
         assertEquals(1000L, policy.onReceivedError(isForMainFrame = true))
+    }
+
+    @Test
+    fun `theme failsafe waits for a dashboard that is still settling`() {
+        assertEquals(
+            "A pending dashboard must not be revealed before its theme settles",
+            ThemeFailsafeAction.WAIT,
+            themeFailsafeAction("pending", extensionsLeft = THEME_SETTLE_MAX_EXTENSIONS),
+        )
+    }
+
+    @Test
+    fun `theme failsafe reveals when the document can never report`() {
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("no-bridge", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("not-dashboard", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("unknown", 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction(null, 0))
+        assertEquals(ThemeFailsafeAction.REVEAL, themeFailsafeAction("settled", 0))
+    }
+
+    @Test
+    fun `theme failsafe keeps a pending dashboard hidden after the polling cap`() {
+        assertEquals(
+            "Exhausting retries is not evidence that the stylesheet has settled",
+            ThemeFailsafeAction.AWAIT_REPORT,
+            themeFailsafeAction("pending", extensionsLeft = 0),
+        )
     }
 }

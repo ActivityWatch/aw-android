@@ -23,13 +23,13 @@ import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.models.Event
 import net.activitywatch.android.watcher.SessionEventWatcher
+import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
 import java.net.URL
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // Single source of truth lives in SessionEventWatcher; alias here so the two watchers
 // can never drift to different bucket names.
@@ -47,7 +47,6 @@ class UsageStatsWatcher constructor(val context: Context) {
             logTag = TAG,
         ) { RustInterface(context.applicationContext) }
     }
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
     private val sessionWatcher by lazy { SessionEventWatcher(context) }
 
     var lastUpdated: Instant? = null
@@ -164,7 +163,14 @@ class UsageStatsWatcher constructor(val context: Context) {
 
     private fun getLastEvent(): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(bucket_id, limit=1)
+        val events = try {
+            ri.getEventsJSON(bucket_id, limit=1)
+        } catch (e: JSONException) {
+            // A failed read must not look like an empty bucket: the caller would treat
+            // it as "no previous event" and re-send a heartbeat for time already stored.
+            Log.e(TAG, "Could not read the last event from '$bucket_id': ${e.message}")
+            throw e
+        }
         return if (events.length() == 1) {
             //Log.d(TAG, "Last event: ${events[0]}")
             events[0] as JSONObject
@@ -181,14 +187,11 @@ class UsageStatsWatcher constructor(val context: Context) {
 
         return if(lastEvent != null) {
             val timestampString = lastEvent.getString("timestamp")
-            // Instant.parse("2014-10-23T00:35:14.800Z").toEpochMilli()
-            try {
-                val timeCreatedDate = isoFormatter.parse(timestampString)
-                DateTimeUtils.toInstant(timeCreatedDate)
-            } catch (e: ParseException) {
-                Log.e(TAG, "Unable to parse timestamp: $timestampString")
-                null
-            }
+            parseAwTimestamp(timestampString)
+                ?: run {
+                    Log.e(TAG, "Unable to parse timestamp: $timestampString")
+                    null
+                }
         } else {
             null
         }
@@ -205,7 +208,12 @@ class UsageStatsWatcher constructor(val context: Context) {
             // TODO: Use other bucket type when support for such a type has been implemented in aw-webui
             ri.createBucketHelper(bucket_id, "currentwindow")
             ri.createBucketHelper(unlock_bucket_id, "os.lockscreen.unlocks")
-            lastUpdated = getLastEventTime()
+            lastUpdated = try {
+                getLastEventTime()
+            } catch (e: JSONException) {
+                Log.w(TAG, "Skipping heartbeat batch after a failed cursor read", e)
+                return 0
+            }
             Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
             val usm = getUSM() ?: return 0
@@ -304,7 +312,12 @@ class UsageStatsWatcher constructor(val context: Context) {
      */
     suspend fun sendHeartbeatsSuspend() {
         if (useSessionBasedEvents) {
-            sessionWatcher.sendSessionEventsSuspend()
+            // Dispatch to IO before touching the lazy sessionWatcher so its construction
+            // (and the nested SessionEventWatcher.rust OffThreadInit) never runs on the
+            // main thread, even when called from lifecycleScope.launch (Dispatchers.Main.immediate).
+            withContext(Dispatchers.IO) {
+                sessionWatcher.sendSessionEventsSuspend()
+            }
         }
         // Legacy SendHeartbeatsTask path is not awaitable; skip for widget use case.
     }

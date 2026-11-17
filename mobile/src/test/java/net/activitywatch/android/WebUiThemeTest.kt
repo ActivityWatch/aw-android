@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import androidx.appcompat.app.AppCompatDelegate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,10 +29,71 @@ class WebUiThemeTest {
     @Test
     fun themeHookReportsResolvedSchemeAndWatchesStorage() {
         assertTrue(ANDROID_THEME_HOOK_JS.contains("Android.reportColorScheme"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("Android.reportThemeSetting"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("localStorage.getItem('theme')"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("prefers-color-scheme: dark"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("dark.css"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("k === 'theme'"))
+    }
+
+    @Test
+    fun normalizeWebUiThemeKeepsOnlyAppearanceValues() {
+        assertEquals("dark", normalizeWebUiTheme("dark"))
+        assertEquals("light", normalizeWebUiTheme("LIGHT"))
+        assertEquals("auto", normalizeWebUiTheme("auto"))
+        assertEquals("auto", normalizeWebUiTheme(null))
+        assertEquals("auto", normalizeWebUiTheme("system"))
+    }
+
+    @Test
+    fun nightModeForWebUiThemeMapsSettingToAppCompatModes() {
+        assertEquals(AppCompatDelegate.MODE_NIGHT_YES, nightModeForWebUiTheme("dark"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_NO, nightModeForWebUiTheme("light"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme("auto"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme(null))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme("unknown"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_YES, nightModeForWebUiTheme("DARK"))
+    }
+
+    @Test
+    fun themeHookTreatsAStylesheetThatFailedBeforeInjectionAsSettled() {
+        // The hook runs from onPageFinished, after window load: a link already in
+        // the document has already fired load/error, so a null sheet means it
+        // failed and the light fallback must reveal without waiting.
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("__awPresentAtHookInstall"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("document.readyState === 'complete'"))
+    }
+
+    @Test
+    fun themeHookExposesItsSettleStateToTheNativeFailsafe() {
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("__awAndroidThemeState"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("no-bridge"))
+        // A document without aw-webui's mount point is not a dashboard and must
+        // not keep the failsafe waiting.
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("not-dashboard"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("getElementById('app')"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("'pending'"))
+    }
+
+    @Test
+    fun themeHookObservesADocumentWithoutARootElement() {
+        // onPageFinished can run this hook in a document that has not parsed its
+        // root element yet. Observing a null documentElement threw and aborted
+        // the hook, so that document could never report settlement and the
+        // WebView stayed hidden (observed as a DashboardThemePaintTest timeout).
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("document.documentElement || document"))
+    }
+
+    @Test
+    fun initialWebViewBackgroundResFollowsSystemNightMode() {
+        val dark = android.content.res.Configuration().apply {
+            uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        val light = android.content.res.Configuration().apply {
+            uiMode = android.content.res.Configuration.UI_MODE_NIGHT_NO
+        }
+        assertEquals(R.color.chrome_dark, initialWebViewBackgroundRes(dark))
+        assertEquals(R.color.chrome_light, initialWebViewBackgroundRes(light))
     }
 
     @Test

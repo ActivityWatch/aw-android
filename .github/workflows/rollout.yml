@@ -4,6 +4,12 @@ name: Rollout
 # starts at (see release.yml). Check Play vitals for the new versionCode first:
 # crash and ANR clusters show up within hours.
 #
+# Finish what you start: Release refuses to start a new stable release while a
+# production rollout is still in progress, because Play keeps one in-progress
+# release per track and the new one would silently replace it (v0.14.3
+# replacing v0.14.2 at 50%, 2026-10-11). Complete it here with 1.0, or halt it
+# in Play Console, before the next stable release.
+#
 # Usage: Actions → Rollout → Run workflow → pick the fraction (1.0 completes it).
 
 on:
