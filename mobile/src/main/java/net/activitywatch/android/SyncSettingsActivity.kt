@@ -194,6 +194,7 @@ class SyncSettingsActivity : AppCompatActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyPersistedWebUiNightMode()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sync_settings)
         applySafeWindowInsets(followNightMode = true)

@@ -1,5 +1,6 @@
 package net.activitywatch.android
 
+import androidx.appcompat.app.AppCompatDelegate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,10 +29,30 @@ class WebUiThemeTest {
     @Test
     fun themeHookReportsResolvedSchemeAndWatchesStorage() {
         assertTrue(ANDROID_THEME_HOOK_JS.contains("Android.reportColorScheme"))
+        assertTrue(ANDROID_THEME_HOOK_JS.contains("Android.reportThemeSetting"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("localStorage.getItem('theme')"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("prefers-color-scheme: dark"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("dark.css"))
         assertTrue(ANDROID_THEME_HOOK_JS.contains("k === 'theme'"))
+    }
+
+    @Test
+    fun normalizeWebUiThemeKeepsOnlyAppearanceValues() {
+        assertEquals("dark", normalizeWebUiTheme("dark"))
+        assertEquals("light", normalizeWebUiTheme("LIGHT"))
+        assertEquals("auto", normalizeWebUiTheme("auto"))
+        assertEquals("auto", normalizeWebUiTheme(null))
+        assertEquals("auto", normalizeWebUiTheme("system"))
+    }
+
+    @Test
+    fun nightModeForWebUiThemeMapsSettingToAppCompatModes() {
+        assertEquals(AppCompatDelegate.MODE_NIGHT_YES, nightModeForWebUiTheme("dark"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_NO, nightModeForWebUiTheme("light"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme("auto"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme(null))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, nightModeForWebUiTheme("unknown"))
+        assertEquals(AppCompatDelegate.MODE_NIGHT_YES, nightModeForWebUiTheme("DARK"))
     }
 
     @Test

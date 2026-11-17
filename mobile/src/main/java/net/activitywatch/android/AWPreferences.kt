@@ -222,4 +222,14 @@ class AWPreferences(context: Context) {
     fun setDashboardAuthEnabled(enabled: Boolean) {
         sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).commit()
     }
+
+    // aw-webui Appearance setting (`light` / `dark` / `auto`). Native Auth/Sync
+    // screens read this because they cannot see WebView localStorage.
+    fun getWebUiTheme(): String {
+        return normalizeWebUiTheme(sharedPreferences.getString("webUiTheme", "auto"))
+    }
+
+    fun setWebUiTheme(setting: String) {
+        sharedPreferences.edit().putString("webUiTheme", normalizeWebUiTheme(setting)).apply()
+    }
 }
