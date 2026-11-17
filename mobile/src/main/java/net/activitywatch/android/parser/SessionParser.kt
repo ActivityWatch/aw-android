@@ -57,7 +57,7 @@ class SessionParser(private val context: Context) {
         Log.d(TAG, "Processing ${rawEvents.size} events for day")
 
         // Parse events into sessions
-        val sessions = parseEventsIntoSessions(rawEvents, dayEndMs)
+        val sessions = parseEventsIntoSessions(rawEvents)
 
         // Create app summaries
         val appSummaries = createAppSummaries(sessions)
@@ -82,36 +82,23 @@ class SessionParser(private val context: Context) {
 
         Log.d(TAG, "Processing ${rawEvents.size} events for period")
 
-        return parseEventsIntoSessions(rawEvents, endTimestamp)
+        return parseEventsIntoSessions(rawEvents)
     }
 
-    class IngestBatch(val sessions: List<AppSession>, val unlockTimestamps: List<Long>)
-
     /**
-     * Sessions since [sessionsSince] and unlock (KEYGUARD_HIDDEN) timestamps since
-     * [unlocksSince], for incremental ingest, from a single pass over the usage events.
-     *
-     * Unlike the period/day parsers, the sessions include the still-open foreground session,
-     * ending now, so time in the current app counts before the user leaves it.
-     * [storedSessionStart] is passed through to [parseEventsIntoSessions].
+     * The usage events that sessions and unlocks are made of, from [since] up to, not including,
+     * [now], in time order, read in a single pass: the events [isRelevantEvent] keeps, and
+     * unlocks (KEYGUARD_HIDDEN).
      */
-    fun parseSessionsAndUnlocksSince(
-        sessionsSince: Long,
-        unlocksSince: Long,
-        storedSessionStart: Long? = null,
-    ): IngestBatch {
-        val currentTime = System.currentTimeMillis()
-        val usageEvents = usageStatsManager.queryEvents(minOf(sessionsSince, unlocksSince), currentTime)
-        val rawEvents = mutableListOf<UsageEvent>()
-        val unlockTimestamps = mutableListOf<Long>()
+    internal fun readSessionEventsSince(since: Long, now: Long): List<UsageEvent> {
+        val usageEvents = usageStatsManager.queryEvents(since, now)
+        val events = mutableListOf<UsageEvent>()
 
         val event = UsageEvents.Event()
         while (usageEvents.hasNextEvent()) {
             usageEvents.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
-                if (event.timeStamp >= unlocksSince) unlockTimestamps.add(event.timeStamp)
-            } else if (isRelevantEvent(event) && event.timeStamp >= sessionsSince) {
-                rawEvents.add(
+            if (isRelevantEvent(event) || event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                events.add(
                     UsageEvent(
                         eventType = event.eventType,
                         timeStamp = event.timeStamp,
@@ -122,15 +109,9 @@ class SessionParser(private val context: Context) {
             }
         }
 
-        Log.d(TAG, "Processing ${rawEvents.size} events and ${unlockTimestamps.size} unlocks")
+        Log.d(TAG, "Read ${events.size} events since $since")
 
-        return IngestBatch(
-            sessions = parseEventsIntoSessions(
-                rawEvents.sortedBy { it.timeStamp }, currentTime,
-                openSessionEnd = currentTime, storedSessionStart = storedSessionStart
-            ),
-            unlockTimestamps = unlockTimestamps.sorted()
-        )
+        return events.sortedBy { it.timeStamp }
     }
 
     /**
@@ -198,16 +179,11 @@ class SessionParser(private val context: Context) {
         }
     }
 
-    private fun parseEventsIntoSessions(
-        events: List<UsageEvent>,
-        periodEnd: Long,
-        openSessionEnd: Long? = null,
-        storedSessionStart: Long? = null
-    ): List<AppSession> {
+    private fun parseEventsIntoSessions(events: List<UsageEvent>): List<AppSession> {
         // One PackageManager binder call per app rather than per session.
         val appNames = HashMap<String, String>()
         Log.d(TAG, "Parsing ${events.size} events into sessions (foreground state machine)")
-        val sessions = parseForegroundSessions(events, openSessionEnd, storedSessionStart) { pkg ->
+        val sessions = parseForegroundSessions(events) { pkg ->
             appNames.getOrPut(pkg) { SessionUtils.getAppName(context, pkg) }
         }
         Log.d(TAG, "Created ${sessions.size} sessions")
@@ -299,13 +275,11 @@ internal const val MIN_SESSION_DURATION = 1000L // 1 second minimum
  * different apps interleaved, and bounds a session whose PAUSE never arrives.
  *
  * The trailing still-open session is emitted only when [openSessionEnd] is given, ending
- * there. Incremental ingest passes the current time: the next run re-reads from that
- * session's start and emits it again with a later end, and the server merges it into the
- * stored event (same start and data) instead of inserting a duplicate.
+ * there.
  *
- * [storedSessionStart] is the start of the session already stored (possibly while it was
- * still open). That session is capped at the maximum duration instead of being dropped:
- * dropping it would leave its earlier, shorter stored value in place for good.
+ * [storedSessionStart] is where the session already stored (possibly while it was still
+ * open) starts in [events]. That session is capped at the maximum duration instead of being
+ * dropped: dropping it would leave its earlier, shorter stored value in place for good.
  */
 internal fun parseForegroundSessions(
     events: List<UsageEvent>,

@@ -12,6 +12,7 @@ import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
 import kotlinx.coroutines.*
+import kotlin.math.roundToLong
 
 const val SESSION_BUCKET_ID = "aw-watcher-android"
 const val UNLOCK_BUCKET_ID = "aw-watcher-android-unlock"
@@ -33,22 +34,13 @@ class SessionEventWatcher(val context: Context) {
 
     var lastUpdated: Instant? = null
 
+    // The time a run reads up to; tests replace it to run at chosen times.
+    internal var clock: () -> Long = System::currentTimeMillis
+
     companion object {
         const val TAG = "SessionEventWatcher"
         private val lock = java.util.concurrent.locks.ReentrantLock()
     }
-
-    // Resume from the last stored session's start, inclusive. The parser emits the
-    // still-open foreground session ending "now", so that event must be read again on
-    // the next run to extend it. Re-emitting it is safe: it has the same start and data
-    // as the stored event, and insertEvent's heartbeat (pulsetime 0) merges it into that
-    // event, keeping the later end, rather than inserting a duplicate.
-    private fun nextQueryStartTimestamp(): Long = lastUpdated?.toEpochMilli() ?: 0L
-
-    // Unlocks are zero-duration and never extended, so they resume strictly after the
-    // last stored one: queryEvents' lower bound is inclusive, and replaying that
-    // timestamp would duplicate the event on every run.
-    private fun queryStartAfter(last: Instant?): Long = (last?.toEpochMilli()?.plus(1L)) ?: 0L
 
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
@@ -60,34 +52,41 @@ class SessionEventWatcher(val context: Context) {
 
     private fun rustInterface(): RustInterface? = rust.await()
 
-    // Data of the last stored session, reused when that session is emitted again so the
-    // server merge (which needs identical data) extends it. Re-deriving it would read the
-    // app's current label, which a language change or app update can alter, and the
-    // replay would then be inserted as a second copy.
-    private var lastStoredData: JSONObject? = null
-
-    private fun getLastEvent(bucketId: String): JSONObject? {
-        val ri = rustInterface() ?: return null
+    /** The bucket's newest events, newest first; empty on the first run. */
+    private fun getNewestEvents(bucketId: String): List<JSONObject> {
+        val ri = rustInterface() ?: return emptyList()
         val events = try {
-            ri.getEventsJSON(bucketId, limit = 1)
+            ri.getEventsJSON(bucketId, limit = STORED_EVENTS_TO_MATCH)
         } catch (e: JSONException) {
-            // Distinct from the empty-bucket case below: the read failed, so the caller
-            // must not treat this as "no session stored yet" and re-derive one.
-            Log.e(TAG, "Could not read the last event from '$bucketId': ${e.message}")
+            // Distinct from an empty bucket: the read failed, so the caller must not treat
+            // this as "no session stored yet" and re-derive one.
+            Log.e(TAG, "Could not read the newest events from '$bucketId': ${e.message}")
             throw e
         }
-        return if (events.length() == 1) {
-            events[0] as JSONObject
-        } else if (events.length() == 0) {
-            null  // normal on first run
-        } else {
-            Log.w(TAG, "Expected 1 event for last-event lookup in $bucketId, got ${events.length()}")
-            null
+        return (0 until events.length()).map { events.getJSONObject(it) }
+    }
+
+    private fun storedSession(event: JSONObject): StoredSession? {
+        val start = eventStart(event)?.toEpochMilli() ?: return null
+        val end = start + (event.optDouble("duration", 0.0) * 1000).roundToLong()
+        return StoredSession(start, end, event.optJSONObject("data"))
+    }
+
+    // A move of Android's history is otherwise invisible after the fact: the events sent show
+    // only where it left them.
+    private fun logShift(what: String, shift: Long?) {
+        when (shift) {
+            0L -> Unit
+            null -> Log.w(TAG, "The newest stored $what is not where it was stored and no move " +
+                "of the history confirms where it went; resuming from its stored time")
+            else -> Log.i(TAG, "Android moved its history by $shift ms since the newest stored " +
+                "$what was stored; resuming from where it now is")
         }
     }
 
     private fun eventStart(event: JSONObject): Instant? {
-        val timestampString = event.getString("timestamp")
+        // A missing timestamp is as unreadable as a malformed one, not a failed read.
+        val timestampString = event.optString("timestamp")
         return parseAwTimestamp(timestampString)
             ?: run {
                 Log.e(TAG, "Unable to parse timestamp: $timestampString")
@@ -123,36 +122,42 @@ class SessionEventWatcher(val context: Context) {
             mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
         )
 
-        // Read both cursors before changing state or querying Android history. A failed
-        // lookup is not an empty bucket: skip this batch rather than replay from zero.
-        val (lastSession, lastUnlockEvent) = try {
-            getLastEvent(SESSION_BUCKET_ID) to getLastEvent(UNLOCK_BUCKET_ID)
+        // Read both buckets' newest events before changing state or querying Android history.
+        // A failed lookup is not an empty bucket: skip this batch rather than replay from zero.
+        val (sessionEvents, unlockEvents) = try {
+            getNewestEvents(SESSION_BUCKET_ID) to getNewestEvents(UNLOCK_BUCKET_ID)
         } catch (e: JSONException) {
             Log.w(TAG, "Skipping session batch after a failed cursor read", e)
             return 0
         }
-        lastStoredData = lastSession?.optJSONObject("data")
-        lastUpdated = lastSession?.let(::eventStart)
+        // An event whose time cannot be read is left out, and its bucket resumes from the newest
+        // one that can. If that was the newest event, what is sent again from there is its own
+        // session or unlock, with its time and data, which the datastore merges into it.
+        // Skipping the run instead would skip every later one too: no newer event could be
+        // stored to take its place.
+        val storedSessions = sessionEvents.mapNotNull(::storedSession)
+        // Unlocks resume from their own bucket: the server only merges a heartbeat into a
+        // bucket's newest event, so resuming them from an older time would insert again every
+        // unlock after it.
+        val storedUnlocks = unlockEvents.mapNotNull { eventStart(it)?.toEpochMilli() }
+        lastUpdated = storedSessions.firstOrNull()?.let { Instant.ofEpochMilli(it.start) }
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-        val startTimestamp = nextQueryStartTimestamp()
-        val storedStart = lastUpdated?.toEpochMilli()
-        // Unlocks need their own cursor. Resuming them from the last *session* start
-        // re-sent every unlock since then on each run, and the server only merges a
-        // heartbeat into the newest event, so all but the last were inserted again.
-        val lastUnlock = lastUnlockEvent?.let(::eventStart)
-        val batch = sessionParser.parseSessionsAndUnlocksSince(
-            startTimestamp, queryStartAfter(lastUnlock), storedStart
-        )
-        val sessions = batch.sessions
-        val unlockTimestamps = batch.unlockTimestamps
+        val now = clock()
+        // One PackageManager binder call per app rather than per session.
+        val appNames = HashMap<String, String>()
+        val plan = readAndPlanIngest(
+            storedSessions, storedUnlocks, now,
+            read = { since -> sessionParser.readSessionEventsSince(since, now) },
+        ) { pkg -> appNames.getOrPut(pkg) { SessionUtils.getAppName(context, pkg) } }
+        if (storedSessions.isNotEmpty()) logShift("session", plan.sessionShift)
+        if (storedUnlocks.isNotEmpty()) logShift("unlock", plan.unlockShift)
+        val unlockTimestamps = plan.unlocks
 
         var eventsSent = 0
 
-        for (session in sessions) {
-            // Insert session as individual event
-            val storedData = lastStoredData.takeIf { session.startTime == storedStart }
-            insertSessionAsEvent(session, storedData)
+        for (toSend in plan.sessions) {
+            insertSessionAsEvent(toSend.session, toSend.storedData)
             eventsSent++
         }
         
