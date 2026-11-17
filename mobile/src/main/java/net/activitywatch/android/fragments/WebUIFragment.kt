@@ -359,7 +359,7 @@ internal fun persistExportStream(cacheDir: File, input: java.io.InputStream): Fi
     return file
 }
 
-internal fun resolveEmbeddedExportUrl(url: String, baseUrl: String = "http://127.0.0.1:5600/"): String? {
+internal fun resolveEmbeddedExportUrl(url: String, baseUrl: String = "$baseURL/"): String? {
     val trimmed = url.trim()
     if (trimmed.isEmpty()) {
         return null
@@ -831,7 +831,7 @@ class WebUIFragment : Fragment() {
         // (and Toast) are UI-thread only.
         postToUi {
             if (!isAdded) return@postToUi
-            val base = webView?.url ?: "http://127.0.0.1:5600/"
+            val base = webView?.url ?: "$baseURL/"
             val resolved = resolveEmbeddedExportUrl(url, base)
             if (resolved == null || !isEmbeddedActivityWatchUrl(resolved)) {
                 Log.w(TAG, "Rejected export URL: $url")
