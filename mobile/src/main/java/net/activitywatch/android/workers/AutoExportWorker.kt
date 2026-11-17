@@ -20,6 +20,7 @@ import net.activitywatch.android.autoExportFilename
 import net.activitywatch.android.copyExportCancellable
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
+import net.activitywatch.android.preserveCompletedExport
 import net.activitywatch.android.recoverInterruptedExports
 import net.activitywatch.android.tempExportsToClear
 import net.activitywatch.android.stableExportKey
@@ -101,8 +102,7 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 // Download succeeded — promote temp file to final name.
                 val existing = dir.findFile(name)
                 if (existing != null) {
-                    val backupName = "$name.bak"
-                    check(existing.renameTo(backupName)) { "could not preserve $name before replacement" }
+                    preserveCompletedExport(name, { dir.findFile(it) != null }) { existing.renameTo(it) }
                     backup = existing
                 }
                 val renamed = try {

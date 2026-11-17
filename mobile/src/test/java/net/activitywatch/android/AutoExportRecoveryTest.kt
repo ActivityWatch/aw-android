@@ -43,6 +43,50 @@ class AutoExportRecoveryTest {
     }
 
     @Test
+    fun occupiedBackupNameLeavesCompletedExportUntouched() {
+        val final = "aw-export-h-2026-10-01.json"
+        listOf("$final.bak", "$final.bak.json").forEach { occupied ->
+            val files = mutableMapOf(final to "new complete", occupied to "old complete")
+            var renameCalled = false
+            try {
+                preserveCompletedExport(final, { files.containsKey(it) }) { backup ->
+                    renameCalled = true
+                    // A collision-disambiguating provider would strand this name on a crash.
+                    files["$backup (1).json"] = files.remove(final)!!
+                    true
+                }
+                throw AssertionError("an occupied backup must stop replacement")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message!!.contains("backup"))
+            }
+            assertEquals(false, renameCalled)
+            assertEquals(mapOf(final to "new complete", occupied to "old complete"), files)
+        }
+    }
+
+    @Test
+    fun preservesCompletedExportWhenBackupNamesAreFree() {
+        val final = "aw-export-h-2026-10-01.json"
+        val files = mutableMapOf(final to "complete")
+        preserveCompletedExport(final, { files.containsKey(it) }) { backup ->
+            files[backup] = files.remove(final)!!
+            true
+        }
+        assertEquals(mapOf("$final.bak" to "complete"), files)
+        val restored = mutableListOf<Pair<String, String>>()
+        recoverInterruptedExports(files.keys.toList(), "h") { backup, name ->
+            restored.add(backup to name)
+            true
+        }
+        assertEquals(listOf("$final.bak" to final), restored)
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun failedPreservationStopsReplacement() {
+        preserveCompletedExport("aw-export-h-2026-10-01.json", { false }) { false }
+    }
+
+    @Test
     fun thrownRestoreStopsBeforeAnotherBackupCanBeTouched() {
         val names = listOf("aw-export-h-2026-10-01.json.bak", "aw-export-h-2026-10-02.json.bak")
         val calls = mutableListOf<String>()

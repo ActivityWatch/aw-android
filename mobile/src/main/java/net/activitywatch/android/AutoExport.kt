@@ -107,6 +107,20 @@ internal fun recoverInterruptedExports(
     }
 }
 
+/** Preserve today's completed export before promoting its replacement. */
+internal fun preserveCompletedExport(
+    name: String,
+    exists: (String) -> Boolean,
+    rename: (String) -> Boolean,
+) {
+    // Recovery may have kept a stale backup when its deletion failed. Do not let
+    // a provider disambiguate a collision into a name recovery cannot recognize.
+    check(!exists("$name.bak") && !exists("$name.bak.json")) {
+        "could not preserve $name: stale backup still exists"
+    }
+    check(rename("$name.bak")) { "could not preserve $name before replacement" }
+}
+
 /** Blocking reads remain timeout-bounded; cancellation prevents the next write. */
 internal suspend fun copyExportCancellable(input: InputStream, output: OutputStream) {
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
