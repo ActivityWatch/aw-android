@@ -46,6 +46,7 @@
 
     <!-- Auth strings -->
     <string name="no_browser_found">No browser app available to open this URL</string>
+    <string name="settings_screen_unavailable">This settings screen is not available on this device. Open Settings manually to grant the permission.</string>
     <string name="export_saved">Saved %1$s</string>
     <string name="export_save_failed">Could not save export</string>
 </resources>

@@ -1,0 +1,5 @@
+- perf(web-watcher): rate-limit page-title lookups (#345)
+- fix(notify): honor explicit disable and fail closed on malformed settings (#329)
+- fix(widget): never crash when finishing the widget broadcast (#360)
+
+Full changelog: https://github.com/ActivityWatch/aw-android/releases/tag/v0.14.4b1

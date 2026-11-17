@@ -27,6 +27,16 @@
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
     </style>
+    <!-- DayNight theme for native screens that call
+         applySafeWindowInsets(followNightMode = true), so text colour attributes
+         and the chrome_light/chrome_dark background flip together. Unlike
+         AppTheme it does not pin android:textColor to default_text_color,
+         which is black in both modes. -->
+    <style name="AppTheme.FollowNight" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
     <style name="AppTheme.AppBarOverlay" parent="ThemeOverlay.AppCompat.Light"/>
     <style name="AppTheme.PopupOverlay" parent="ThemeOverlay.AppCompat.Light"/>
 

@@ -2,6 +2,9 @@ package net.activitywatch.android.workers
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.json.JSONObject
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
@@ -112,6 +115,58 @@ class NotifyWorkerTest {
         assertEquals(1, alerts.size)
         assertEquals("Work", alerts[0].category)
         assertEquals(listOf(30), alerts[0].thresholdMinutes)
+    }
+
+    @Test
+    fun alertsFromSetting_enabledWithoutAlertsKeyUsesDefaults() {
+        assertEquals("All", alertsFromSetting("""{"enabled":true}""")[0].label)
+    }
+
+    @Test
+    fun notifyOptInMigration_missingSettingKeepsUpgradesOnAndFreshInstallsOff() {
+        for (missing in listOf("", "null", "  ")) {
+            val upgrade = notifyOptInMigrationValue(missing, isUpgrade = true)!!
+            assertTrue(JSONObject(upgrade).getBoolean("enabled"))
+            assertEquals("All", alertsFromSetting(upgrade)[0].label)
+
+            val fresh = notifyOptInMigrationValue(missing, isUpgrade = false)!!
+            assertFalse(JSONObject(fresh).getBoolean("enabled"))
+            assertEquals(emptyList<CategoryAlert>(), alertsFromSetting(fresh))
+        }
+    }
+
+    @Test
+    fun notifyOptInMigration_configWithoutFlagIsMarkedEnabledAndKeepsAlerts() {
+        val before = """{"alerts":[{"category":"Work","thresholds_minutes":[30]}]}"""
+        for (isUpgrade in listOf(true, false)) {
+            val after = notifyOptInMigrationValue(before, isUpgrade)!!
+            assertTrue(JSONObject(after).getBoolean("enabled"))
+            assertEquals(alertsFromSetting(before), alertsFromSetting(after))
+        }
+    }
+
+    @Test
+    fun notifyOptInMigration_keepsObjectsWithoutAlertsFailClosed() {
+        for (before in listOf("{}", """{"unrelated":true}""")) {
+            for (isUpgrade in listOf(true, false)) {
+                val migrated = notifyOptInMigrationValue(before, isUpgrade)
+                assertNull(before, migrated)
+                assertEquals(emptyList<CategoryAlert>(), alertsFromSetting(migrated ?: before))
+            }
+        }
+    }
+
+    @Test
+    fun notifyOptInMigration_leavesExplicitLegacyAndMalformedValuesAlone() {
+        for (value in listOf(
+            """{"enabled":false}""",
+            """{"enabled":true,"alerts":[]}""",
+            """{"enabled":"true"}""",
+            """[{"category":"Work","thresholdMinutes":[30]}]""",
+            "not-json", "{", "42",
+        )) {
+            assertNull(value, notifyOptInMigrationValue(value, isUpgrade = true))
+        }
     }
 
     @Test

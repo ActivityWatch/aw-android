@@ -18,6 +18,9 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import net.activitywatch.android.utils.appDetailsSettingsIntent
+import net.activitywatch.android.utils.settingsHomeIntent
+import net.activitywatch.android.utils.startActivityOrToast
 import net.activitywatch.android.watcher.MediaWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import androidx.core.net.toUri
@@ -148,7 +151,7 @@ class PermissionsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         // Handle grant usage button click
         view.findViewById<Button>(R.id.btnGrantUsagePermission).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            openSettingsScreen(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
         // Handle grant accessibility permissions.
         // Google Play's Accessibility API policy requires a prominent disclosure
@@ -158,7 +161,7 @@ class PermissionsFragment : Fragment() {
                 .setTitle(R.string.accessibility_disclosure_title)
                 .setMessage(R.string.accessibility_disclosure_message)
                 .setPositiveButton(R.string.accessibility_disclosure_agree) { _, _ ->
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    openSettingsScreen(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
                 .setNegativeButton(R.string.accessibility_disclosure_decline, null)
                 .show()
@@ -166,15 +169,25 @@ class PermissionsFragment : Fragment() {
         // Handle grant exact alarm permissions (for widgets)
         view.findViewById<Button>(R.id.btnGrantExactAlarmPermission).setOnClickListener {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                openSettingsScreen(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
                     data = ("package:" + requireContext().packageName).toUri()
-                })
+                }, requireContext().appDetailsSettingsIntent())
             }
         }
         // Handle grant notification access (for media watcher)
         view.findViewById<Button>(R.id.btnGrantNotificationPermission).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            openSettingsScreen(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
+    }
+
+    // Some OEM/TV/Go builds lack these screens; fall back instead of crashing.
+    private fun openSettingsScreen(intent: Intent, vararg fallbacks: Intent) {
+        requireContext().startActivityOrToast(
+            intent,
+            R.string.settings_screen_unavailable,
+            *fallbacks,
+            settingsHomeIntent(),
+        )
     }
 
     // When fragment is resumed, check if the permission has been granted

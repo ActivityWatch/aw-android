@@ -39,9 +39,10 @@ class AuthSettingsActivity : AppCompatActivity() {
     private var toggleJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyPersistedWebUiNightMode()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_auth_settings)
-        applySafeWindowInsets()
+        applySafeWindowInsets(followNightMode = true)
 
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)

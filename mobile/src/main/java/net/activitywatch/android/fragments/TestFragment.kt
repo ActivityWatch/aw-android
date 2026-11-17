@@ -1,6 +1,5 @@
 package net.activitywatch.android.fragments
 
-import androidx.lifecycle.ViewModelProviders
 import android.os.Bundle
 import com.google.android.material.snackbar.Snackbar
 import androidx.fragment.app.Fragment
@@ -13,7 +12,6 @@ import android.widget.Button
 import android.widget.TextView
 import net.activitywatch.android.R
 import net.activitywatch.android.watcher.UsageStatsWatcher
-import net.activitywatch.android.models.TestViewModel
 import java.lang.Exception
 
 private const val TAG = "TestFragment"
@@ -23,8 +21,6 @@ class TestFragment : Fragment() {
     companion object {
         fun newInstance() = TestFragment()
     }
-
-    private lateinit var viewModel: TestViewModel
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -41,9 +37,10 @@ class TestFragment : Fragment() {
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         super.onActivityCreated(savedInstanceState)
-        viewModel = ViewModelProviders.of(this).get(TestViewModel::class.java)
-        // TODO: Use the ViewModel
 
+        // The only interactive control is the hidden debug button below; the
+        // screen keeps no fragment-owned state, so it deliberately has no
+        // ViewModel (a placeholder one used to be created and never read).
         val usw = UsageStatsWatcher(requireContext())
 
         val button = view?.findViewById(R.id.button) as Button

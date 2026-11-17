@@ -8,6 +8,8 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestWorkerBuilder
 import java.util.concurrent.Executors
+import net.activitywatch.android.AWPreferences
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,7 +21,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class NotifyWorkerExecutionTest {
-    private class FakeBackend(private val setting: String) : NotifyBackend {
+    @Before
+    fun markMigrationComplete() {
+        AWPreferences(RuntimeEnvironment.getApplication()).setNotifyOptInMigrated()
+    }
+
+    private class FakeBackend(
+        private val setting: String,
+        private val failIngest: Boolean = false,
+    ) : NotifyBackend {
         val calls = mutableListOf<String>()
 
         override fun checkServer() {
@@ -34,6 +44,11 @@ class NotifyWorkerExecutionTest {
         override fun androidQuery(timeperiod: String): String {
             calls += "query"
             return """[{"cat_events":[{"duration":120,"data":{"${'$'}category":["Work"]}}]}]"""
+        }
+
+        override fun ingestLatestUsage() {
+            calls += "ingest"
+            if (failIngest) throw IllegalStateException("ingest failed")
         }
     }
 
@@ -60,6 +75,26 @@ class NotifyWorkerExecutionTest {
         val manager = RuntimeEnvironment.getApplication()
             .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         return shadowOf(manager).allNotifications.size
+    }
+
+    @Test
+    fun pendingMigrationRetriesWithoutReadingSettingsOrActivity() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit().remove("hasMigratedNotifyOptIn").commit()
+        // Missing settings would otherwise enable defaults on a fresh install.
+        val backend = FakeBackend("null")
+        assertEquals(ListenableWorker.Result.retry(), runWorker(backend))
+        assertEquals(emptyList<String>(), backend.calls)
+        assertEquals(0, notificationCount())
+
+        // A completed fresh-install migration allows the same worker to run,
+        // but its explicit opt-out still prevents ingestion and notifications.
+        AWPreferences(context).setNotifyOptInMigrated()
+        val disabled = FakeBackend("""{"enabled":false}""")
+        assertEquals(ListenableWorker.Result.success(), runWorker(disabled))
+        assertEquals(listOf("server", "aw-notify"), disabled.calls)
+        assertEquals(0, notificationCount())
     }
 
     @Test
@@ -92,7 +127,18 @@ class NotifyWorkerExecutionTest {
             """{"enabled":true,"alerts":[{"category":"Work","thresholds_minutes":[1]}]}"""
         )
         assertEquals(ListenableWorker.Result.success(), runWorker(backend))
-        assertEquals(listOf("server", "aw-notify", "startOfDay", "query"), backend.calls)
+        assertEquals(listOf("server", "aw-notify", "ingest", "startOfDay", "query"), backend.calls)
+        assertEquals(1, notificationCount())
+    }
+
+    @Test
+    fun ingestFailureStillChecksStoredData() {
+        val backend = FakeBackend(
+            """{"enabled":true,"alerts":[{"category":"Work","thresholds_minutes":[1]}]}""",
+            failIngest = true,
+        )
+        assertEquals(ListenableWorker.Result.success(), runWorker(backend))
+        assertEquals(listOf("server", "aw-notify", "ingest", "startOfDay", "query"), backend.calls)
         assertEquals(1, notificationCount())
     }
 }

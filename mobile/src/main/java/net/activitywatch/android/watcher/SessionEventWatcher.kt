@@ -7,12 +7,10 @@ import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
 import net.activitywatch.android.parser.SessionParser
 import net.activitywatch.android.utils.SessionUtils
+import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.DateTimeUtils
 import org.threeten.bp.Instant
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Locale
 import kotlinx.coroutines.*
 
 const val SESSION_BUCKET_ID = "aw-watcher-android"
@@ -32,7 +30,6 @@ class SessionEventWatcher(val context: Context) {
         ) { RustInterface(context.applicationContext) }
     }
     private val sessionParser = SessionParser(context)
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
 
     var lastUpdated: Instant? = null
 
@@ -47,6 +44,11 @@ class SessionEventWatcher(val context: Context) {
     // as the stored event, and insertEvent's heartbeat (pulsetime 0) merges it into that
     // event, keeping the later end, rather than inserting a duplicate.
     private fun nextQueryStartTimestamp(): Long = lastUpdated?.toEpochMilli() ?: 0L
+
+    // Unlocks are zero-duration and never extended, so they resume strictly after the
+    // last stored one: queryEvents' lower bound is inclusive, and replaying that
+    // timestamp would duplicate the event on every run.
+    private fun queryStartAfter(last: Instant?): Long = (last?.toEpochMilli()?.plus(1L)) ?: 0L
 
     suspend fun sendSessionEventsSuspend() {
         Log.w(TAG, "Starting SendSessionEventTask (awaitable)")
@@ -64,27 +66,33 @@ class SessionEventWatcher(val context: Context) {
     // replay would then be inserted as a second copy.
     private var lastStoredData: JSONObject? = null
 
-    private fun getLastEventTime(): Instant? {
+    private fun getLastEvent(bucketId: String): JSONObject? {
         val ri = rustInterface() ?: return null
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID, limit = 1)
-        lastStoredData = null
+        val events = try {
+            ri.getEventsJSON(bucketId, limit = 1)
+        } catch (e: JSONException) {
+            // Distinct from the empty-bucket case below: the read failed, so the caller
+            // must not treat this as "no session stored yet" and re-derive one.
+            Log.e(TAG, "Could not read the last event from '$bucketId': ${e.message}")
+            throw e
+        }
         return if (events.length() == 1) {
-            val lastEvent = events[0] as JSONObject
-            lastStoredData = lastEvent.optJSONObject("data")
-            val timestampString = lastEvent.getString("timestamp")
-            try {
-                val timeCreatedDate = isoFormatter.parse(timestampString)
-                DateTimeUtils.toInstant(timeCreatedDate)
-            } catch (e: ParseException) {
-                Log.e(TAG, "Unable to parse timestamp: $timestampString")
-                null
-            }
+            events[0] as JSONObject
         } else if (events.length() == 0) {
             null  // normal on first run
         } else {
-            Log.w(TAG, "Expected 1 event for last-event lookup, got ${events.length()}")
+            Log.w(TAG, "Expected 1 event for last-event lookup in $bucketId, got ${events.length()}")
             null
         }
+    }
+
+    private fun eventStart(event: JSONObject): Instant? {
+        val timestampString = event.getString("timestamp")
+        return parseAwTimestamp(timestampString)
+            ?: run {
+                Log.e(TAG, "Unable to parse timestamp: $timestampString")
+                null
+            }
     }
 
     /**
@@ -111,16 +119,33 @@ class SessionEventWatcher(val context: Context) {
         Log.i(TAG, "Processing session events...")
 
         // Create bucket for session events
-        ri.createBucketHelper(SESSION_BUCKET_ID, "currentwindow")
-        ri.createBucketHelper(UNLOCK_BUCKET_ID, "os.lockscreen.unlocks")
+        ri.createBucketsHelper(
+            mapOf(SESSION_BUCKET_ID to "currentwindow", UNLOCK_BUCKET_ID to "os.lockscreen.unlocks")
+        )
 
-        lastUpdated = getLastEventTime()
+        // Read both cursors before changing state or querying Android history. A failed
+        // lookup is not an empty bucket: skip this batch rather than replay from zero.
+        val (lastSession, lastUnlockEvent) = try {
+            getLastEvent(SESSION_BUCKET_ID) to getLastEvent(UNLOCK_BUCKET_ID)
+        } catch (e: JSONException) {
+            Log.w(TAG, "Skipping session batch after a failed cursor read", e)
+            return 0
+        }
+        lastStoredData = lastSession?.optJSONObject("data")
+        lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
         val startTimestamp = nextQueryStartTimestamp()
         val storedStart = lastUpdated?.toEpochMilli()
-        val sessions = sessionParser.parseUsageEventsSince(startTimestamp, storedStart)
-        val unlockTimestamps = sessionParser.parseUnlockEventsSince(startTimestamp)
+        // Unlocks need their own cursor. Resuming them from the last *session* start
+        // re-sent every unlock since then on each run, and the server only merges a
+        // heartbeat into the newest event, so all but the last were inserted again.
+        val lastUnlock = lastUnlockEvent?.let(::eventStart)
+        val batch = sessionParser.parseSessionsAndUnlocksSince(
+            startTimestamp, queryStartAfter(lastUnlock), storedStart
+        )
+        val sessions = batch.sessions
+        val unlockTimestamps = batch.unlockTimestamps
 
         var eventsSent = 0
 
@@ -197,7 +222,11 @@ class SessionEventWatcher(val context: Context) {
      */
     fun getSessionEventCount(): Int {
         val ri = rustInterface() ?: return 0
-        val events = ri.getEventsJSON(SESSION_BUCKET_ID)
-        return events.length()
+        return try {
+            ri.getEventsJSON(SESSION_BUCKET_ID).length()
+        } catch (e: JSONException) {
+            Log.e(TAG, "Could not read session events: ${e.message}")
+            0
+        }
     }
 }

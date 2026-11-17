@@ -12,10 +12,10 @@ android {
 
         // Keep versionName committed in source so tagged builds and F-Droid agree.
         // Tag workflows verify it matches refs/tags/v* instead of rewriting the checkout.
-        versionName '0.14.3'
+        versionName '0.14.4b1'
 
         // Set in CI by `bundle exec fastlane update_version`
-        versionCode 48
+        versionCode 49
 
         // Default server port; overridden per product flavor below. Threaded
         // through BuildConfig so a "research" build can run side by side with
@@ -114,6 +114,15 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
     }
+
+    packaging {
+        dex {
+            useLegacyPackaging = true
+        }
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -128,9 +137,9 @@ dependencies {
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
     implementation 'androidx.recyclerview:recyclerview:1.2.1'
-    implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'androidx.webkit:webkit:1.12.1'
 
     implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.jakewharton.threetenabp:threetenabp:1.4.9'

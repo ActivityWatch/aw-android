@@ -67,6 +67,23 @@ class AWPreferences(context: Context) {
             .apply()
     }
 
+    fun hasMigratedNotifyOptIn(): Boolean {
+        return sharedPreferences.getBoolean("hasMigratedNotifyOptIn", false)
+    }
+
+    fun setNotifyOptInMigrated() {
+        sharedPreferences.edit().putBoolean("hasMigratedNotifyOptIn", true).apply()
+    }
+
+    // Per hostname, since staging lives under {sync_dir}/{hostname}/ (see StagingReset).
+    fun isStagingResetDone(hostname: String): Boolean {
+        return sharedPreferences.getBoolean(StagingReset.prefKey(hostname), false)
+    }
+
+    fun setStagingResetDone(hostname: String) {
+        sharedPreferences.edit().putBoolean(StagingReset.prefKey(hostname), true).apply()
+    }
+
     fun hasRequestedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean("hasRequestedNotificationPermission", false)
     }
@@ -187,6 +204,13 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putLong("handlerPassAt", epochMs).apply()
     }
 
+    // BrowserProbeMemory state for PackageManager-detected browsers, as its own JSON.
+    fun getBrowserProbeState(): String? = sharedPreferences.getString("browserProbeState", null)
+
+    fun setBrowserProbeState(json: String) {
+        sharedPreferences.edit().putString("browserProbeState", json).apply()
+    }
+
     // Dashboard authentication. Defaults to true so first-run gets a key generated
     // automatically. Set to false when the user explicitly disables auth in settings;
     // ensureDashboardApiKey() checks this before generating a new key so that the
@@ -197,5 +221,15 @@ class AWPreferences(context: Context) {
 
     fun setDashboardAuthEnabled(enabled: Boolean) {
         sharedPreferences.edit().putBoolean("dashboardAuthEnabled", enabled).commit()
+    }
+
+    // aw-webui Appearance setting (`light` / `dark` / `auto`). Native Auth/Sync
+    // screens read this because they cannot see WebView localStorage.
+    fun getWebUiTheme(): String {
+        return normalizeWebUiTheme(sharedPreferences.getString("webUiTheme", "auto"))
+    }
+
+    fun setWebUiTheme(setting: String) {
+        sharedPreferences.edit().putString("webUiTheme", normalizeWebUiTheme(setting)).apply()
     }
 }

@@ -25,12 +25,21 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import net.activitywatch.android.ANDROID_THEME_HOOK_JS
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.R
+import net.activitywatch.android.baseURL
 import net.activitywatch.android.ensureDashboardApiKey
+import net.activitywatch.android.initialWebViewBackgroundRes
+import net.activitywatch.android.utils.startActivityOrToast
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -46,6 +55,40 @@ private const val ARG_URL = "url"
 // Reload backoff while the local server is still starting (aw-android#261).
 internal const val INITIAL_RELOAD_DELAY_MS = 250L
 internal const val MAX_RELOAD_DELAY_MS = 5_000L
+
+// Bound on waiting for the page to report its theme stylesheet has settled
+// (see ANDROID_THEME_HOOK_JS). The dashboard reveals as soon as it reports; this
+// bound only reveals a document that can never report (no JS bridge).
+internal const val THEME_SETTLE_FAILSAFE_MS = 3_000L
+
+// A document that can still report its theme is waited for, not revealed: doing
+// so would paint its light base styles before dark.css applies (aw-android#300).
+// Each extension adds one more THEME_SETTLE_FAILSAFE_MS. After the polling cap,
+// keep a pending dashboard hidden until its own settle report arrives.
+internal const val THEME_SETTLE_MAX_EXTENSIONS = 4
+
+@VisibleForTesting
+internal var themeSettleFailsafeMs = THEME_SETTLE_FAILSAFE_MS
+
+internal enum class ThemeFailsafeAction { WAIT, AWAIT_REPORT, REVEAL }
+
+/**
+ * Decides what the theme-settle failsafe does when one bound elapses.
+ *
+ * Only a document that can never report (`no-bridge`, `not-dashboard`, or an
+ * unreadable hook state) is revealed. A `pending` dashboard is still applying
+ * its theme, so revealing it would reintroduce the white frame this failsafe
+ * exists to avoid. Exhausting [extensionsLeft] stops polling, not waiting for
+ * the page's own settle report.
+ */
+internal fun themeFailsafeAction(state: String?, extensionsLeft: Int): ThemeFailsafeAction = when {
+    state != "pending" -> ThemeFailsafeAction.REVEAL
+    extensionsLeft > 0 -> ThemeFailsafeAction.WAIT
+    else -> ThemeFailsafeAction.AWAIT_REPORT
+}
+
+private const val THEME_STATE_JS =
+    "(window.__awAndroidThemeState && window.__awAndroidThemeState()) || 'unknown'"
 
 internal fun nextReloadDelayMs(current: Long): Long = (current * 2).coerceAtMost(MAX_RELOAD_DELAY_MS)
 
@@ -182,8 +225,6 @@ internal data class PendingExport(
     val mimeType: String,
     val cacheFile: File,
 ) {
-    fun readContent(): String = cacheFile.readText(StandardCharsets.UTF_8)
-
     fun deleteCache() {
         if (cacheFile.exists() && !cacheFile.delete()) {
             Log.w(TAG, "Failed to delete export cache ${cacheFile.name}")
@@ -277,6 +318,31 @@ internal fun readExportSnapshot(state: Bundle): ExportQueueSnapshot? {
 
 internal fun persistExportPayload(cacheDir: File, content: String): File {
     return persistExportStream(cacheDir, content.byteInputStream(StandardCharsets.UTF_8))
+}
+
+internal const val SHARED_EXPORTS_DIR = "shared-exports"
+
+// Shared copies are only needed until the receiving app has read them.
+internal const val SHARED_EXPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000L
+
+/**
+ * Moves [pending]'s cache file to `<sharedRoot>/<unique>/<filename>` so it can be shared
+ * under its real name, and returns it (null if the move failed). Each share gets its own
+ * directory so exports with the same filename never overwrite each other. Directories
+ * older than [SHARED_EXPORT_MAX_AGE_MS] are removed first.
+ */
+internal fun moveExportForSharing(
+    sharedRoot: File,
+    pending: PendingExport,
+    now: Long = System.currentTimeMillis(),
+): File? {
+    sharedRoot.listFiles()?.forEach { dir ->
+        if (now - dir.lastModified() > SHARED_EXPORT_MAX_AGE_MS) dir.deleteRecursively()
+    }
+    val dir = File(sharedRoot, java.util.UUID.randomUUID().toString())
+    if (!dir.mkdirs()) return null
+    val target = File(dir, pending.filename)
+    return target.takeIf { pending.cacheFile.renameTo(it) }
 }
 
 internal fun persistExportStream(cacheDir: File, input: java.io.InputStream): File {
@@ -403,7 +469,17 @@ class WebUIFragment : Fragment() {
         arguments?.getString(ARG_URL)?.let { target.loadUrl(it) }
     }
     private val exportQueue = ExportSaveQueue()
+    // Each main-frame document starts hidden and is revealed only once it has
+    // both finished loading and applied its theme (aw-android#300).
+    private var navigationId = 0L
+    private var finishedNavigation = -1L
+    private var themeSettledNavigation = -1L
+    private var themeFailsafeNavigation = -1L
+    private var themeFailsafeExtensionsLeft = 0
+    private val themeSettleFailsafe = Runnable { runThemeSettleFailsafe() }
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val webMenuState = WebMenuState()
+    private var nativeBridgeReply: JavaScriptReplyProxy? = null
 
     private val createDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
@@ -456,10 +532,23 @@ class WebUIFragment : Fragment() {
 
         val myWebView: WebView = view.findViewById(R.id.webview) as WebView
         webView = myWebView
+        // Prevent white flash: set the background before the first frame loads.
+        // The JS theme hook corrects it after onPageFinished reads localStorage.theme.
+        myWebView.setBackgroundColor(
+            ContextCompat.getColor(view.context, initialWebViewBackgroundRes(resources.configuration)),
+        )
+        // The dashboard paints its light base styles before it has loaded settings
+        // and applied dark.css. Keep it hidden until revealWhenReady().
+        myWebView.visibility = View.INVISIBLE
 
         class MyWebViewClient : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                navigationId++
+                view?.visibility = View.INVISIBLE
+                reloadHandler.removeCallbacks(themeSettleFailsafe)
                 reloadPolicy.onPageStarted()
+                webMenuState.onPageStarted()
+                nativeBridgeReply = null
             }
 
             override fun onReceivedError(
@@ -472,7 +561,10 @@ class WebUIFragment : Fragment() {
                 // This used to Thread.sleep() on the main thread and reload
                 // immediately, which turned a slow server start into a tight
                 // reload loop on the UI thread (aw-android#261).
-                // TODO: Find way to not show the blinking Android error page
+                // Chromium paints its own (potentially white) error document even
+                // when the WebView background is dark. Keep it out of the view
+                // hierarchy's drawing until a successful retry replaces it.
+                view.visibility = View.INVISIBLE
                 Log.e(TAG, "WebView received error: ${error.description}")
                 scheduleReload(delay)
             }
@@ -480,11 +572,15 @@ class WebUIFragment : Fragment() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 // Error-page finishes still call onPageFinished. Only a
                 // successful load should drop the pending startup retry.
-                if (reloadPolicy.onPageFinished()) {
-                    reloadHandler.removeCallbacks(reloadRunnable)
-                }
+                if (!reloadPolicy.onPageFinished()) return
+                reloadHandler.removeCallbacks(reloadRunnable)
+                finishedNavigation = navigationId
                 view?.evaluateJavascript(ANDROID_EXPORT_HOOK_JS, null)
+                // Tag the document so a settle report from an older one is ignored.
+                view?.evaluateJavascript("window.__awAndroidNavigation = '$navigationId';", null)
                 view?.evaluateJavascript(ANDROID_THEME_HOOK_JS, null)
+                scheduleThemeSettleFailsafe(navigationId, THEME_SETTLE_MAX_EXTENSIONS)
+                revealWhenReady()
             }
 
             // Open external links in external browser
@@ -493,9 +589,10 @@ class WebUIFragment : Fragment() {
                 if (URLUtil.isNetworkUrl(url)) {
                     if (url.startsWith("http://") || url.startsWith("https://")) {
                         if (!isEmbeddedActivityWatchUrl(url)) {
-                            // Open the URL in an external browser
+                            // Open the URL in an external browser; a device
+                            // without one gets a toast instead of a crash.
                             val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            startActivity(i)
+                            view?.context?.startActivityOrToast(i, R.string.no_browser_found)
                             return true
                         }
                     }
@@ -533,15 +630,90 @@ class WebUIFragment : Fragment() {
 
         myWebView.settings.javaScriptEnabled = true
         myWebView.settings.domStorageEnabled = true
+        val appContext = requireContext().applicationContext
         myWebView.addJavascriptInterface(
-            WebAppInterface(::queueExport, ::onColorSchemeReported, ::onExportFromUrl),
+            WebAppInterface(
+                ::queueExport,
+                ::onColorSchemeReported,
+                ::onExportFromUrl,
+                { navigation ->
+                    navigation.toLongOrNull()?.let { postToUi { onThemeSettled(it) } }
+                },
+                { AWPreferences(appContext).setWebUiTheme(it) },
+            ),
             "Android",
         )
+        installNativeBridge(myWebView)
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }
 
         return view
+    }
+
+    private fun onThemeSettled(navigation: Long) {
+        if (navigation != navigationId) return
+        themeSettledNavigation = navigation
+        revealWhenReady()
+    }
+
+    /**
+     * Bounded fallback for documents that can never report their theme.
+     *
+     * The page's own report always wins; this only reveals when the hook says
+     * the document has no bridge. A dashboard that is still settling is waited
+     * for rather than revealed, because at that point its body is still painted
+     * with the light base styles (aw-android#300).
+     */
+    private fun scheduleThemeSettleFailsafe(navigation: Long, extensionsLeft: Int) {
+        themeFailsafeNavigation = navigation
+        themeFailsafeExtensionsLeft = extensionsLeft
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
+        reloadHandler.postDelayed(themeSettleFailsafe, themeSettleFailsafeMs)
+    }
+
+    private fun runThemeSettleFailsafe() {
+        val navigation = themeFailsafeNavigation
+        val view = webView ?: return
+        if (navigation != navigationId || finishedNavigation != navigation ||
+            themeSettledNavigation == navigation || reloadPolicy.currentLoadFailed
+        ) {
+            return
+        }
+        view.evaluateJavascript(THEME_STATE_JS) { raw ->
+            postToUi {
+                if (navigation != navigationId || themeSettledNavigation == navigation) return@postToUi
+                val state = raw?.trim()?.trim('"')
+                when (themeFailsafeAction(state, themeFailsafeExtensionsLeft)) {
+                    ThemeFailsafeAction.WAIT ->
+                        scheduleThemeSettleFailsafe(navigation, themeFailsafeExtensionsLeft - 1)
+                    // The hook's observer/load/error callbacks still report
+                    // settlement after polling stops. Keep the WebView hidden.
+                    ThemeFailsafeAction.AWAIT_REPORT -> Unit
+                    ThemeFailsafeAction.REVEAL -> onThemeSettled(navigation)
+                }
+            }
+        }
+    }
+
+    private fun revealWhenReady() {
+        val view = webView ?: return
+        val navigation = navigationId
+        if (finishedNavigation != navigation || themeSettledNavigation != navigation ||
+            reloadPolicy.currentLoadFailed
+        ) {
+            return
+        }
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
+        // A finished navigation can still have the old error frame in the
+        // compositor. Reveal only after the replacement is drawable.
+        view.postVisualStateCallback(navigation, object : WebView.VisualStateCallback() {
+            override fun onComplete(requestId: Long) {
+                if (view === webView && navigationId == requestId && !reloadPolicy.currentLoadFailed) {
+                    view.visibility = View.VISIBLE
+                }
+            }
+        })
     }
 
     private fun scheduleReload(delay: Long) {
@@ -565,6 +737,54 @@ class WebUIFragment : Fragment() {
         }
     }
 
+    /**
+     * Expose native-only menu actions to the embedded web UI (see NativeBridge.kt).
+     * Without WebMessageListener support the page simply never sees the bridge,
+     * and the native drawer remains the way to reach these actions.
+     */
+    private fun installNativeBridge(target: WebView) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            Log.i(TAG, "WebMessageListener unsupported; native menu bridge disabled")
+            return
+        }
+        val originRule = nativeBridgeOriginRule(baseURL) ?: return
+        WebViewCompat.addWebMessageListener(
+            target,
+            NATIVE_BRIDGE_JS_OBJECT,
+            setOf(originRule),
+        ) { _, message, sourceOrigin, isMainFrame, replyProxy ->
+            onNativeBridgeMessage(message, sourceOrigin.toString(), isMainFrame, replyProxy)
+        }
+    }
+
+    // WebMessageListener callbacks run on the UI thread.
+    private fun onNativeBridgeMessage(
+        message: WebMessageCompat,
+        sourceOrigin: String,
+        isMainFrame: Boolean,
+        replyProxy: JavaScriptReplyProxy,
+    ) {
+        if (!isTrustedNativeBridgeMessage(sourceOrigin, isMainFrame, baseURL)) {
+            Log.w(TAG, "Ignoring native bridge message from untrusted frame: $sourceOrigin main=$isMainFrame")
+            return
+        }
+        nativeBridgeReply = replyProxy
+        when (val parsed = parseNativeBridgeMessage(message.data)) {
+            NativeBridgeMessage.Hello -> replyProxy.postMessage(nativeCapabilitiesMessage())
+            is NativeBridgeMessage.Action -> if (isAdded) listener?.onNativeAction(parsed.action)
+            is NativeBridgeMessage.Menu -> webMenuState.onMenuMessage(parsed.open)
+            null -> Log.w(TAG, "Ignoring malformed native bridge message")
+        }
+    }
+
+    fun isWebMenuOpen(): Boolean = webMenuState.open
+
+    fun closeWebMenu() {
+        if (webMenuState.requestClose()) {
+            nativeBridgeReply?.postMessage(nativeCloseMenuMessage())
+        }
+    }
+
     fun canGoBack(): Boolean = webView?.canGoBack() == true
 
     fun goBack() {
@@ -573,9 +793,12 @@ class WebUIFragment : Fragment() {
 
     override fun onDestroyView() {
         reloadHandler.removeCallbacks(reloadRunnable)
+        reloadHandler.removeCallbacks(themeSettleFailsafe)
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         webView = null
+        nativeBridgeReply = null
+        webMenuState.onPageStarted()
         super.onDestroyView()
     }
 
@@ -706,7 +929,6 @@ class WebUIFragment : Fragment() {
             Log.e(TAG, "CreateDocument failed, falling back to share sheet", e)
             exportQueue.completeInFlight()
             shareExport(next)
-            next.deleteCache()
             launchNextExportPicker()
         }
     }
@@ -739,21 +961,27 @@ class WebUIFragment : Fragment() {
         launchNextExportPicker()
     }
 
+    // Opens the share sheet for an export when the system file picker is unavailable.
+    // The cached export is moved, not copied, into a shareable location: a rename within
+    // cacheDir is instant, so this stays synchronous on the UI thread. That avoids reading
+    // large exports into memory (#304) and leaves no background work to race a second
+    // export or be lost if the activity is recreated.
     private fun shareExport(pending: PendingExport) {
-        val ctx = context ?: return
-        val externalDir = ctx.getExternalFilesDir(null) ?: run {
-            Log.e(TAG, "External files directory unavailable")
+        val ctx = context ?: run {
+            pending.deleteCache()
+            return
+        }
+        val file = moveExportForSharing(File(ctx.cacheDir, SHARED_EXPORTS_DIR), pending)
+        if (file == null) {
+            Log.e(TAG, "Failed to prepare ${pending.filename} for sharing")
+            pending.deleteCache()
             showExportToast(getString(R.string.export_save_failed), long = true)
             return
         }
-        val file = File(externalDir, pending.filename)
-        try {
-            file.writeText(pending.readContent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write export file: ${e.message}")
-            showExportToast(getString(R.string.export_save_failed), long = true)
-            return
-        }
+        startShareChooser(ctx, file, pending)
+    }
+
+    private fun startShareChooser(ctx: Context, file: File, pending: PendingExport) {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = pending.mimeType
@@ -822,6 +1050,7 @@ class WebUIFragment : Fragment() {
         // TODO: Update argument type and name
         fun onFragmentInteraction(uri: Uri)
         fun onWebUiColorSchemeChanged(dark: Boolean) {}
+        fun onNativeAction(action: NativeAction) {}
     }
 
     companion object {
@@ -852,6 +1081,8 @@ class WebAppInterface(
     private val onExport: (content: String, filename: String, mimeType: String) -> Unit,
     private val onColorScheme: (String) -> Unit = {},
     private val onExportUrl: (url: String, filename: String) -> Unit = { _, _ -> },
+    private val onThemeSettled: (navigation: String) -> Unit = {},
+    private val onThemeSetting: (String) -> Unit = {},
 ) {
     private val lock = Any()
     private val buffer = StringBuilder()
@@ -901,6 +1132,16 @@ class WebAppInterface(
     @JavascriptInterface
     fun reportColorScheme(scheme: String) {
         onColorScheme(scheme)
+    }
+
+    @JavascriptInterface
+    fun reportThemeSetting(setting: String) {
+        onThemeSetting(setting)
+    }
+
+    @JavascriptInterface
+    fun reportThemeSettled(navigation: String) {
+        onThemeSettled(navigation)
     }
 
     @JavascriptInterface

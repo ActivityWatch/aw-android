@@ -11,6 +11,9 @@
     <color name="chrome_on_light">#000000</color>
     <color name="chrome_on_dark">#E9EBF0</color>
 
+    <!-- API key box on the Auth settings screen. -->
+    <color name="api_key_background">#AAAAAA</color>
+
     <!-- Widget theme colors (light mode defaults) -->
     <color name="widget_background">#F5F5F5</color>
     <color name="widget_text_primary">#1A1A1A</color>

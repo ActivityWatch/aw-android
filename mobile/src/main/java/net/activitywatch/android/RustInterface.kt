@@ -49,6 +49,52 @@ internal fun probeServerPort(
         PortProbe.SOCKET_DENIED
     }
 
+/**
+ * The error in the response to a datastore write, or null if the write succeeded.
+ *
+ * A response is a failure when it is an `{"error": …}` object, or when it is missing:
+ * without a response nothing confirms that the write happened. Any other response is
+ * a success.
+ */
+internal fun writeErrorOf(response: String?): String? {
+    if (response == null) return "no response from the datastore"
+    if (!response.startsWith("{")) return null
+    return try {
+        JSONObject(response).opt("error") as? String
+    } catch (e: JSONException) {
+        null
+    }
+}
+
+/**
+ * Logs failed datastore writes: the first failure of a run, then how many failed once
+ * a write to the same bucket succeeds again.
+ *
+ * Only the start and the end of a run are logged: a write can come every few seconds,
+ * and a line for each failure would flood logcat.
+ *
+ * Runs are counted per bucket, so a success in one bucket does not end a run of
+ * failures in another.
+ */
+internal class WriteFailureLog(private val log: (String) -> Unit = { Log.w(TAG, it) }) {
+    private val failedInARow = HashMap<String, Int>()
+
+    // Synchronized so that one instance can be shared by writers on several threads.
+    @Synchronized
+    fun record(bucketId: String, response: String?) {
+        val error = writeErrorOf(response)
+        val failed = failedInARow[bucketId] ?: 0
+        if (error != null) {
+            if (failed == 0) log("Writes to bucket '$bucketId' are failing: $error")
+            failedInARow[bucketId] = failed + 1
+        } else if (failed > 0) {
+            failedInARow.remove(bucketId)
+            val writes = if (failed == 1) "write" else "writes"
+            log("Writes to bucket '$bucketId' succeed again after $failed failed $writes")
+        }
+    }
+}
+
 class RustInterface(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
@@ -72,6 +118,10 @@ class RustInterface(context: Context? = null) {
         if (context != null) {
             setDataDir(context.filesDir.absolutePath)
             appVersionString(context)?.let { setVersionOverride(it) }
+            // OS gethostname() is localhost on Android; buckets already use
+            // deviceHostname(). Without this, /api/0/info never matches the
+            // webui "this device" badge (ActivityWatch/aw-android#368).
+            setHostnameOverride(deviceHostname(context))
         }
     }
 
@@ -104,6 +154,10 @@ class RustInterface(context: Context? = null) {
         // @Volatile so the check in startServerTask() is visible across threads
         // without requiring callers to be inside a synchronized block.
         @Volatile var serverStarted = false
+
+        // One for the whole process, like the datastore it reports on, so that a run of
+        // failures outlives the RustInterface instances that write during it.
+        private val writeFailures = WriteFailureLog()
     }
 
     private external fun initialize()
@@ -111,13 +165,16 @@ class RustInterface(context: Context? = null) {
     private external fun startServer(port: Int)
     private external fun setDataDir(path: String)
     private external fun setVersionOverride(version: String)
+    private external fun setHostnameOverride(hostname: String)
     external fun getBuckets(): String
     external fun createBucket(bucket: String): String
     external fun getEvents(bucket_id: String, limit: Int): String
-    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String
+    // Null when the native side cannot build even its error object.
+    external fun heartbeat(bucket_id: String, event: String, pulsetime: Double): String?
     external fun query(query: String, timeperiods: String): String
     external fun androidQuery(timeperiods: String): String
     external fun getSetting(key: String): String
+    external fun setSetting(key: String, value: String): String
     external fun migrateHostname(hostname: String): String
     external fun migrateWatcherAndroidBucketNames(): String
 
@@ -182,20 +239,33 @@ class RustInterface(context: Context? = null) {
     }
 
     fun createBucketHelper(bucket_id: String, type: String, client: String = "aw-android") {
+        createBucketsHelper(mapOf(bucket_id to type), client)
+    }
+
+    /** Creates any of [buckets] (id to type) that don't exist yet, listing buckets once. */
+    fun createBucketsHelper(buckets: Map<String, String>, client: String = "aw-android") {
         val context =
             appContext
                 ?: throw IllegalStateException(
                     "Context is required but was not provided during initialization"
                 )
         val hostname = getDeviceName(context)
-        if (bucket_id in getBucketsJSON().keys().asSequence()) {
-            Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
-        } else {
-            val msg =
-                createBucket(
-                    """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
-                )
-            Log.w(TAG, msg)
+        val existing = try {
+            getBucketsJSON().keys().asSequence().toSet()
+        } catch (e: JSONException) {
+            Log.e(TAG, "Not creating buckets ${buckets.keys}: ${e.message}")
+            return
+        }
+        for ((bucket_id, type) in buckets) {
+            if (bucket_id in existing) {
+                Log.i(TAG, "Bucket with ID '$bucket_id', already existed. Not creating.")
+            } else {
+                val msg =
+                    createBucket(
+                        """{"id": "$bucket_id", "type": "$type", "hostname": "$hostname", "client": "$client"}"""
+                    )
+                Log.w(TAG, msg)
+            }
         }
     }
 
@@ -226,7 +296,7 @@ class RustInterface(context: Context? = null) {
     ) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), pulsetime)
-        // Log.w(TAG, msg)
+        writeFailures.record(bucket_id, msg)
     }
 
     /**
@@ -242,29 +312,58 @@ class RustInterface(context: Context? = null) {
     fun insertEvent(bucket_id: String, timestamp: Instant, duration: Double, data: JSONObject) {
         val event = Event(timestamp, duration, data)
         val msg = heartbeat(bucket_id, event.toString(), 0.0)
-        Log.d(TAG, "insertEvent response: $msg")
+        writeFailures.record(bucket_id, msg)
     }
 
-    fun getBucketsJSON(): JSONObject {
-        // TODO: Handle errors
-        val json = JSONObject(getBuckets())
-        if (json.length() <= 0) {
-            Log.w(TAG, "Length: ${json.length()}")
-        }
-        return json
-    }
+    /**
+     * @throws JSONException when the datastore is unavailable. The JNI reports that as
+     *   `{"error": "..."}`, which parses fine, so it is turned into an exception here;
+     *   otherwise callers would read the error object as a bucket map.
+     */
+    fun getBucketsJSON(): JSONObject = parseBucketsJSON(getBuckets())
 
-    fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray {
-        // TODO: Handle errors
-        val result = getEvents(bucket_id, limit)
-        return try {
-            JSONArray(result)
-        } catch (e: JSONException) {
-            Log.e(TAG, "Error when trying to fetch events from bucket: $result")
-            JSONArray()
-        }
-    }
+    /**
+     * @throws JSONException when the datastore could not be read. The JNI reports that as
+     *   `{"error": "..."}`, which is not an event list; it used to be swallowed into an
+     *   empty array, making a failed read indistinguishable from a bucket with no events.
+     */
+    fun getEventsJSON(bucket_id: String, limit: Int = 0): JSONArray =
+        parseEventsJSON(getEvents(bucket_id, limit))
 
     fun getDeviceName(context: Context): String = deviceHostname(context)
 
+}
+
+/**
+ * Parses a JNI `getBuckets` response. A bucket entry is always an object, so a string
+ * `error` value can only be the JNI error object.
+ */
+internal fun parseBucketsJSON(response: String): JSONObject {
+    val json = JSONObject(response)
+    if (json.opt("error") is String) {
+        throw JSONException("getBuckets failed: ${json.getString("error")}")
+    }
+    return json
+}
+
+/**
+ * Parses a JNI `getEvents` response.
+ *
+ * An event list is always a JSON array, so an `{"error": …}` object (aw-server-rust's
+ * `create_error_object`) cannot be a valid result: it is raised as a [JSONException]
+ * instead of being read as an empty bucket.
+ */
+internal fun parseEventsJSON(response: String): JSONArray {
+    val trimmed = response.trim()
+    if (trimmed.startsWith("{")) {
+        val error = try {
+            JSONObject(trimmed).opt("error")
+        } catch (e: JSONException) {
+            null
+        }
+        if (error is String) {
+            throw JSONException("getEvents failed: $error")
+        }
+    }
+    return JSONArray(trimmed)
 }
