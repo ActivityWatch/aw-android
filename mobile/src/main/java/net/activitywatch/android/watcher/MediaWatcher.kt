@@ -31,6 +31,9 @@ class MediaWatcher : NotificationListenerService() {
         private const val TAG = "MediaWatcher"
         private const val BUCKET_ID = "aw-watcher-android-media"
         private const val BUCKET_TYPE = "media.playback"
+        private const val CALL_BUCKET_ID = "aw-watcher-android-calls"
+        private const val CALL_BUCKET_TYPE = "phone.call"
+
         // How often to poll active media sessions (also bounds how late a segment is written)
         private const val POLL_INTERVAL_MS = 15000L
 
@@ -60,6 +63,14 @@ class MediaWatcher : NotificationListenerService() {
         ri?.insertEvent(BUCKET_ID, start, durationSeconds, data)
     }
 
+    // Handler thread only, like [segments]: call notifications are classified on the calling
+    // thread (cheap, no I/O) and everything else is posted to the handlerThread.
+    private val callTracker = CallEventTracker { start, durationSeconds, data ->
+        ri?.insertEvent(CALL_BUCKET_ID, start, durationSeconds, data)
+        Log.i(TAG, "Call event: ${data.optString("direction")} via ${data.optString("app")}, " +
+                "${durationSeconds}s, connected=${data.optBoolean("connected")}")
+    }
+
     // Handler thread only. False between teardown and the next session scan, so a callback
     // or poll already queued when the listener disconnected can't reopen a segment.
     private var connected = false
@@ -82,7 +93,9 @@ class MediaWatcher : NotificationListenerService() {
         handler?.post {
             try {
                 val r = RustInterface(applicationContext)
-                r.createBucketHelper(BUCKET_ID, BUCKET_TYPE)
+                r.createBucketsHelper(
+                    mapOf(BUCKET_ID to BUCKET_TYPE, CALL_BUCKET_ID to CALL_BUCKET_TYPE)
+                )
                 ri = r
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize media bucket", e)
@@ -120,13 +133,78 @@ class MediaWatcher : NotificationListenerService() {
         handlerThread.quitSafely()
     }
 
+    // Media tracking relies on MediaSessionManager, not on notifications. These two callbacks
+    // exist for call tracking only: every notification passes through here, but a call is the
+    // only thing that is looked at, and only its structure (see CallNotificationClassifier),
+    // never its text.
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        // We rely on MediaSessionManager for media tracking, not individual notifications.
-        // This callback is required by NotificationListenerService but we don't need it.
+        if (sbn == null || sbn.packageName == packageName) return
+        val call = CallNotificationClassifier.classify(sbn)
+        val key = sbn.key
+        val callerPackage = sbn.packageName
+        val postedAt = Instant.ofEpochMilli(sbn.postTime)
+        val now = Instant.now()
+
+        handler?.post {
+            if (!connected) return@post
+            if (call != null) {
+                Log.d(TAG, "Call notification posted: pkg=$callerPackage phase=${call.phase} ${call.description}")
+                callTracker.onPosted(key, callerPackage, appLabel(callerPackage), call.phase, postedAt, now)
+            } else {
+                // A tracked notification updated in place into something that is not a live
+                // call (missed call, "call ended"). Updates keep the key, so treat it as gone.
+                endCallNotification(key, callerPackage, now)
+            }
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        // Not needed for media tracking.
+        if (sbn == null) return
+        val key = sbn.key
+        val callerPackage = sbn.packageName
+        val now = Instant.now()
+        handler?.post {
+            if (!connected) return@post
+            endCallNotification(key, callerPackage, now)
+        }
+    }
+
+    // Handler thread only. Ignores notifications the tracker never saw, so this reads
+    // nothing about other apps' notifications beyond their key and package.
+    private fun endCallNotification(key: String, callerPackage: String, now: Instant) {
+        if (callTracker.onRemoved(key, callerPackage, now)) {
+            Log.d(TAG, "Call notification ended: pkg=$callerPackage")
+            // Wait out the grace window: the dialer may be about to post a replacement.
+            handler?.postDelayed(
+                { callTracker.flushExpired(Instant.now()) },
+                CALL_GRACE_MILLIS + 250L
+            )
+        }
+    }
+    private fun appLabel(packageName: String): String = try {
+        val pm = applicationContext.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    } catch (e: PackageManager.NameNotFoundException) {
+        packageName
+    }
+
+    // Handler thread only. Android does not replay existing notifications to the listener,
+    // so a call already showing when it connects would otherwise be invisible. It is
+    // recorded from now on, so a reconnect does not double-count time already written.
+    private fun scanActiveCallNotifications() {
+        val now = Instant.now()
+        try {
+            for (sbn in activeNotifications ?: return) {
+                if (sbn.packageName == packageName) continue
+                val call = CallNotificationClassifier.classify(sbn) ?: continue
+                Log.d(TAG, "Call already showing at connect: pkg=${sbn.packageName} phase=${call.phase} ${call.description}")
+                callTracker.onPosted(
+                    sbn.key, sbn.packageName, appLabel(sbn.packageName), call.phase, now, now
+                )
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Could not read active notifications", e)
+        }
     }
 
     /**
@@ -135,6 +213,7 @@ class MediaWatcher : NotificationListenerService() {
      */
     private fun registerActiveSessionListener() {
         connected = true
+        scanActiveCallNotifications()
         val componentName = ComponentName(this, MediaWatcher::class.java)
         try {
             val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -333,5 +412,6 @@ class MediaWatcher : NotificationListenerService() {
         activeControllers.clear()
         activeCallbacks.clear()
         segments.endAll(disconnectedAt)
+        callTracker.endAll(disconnectedAt)
     }
 }
