@@ -374,6 +374,9 @@ class SyncInterface(context: Context) {
             // (counts/warnings) instead of erasing what the pass actually did.
             var nativeStatus: SyncStatus? = null
             try {
+                // Alarm workers can recreate the process without BackgroundService.
+                // Start and probe the local HTTP server before JNI tries to pull/push.
+                ensureSyncServer(appContext)
                 ensureLegacyFoldersMigrated()
                 val response = syncFn()
                 val status = SyncStatus.fromJniResponse(response, System.currentTimeMillis())

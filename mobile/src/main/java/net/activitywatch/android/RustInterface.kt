@@ -224,7 +224,13 @@ class RustInterface(context: Context? = null) {
                 // Start server
                 Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
                 startServer(BuildConfig.SERVER_PORT)
+            } catch (e: UnsatisfiedLinkError) {
+                // startServer itself is another JNI call, on this separate
+                // executor. Keep a missing symbol from killing the process;
+                // sync's bounded readiness wait will report the failed startup.
+                Log.e(TAG, "Local server native entry point unavailable", e)
             } finally {
+                executor.shutdown()
                 // Reset unconditionally, including when startServer() throws
                 // (JNI/native failure): otherwise serverStarted stays true and
                 // startServerTask() never restarts the server until process death.
