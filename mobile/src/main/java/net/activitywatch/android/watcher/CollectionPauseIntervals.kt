@@ -141,13 +141,14 @@ internal object PauseIntervals {
         }
 
     /**
-     * True when a closed pause lies strictly between two consecutive inserts, so a heartbeat
-     * merge from the first to the second would bridge the private window.
+     * True when a closed pause ends after the preceding insert and at/before the next one.
+     * The preceding cursor may already be inside a pause (for example after an in-flight
+     * import); merging must not extend that event through the remaining private window.
      */
     fun crossesPause(pauses: List<PauseInterval>, fromMs: Long, toMs: Long): Boolean =
         normalize(pauses).any { pause ->
             val end = pause.endMs
-            end != null && pause.startMs >= fromMs && end <= toMs
+            end != null && end > fromMs && end <= toMs
         }
 
     /** True when [timestampMs] falls inside a pause. Unlock points inside one are dropped. */
