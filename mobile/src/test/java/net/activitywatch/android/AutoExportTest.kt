@@ -69,6 +69,22 @@ class AutoExportTest {
     }
 
     @Test
+    fun cleanupIgnoresInvalidCalendarDates() {
+        val invalid = listOf("2026-99-99", "0000-00-00", "2026-02-29", "2026-04-31")
+        val names = invalid.map { "aw-export-h-$it.json" }
+        assertTrue(exportsToPrune(names, "h", keep = 1).isEmpty())
+        assertTrue(tempExportsToClear(names.flatMap { listOf("$it.tmp", "$it.tmp.json") }, "h").isEmpty())
+        val restored = mutableListOf<String>()
+        recoverInterruptedExports(names.flatMap { listOf("$it.bak", "$it.bak.json") }, "h") { backup, _ ->
+            restored.add(backup)
+            true
+        }
+        assertTrue(restored.isEmpty())
+        assertEquals(listOf("aw-export-h-2024-02-29.json.tmp"),
+            tempExportsToClear(listOf("aw-export-h-2024-02-29.json.tmp"), "h"))
+    }
+
+    @Test
     fun prune_keepIsClampedToAtLeastOne() {
         val existing = listOf("aw-export-h-2026-10-01.json", "aw-export-h-2026-10-02.json")
         assertEquals(listOf("aw-export-h-2026-10-01.json"), exportsToPrune(existing, "h", keep = 0))

@@ -65,6 +65,46 @@ class AutoExportRecoveryTest {
     }
 
     @Test
+    fun rollbackFailureDoesNotReplaceCancellation() {
+        val cancellation = kotlinx.coroutines.CancellationException("stopped")
+        val providerFailure = SecurityException("grant revoked")
+        try {
+            rethrowAfterExportRollback(cancellation) { throw providerFailure }
+        } catch (e: Exception) {
+            org.junit.Assert.assertSame(cancellation, e)
+            assertEquals(listOf(providerFailure), e.suppressed.toList())
+        }
+    }
+
+    @Test
+    fun rollbackRunsBeforeRethrowingOriginalFailure() {
+        val failure = java.io.IOException("download failed")
+        var rolledBack = false
+        try {
+            rethrowAfterExportRollback(failure) { rolledBack = true }
+        } catch (e: Exception) {
+            org.junit.Assert.assertSame(failure, e)
+            assertTrue(rolledBack)
+        }
+    }
+
+    @Test
+    fun occupiedBackupIsRejectedBeforeDownload() {
+        val final = "aw-export-h-2026-10-01.json"
+        listOf("$final.bak", "$final.bak.json").forEach { occupied ->
+            var downloaded = false
+            try {
+                checkExportBackupAvailable(final) { it == occupied }
+                downloaded = true
+                throw AssertionError("occupied backup must stop before download")
+            } catch (e: IllegalStateException) {
+                assertEquals(false, downloaded)
+                assertTrue(e.message!!.contains("stale backup"))
+            }
+        }
+    }
+
+    @Test
     fun preservesCompletedExportWhenBackupNamesAreFree() {
         val final = "aw-export-h-2026-10-01.json"
         val files = mutableMapOf(final to "complete")

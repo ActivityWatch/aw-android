@@ -18,6 +18,8 @@ import net.activitywatch.android.BuildConfig
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.autoExportFilename
 import net.activitywatch.android.copyExportCancellable
+import net.activitywatch.android.checkExportBackupAvailable
+import net.activitywatch.android.rethrowAfterExportRollback
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
 import net.activitywatch.android.preserveCompletedExport
@@ -52,10 +54,8 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val dir = DocumentFile.fromTreeUri(applicationContext, Uri.parse(dirUri))
             if (dir == null || !dir.canWrite()) {
                 // A SAF tree can be transiently unavailable (SD card unmounted, provider
-                // not yet mounted at boot, permission temporarily revoked). Result.failure()
-                // is terminal for periodic work — it would silently disable automatic
-                // export until the user re-enables it. Retry with backoff instead; the run
-                // succeeds once the folder is reachable again.
+                // not yet mounted at boot, permission temporarily revoked). Retry with
+                // backoff rather than waiting until the next daily/weekly occurrence.
                 record(prefs, "export folder is no longer writable — choose it again")
                 return@withContext Result.retry()
             }
@@ -81,6 +81,9 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 }
             }
             val name = autoExportFilename(host, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
+            // Recovery may have been unable to delete a stale backup. Fail before
+            // downloading rather than repeatedly fetching a replacement we cannot preserve.
+            checkExportBackupAvailable(name) { dir.findFile(it) != null }
 
             // Write to a temp file first so an interrupted download doesn't leave a partial
             // file with the final name (which would look like a complete backup).
@@ -116,14 +119,15 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 check(renamed != null) { "export folder does not support safe promotion by rename" }
                 currentCoroutineContext().ensureActive()
             } catch (e: Exception) {
-                tempFile.delete()
-                // Promotion failed: drop any half-written final file and restore the previous export.
-                if (backup != null) {
-                    val partial = dir.findFile(name)
-                    check(partial == null || partial.delete()) { "could not remove incomplete $name" }
-                    check(backup.renameTo(name)) { "could not restore $name; complete export retained as ${backup.name}" }
+                rethrowAfterExportRollback(e) {
+                    tempFile.delete()
+                    // Promotion failed: drop any half-written final file and restore the previous export.
+                    if (backup != null) {
+                        val partial = dir.findFile(name)
+                        check(partial == null || partial.delete()) { "could not remove incomplete $name" }
+                        check(backup.renameTo(name)) { "could not restore $name; complete export retained as ${backup.name}" }
+                    }
                 }
-                throw e
             }
             // Promotion succeeded, so the previous export is superseded. Deleting it is
             // best-effort: a provider that refuses the delete must not cause us to discard a

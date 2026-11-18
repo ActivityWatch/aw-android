@@ -32,6 +32,15 @@ internal const val AUTO_EXPORT_WORK_NAME = "aw-auto-export"
 
 private val EXPORT_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
 
+private fun isExportDate(date: String): Boolean {
+    if (!EXPORT_DATE.matches(date)) return false
+    return try {
+        java.time.LocalDate.parse(date).year > 0
+    } catch (_: java.time.format.DateTimeParseException) {
+        false
+    }
+}
+
 internal fun autoExportFilePrefix(hostname: String): String = "aw-export-$hostname-"
 
 internal fun autoExportFilename(hostname: String, date: String): String =
@@ -62,7 +71,7 @@ internal fun exportsToPrune(existing: List<String>, hostname: String, keep: Int 
     val prefix = autoExportFilePrefix(hostname)
     val ours = existing.filter {
         it.startsWith(prefix) && it.endsWith(".json") &&
-            EXPORT_DATE.matches(it.removePrefix(prefix).removeSuffix(".json"))
+            isExportDate(it.removePrefix(prefix).removeSuffix(".json"))
     }.sorted()
     return ours.dropLast(keep.coerceAtLeast(1))
 }
@@ -83,7 +92,7 @@ internal fun tempExportsToClear(existing: List<String>, hostname: String): List<
             name.endsWith(".json.tmp") -> name.removePrefix(prefix).removeSuffix(".json.tmp")
             else -> return@filter false
         }
-        EXPORT_DATE.matches(date)
+        isExportDate(date)
     }
 }
 
@@ -101,10 +110,27 @@ internal fun recoverInterruptedExports(
             else -> return@forEach
         }
         if (final.startsWith(prefix) &&
-            EXPORT_DATE.matches(final.removePrefix(prefix).removeSuffix(".json"))) {
+            isExportDate(final.removePrefix(prefix).removeSuffix(".json"))) {
             check(restore(backup, final)) { "could not restore $backup" }
         }
     }
+}
+
+/** Check before downloading; preservation checks again immediately before rename. */
+internal fun checkExportBackupAvailable(name: String, exists: (String) -> Boolean) {
+    check(!exists("$name.bak") && !exists("$name.bak.json")) {
+        "could not preserve $name: stale backup still exists"
+    }
+}
+
+/** Roll back a failed export without hiding the original failure. */
+internal fun rethrowAfterExportRollback(failure: Exception, rollback: () -> Unit): Nothing {
+    try {
+        rollback()
+    } catch (cleanupFailure: Exception) {
+        if (cleanupFailure !== failure) failure.addSuppressed(cleanupFailure)
+    }
+    throw failure
 }
 
 /** Preserve today's completed export before promoting its replacement. */
@@ -115,9 +141,7 @@ internal fun preserveCompletedExport(
 ) {
     // Recovery may have kept a stale backup when its deletion failed. Do not let
     // a provider disambiguate a collision into a name recovery cannot recognize.
-    check(!exists("$name.bak") && !exists("$name.bak.json")) {
-        "could not preserve $name: stale backup still exists"
-    }
+    checkExportBackupAvailable(name, exists)
     check(rename("$name.bak")) { "could not preserve $name before replacement" }
 }
 
