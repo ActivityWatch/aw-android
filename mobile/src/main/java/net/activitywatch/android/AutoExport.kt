@@ -116,6 +116,26 @@ internal fun recoverInterruptedExports(
     }
 }
 
+/** Apply the keep-final policy separately from selecting recoverable backup names. */
+internal fun recoverExportBackup(
+    finalExists: Boolean,
+    discardBackup: () -> Unit,
+    restoreBackup: () -> Boolean,
+): Boolean {
+    if (finalExists) {
+        discardBackup()
+        return true
+    }
+    return restoreBackup()
+}
+
+/** Verify the provider used the requested completed filename. */
+internal fun checkExportPromotion(expectedName: String, actualName: String?) {
+    check(actualName == expectedName) {
+        "export folder did not promote to $expectedName (actual: $actualName)"
+    }
+}
+
 /** Check before downloading; preservation checks again immediately before rename. */
 internal fun checkExportBackupAvailable(name: String, exists: (String) -> Boolean) {
     check(!exists("$name.bak") && !exists("$name.bak.json")) {

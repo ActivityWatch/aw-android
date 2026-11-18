@@ -24,6 +24,8 @@ import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.exportsToPrune
 import net.activitywatch.android.preserveCompletedExport
 import net.activitywatch.android.recoverInterruptedExports
+import net.activitywatch.android.recoverExportBackup
+import net.activitywatch.android.checkExportPromotion
 import net.activitywatch.android.tempExportsToClear
 import net.activitywatch.android.stableExportKey
 import java.net.HttpURLConnection
@@ -62,7 +64,7 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val host = stableExportKey(applicationContext)
             recoverInterruptedExports(dir.listFiles().mapNotNull { it.name }, host) { backupName, finalName ->
                 val saved = dir.findFile(backupName) ?: error("missing $backupName")
-                if (dir.findFile(finalName) != null) {
+                recoverExportBackup(dir.findFile(finalName) != null, discardBackup = {
                     // Promotion is rename-only, so a final file beside a backup is a completed
                     // export, never a partial copy: the backup only survives here when a
                     // superseded copy could not be deleted (or a rollback could not remove it).
@@ -74,11 +76,10 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                     } catch (e: Exception) {
                         Log.w(TAG, "Could not remove stale backup ${saved.name}", e)
                     }
-                    true
-                } else {
+                }, restoreBackup = {
                     // Interrupted promotion: the completed export survives only as the backup.
                     saved.renameTo(finalName)
-                }
+                })
             }
             val name = autoExportFilename(host, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()))
             // Recovery may have been unable to delete a stale backup. Fail before
@@ -99,6 +100,7 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
             // Set aside today's earlier export (if any) instead of deleting it, so a failed
             // promotion never costs the last good backup.
             var backup: DocumentFile? = null
+            var promoted: DocumentFile? = null
             try {
                 download(tempFile)
                 currentCoroutineContext().ensureActive()
@@ -116,11 +118,15 @@ class AutoExportWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 }
                 // Never copy into the completed filename: process death could leave a partial
                 // export there without a backup to recover. Providers must support rename.
-                check(renamed != null) { "export folder does not support safe promotion by rename" }
+                // A rename can change the URI and a provider can disambiguate the name.
+                // Track the returned document for rollback before checking its display name.
+                promoted = renamed?.let { DocumentFile.fromSingleUri(applicationContext, it) }
+                checkExportPromotion(name, promoted?.name)
                 currentCoroutineContext().ensureActive()
             } catch (e: Exception) {
                 rethrowAfterExportRollback(e) {
-                    tempFile.delete()
+                    val incomplete = promoted ?: tempFile
+                    incomplete.delete()
                     // Promotion failed: drop any half-written final file and restore the previous export.
                     if (backup != null) {
                         val partial = dir.findFile(name)
