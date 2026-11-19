@@ -99,8 +99,12 @@ class SessionParser(private val context: Context) {
         sessionsSince: Long,
         unlocksSince: Long,
         storedSessionStart: Long? = null,
+        // Exclusive upper bound of the import window. Defaults to now for a single wide
+        // range; the pause exclusion passes each allowed sub-window's own end so a session
+        // is never assembled across a private interval.
+        until: Long = System.currentTimeMillis(),
     ): IngestBatch {
-        val currentTime = System.currentTimeMillis()
+        val currentTime = until
         val usageEvents = usageStatsManager.queryEvents(minOf(sessionsSince, unlocksSince), currentTime)
         val rawEvents = mutableListOf<UsageEvent>()
         val unlockTimestamps = mutableListOf<Long>()
@@ -304,8 +308,10 @@ internal const val MIN_SESSION_DURATION = 1000L // 1 second minimum
  * stored event (same start and data) instead of inserting a duplicate.
  *
  * [storedSessionStart] is the start of the session already stored (possibly while it was
- * still open). That session is capped at the maximum duration instead of being dropped:
- * dropping it would leave its earlier, shorter stored value in place for good.
+ * still open), or the start of its allowed segment after pause clipping. The session
+ * containing that cursor is capped at the maximum duration instead of being dropped:
+ * dropping it would leave its earlier, shorter stored value in place for good. The cap
+ * remains relative to the original RESUMED, not the clipped segment's start.
  */
 internal fun parseForegroundSessions(
     events: List<UsageEvent>,
@@ -322,7 +328,8 @@ internal fun parseForegroundSessions(
     fun closeSession(sessionEnd: Long) {
         val pkg = openPackage ?: return
         openPackage = null
-        val endTime = if (openStart == storedSessionStart) {
+        val endTime = if (storedSessionStart != null &&
+            storedSessionStart >= openStart && storedSessionStart < sessionEnd) {
             minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
         } else {
             sessionEnd

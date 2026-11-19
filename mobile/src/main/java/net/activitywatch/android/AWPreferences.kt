@@ -2,18 +2,79 @@ package net.activitywatch.android
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
+import android.util.Log
+import net.activitywatch.android.watcher.PauseIntervalStore
 
 class AWPreferences(context: Context) {
     private val sharedPreferences: SharedPreferences =
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     companion object {
+        // Live readers must not see a closed interval with the preceding generation.
+        // Shared across instances; interval-store operations never acquire this lock.
+        private val collectionTransitionLock = Any()
+        // Accessibility payload times use uptime. No callbacks survive process death;
+        // never interpret a persisted uptime from a previous boot as a boundary.
+        private var accessibilityBoundaryUptime = Long.MIN_VALUE
         const val PREFERENCES_NAME = "AWPreferences"
+        const val LIVE_COLLECTION_PAUSED = "liveCollectionPaused"
         const val LAST_SYNC_STATUS_CHANGED_ACTION =
             "net.activitywatch.android.LAST_SYNC_STATUS_CHANGED"
     }
 
     private val appContext = context.applicationContext
+
+    // The interval rename commits the state. The preference remains the migration fallback
+    // and listener notification, not a second authority after a process dies mid-transition.
+    fun isLiveCollectionPaused(): Boolean = synchronized(collectionTransitionLock) {
+        PauseIntervalStore(appContext).isPaused(
+            sharedPreferences.getBoolean(LIVE_COLLECTION_PAUSED, false)
+        )
+    }
+
+    fun setLiveCollectionPaused(paused: Boolean): Boolean = synchronized(collectionTransitionLock) {
+        // Record the history interval *before* flipping the flag: the usage importer
+        // subtracts these intervals from every import window, so the boundary is effective
+        // before any later import can observe the pause. Ordering is what keeps a session
+        // that is open at pause time from being persisted with an end inside the private
+        // window (heartbeat merge never shortens a stored event, so that could not be
+        // repaired afterwards).
+        val store = PauseIntervalStore(appContext)
+        val now = System.currentTimeMillis()
+        val persisted = if (paused) store.recordPause(now) else store.recordResume(now)
+        if (!persisted) {
+            // Flipping the flag without the interval would let the next import start the
+            // exclusion at a later time and store the interval since the user's pause.
+            // Fail closed: stay in the current state rather than report a pause that does
+            // not hold.
+            Log.e("AWPreferences", "Unable to persist the pause interval; not changing collection state")
+            return@synchronized false
+        }
+
+        accessibilityBoundaryUptime = SystemClock.uptimeMillis()
+        sharedPreferences.edit()
+            .putBoolean(LIVE_COLLECTION_PAUSED, paused)
+            .putLong("liveCollectionGeneration", liveCollectionGeneration() + 1L)
+            .apply()
+        true
+    }
+
+    fun acceptsAccessibilityEvent(eventUptime: Long): Boolean = synchronized(collectionTransitionLock) {
+        !isLiveCollectionPaused() && eventUptime > accessibilityBoundaryUptime
+    }
+
+    fun liveCollectionGeneration(): Long = synchronized(collectionTransitionLock) {
+        sharedPreferences.getLong("liveCollectionGeneration", 0L)
+    }
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
+    }
 
     // To check if it is the first time the app is being run
     // Set to false when user finishes onboarding

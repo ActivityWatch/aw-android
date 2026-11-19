@@ -89,7 +89,9 @@ class FailedEventReadTest {
         assertEquals(0, watcher.processEventsSinceLastUpdate())
         assertEquals(null, watcher.lastUpdated)
         assertEquals(listOf(SESSION_BUCKET_ID, UNLOCK_BUCKET_ID), Datastore.reads)
-        assertEquals(1, UsageSource.queries)
+        // Session and unlock history replay independently so a partial import cannot
+        // advance one bucket's cursor past records still pending in the other.
+        assertEquals(2, UsageSource.queries)
     }
 
     private fun runLegacyBatch(watcher: UsageStatsWatcher): Int? {
