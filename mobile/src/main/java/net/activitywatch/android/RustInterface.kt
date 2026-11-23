@@ -15,6 +15,21 @@ import org.threeten.bp.Instant
 
 private const val TAG = "RustInterface"
 
+/**
+ * Point Rust and SQLite at the app cache directory before loading libaw_server.
+ *
+ * SQLITE_TMPDIR covers SQLite's own temp files. TMPDIR covers Rust's
+ * std::env::temp_dir() / tempfile crate. On Android 12 and earlier those
+ * fall back to /data/local/tmp, which a regular app cannot write; JSON
+ * export then reports success with an empty file (ActivityWatch/aw-android#397).
+ * Android 13+ already uses the app cache dir when TMPDIR is unset.
+ */
+internal fun configureNativeTempDirs(context: Context) {
+    val appTempDir = context.cacheDir.absolutePath
+    Os.setenv("TMPDIR", appTempDir, true)
+    Os.setenv("SQLITE_TMPDIR", appTempDir, true)
+}
+
 internal enum class PortProbe {
     FREE,
     IN_USE,
@@ -109,7 +124,7 @@ class RustInterface(context: Context? = null) {
         Os.setenv("RUST_BACKTRACE", "1", true)
 
         if (context != null) {
-            Os.setenv("SQLITE_TMPDIR", context.cacheDir.absolutePath, true)
+            configureNativeTempDirs(context)
         }
 
         System.loadLibrary("aw_server")
