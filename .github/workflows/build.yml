@@ -380,17 +380,26 @@ jobs:
     # Central 429 there fails every Robolectric test class
     # (`AssertionError at MavenArtifactFetcher.java:129`, e.g. master run
     # 45224529370 and PR run 45427549886). Cache the downloaded jars.
-    - name: Cache Robolectric SDK jars
-      uses: actions/cache@v4
+    - name: Restore Robolectric SDK jars
+      id: robolectric-cache
+      uses: actions/cache/restore@v4
       with:
         path: ~/.m2/repository/org/robolectric
-        key: robolectric-${{ hashFiles('mobile/build.gradle') }}
+        key: robolectric-${{ hashFiles('mobile/build.gradle', 'mobile/src/test/**') }}
         restore-keys: robolectric-
 
     # Test
     - name: Test
       run: |
         make test
+
+    # Save successful SDK downloads before the independent R8 build can fail.
+    - name: Save Robolectric SDK jars
+      if: steps.robolectric-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: ${{ steps.robolectric-cache.outputs.cache-primary-key }}
 
     # R8 runs only for the release build type (#268), and the Makefile builds
     # `debug` unless RELEASE is set — so a broken keep rule or a missing-class
