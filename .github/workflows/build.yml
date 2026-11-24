@@ -330,11 +330,16 @@ jobs:
         python3 scripts/user-facing-changelog.py --self-test
         python3 scripts/check-production-rollout.py --self-test
 
+    # Cache Gradle dependencies: without it every run fetches the whole test
+    # classpath from Maven Central, which rate-limits GitHub-hosted runners
+    # (HTTP 429 on robolectric nativeruntime-dist-compat in runs 45189400898
+    # and 45352722774), failing the job before any test runs.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+        cache: 'gradle'
 
     # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
     - name: Set up Android SDK
