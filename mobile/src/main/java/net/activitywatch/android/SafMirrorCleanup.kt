@@ -27,10 +27,15 @@ internal object SafMirrorCleanup {
     }
 
     /** Reserve exact names before assigning case-only fallbacks, independent of copy order. */
-    fun matchChildren(sources: Collection<String>, destinations: Collection<String>): Map<String, String> {
+    fun matchChildren(
+        sources: Collection<String>,
+        destinations: Collection<String>,
+        destinationDirectories: Collection<String> = destinations,
+        sourceDirectories: Collection<String> = sources,
+    ): Map<String, String> {
         val matches = sources.filter { it in destinations }.associateWith { it }.toMutableMap()
-        val available = destinations.toMutableSet().apply { removeAll(matches.values.toSet()) }
-        for (source in sources.filterNot { it in matches }.sorted()) {
+        val available = destinationDirectories.toMutableSet().apply { removeAll(matches.values.toSet()) }
+        for (source in sourceDirectories.filterNot { it in matches }.sorted()) {
             val match = matchChildName(available, source) ?: continue
             matches[source] = match
             available.remove(match)

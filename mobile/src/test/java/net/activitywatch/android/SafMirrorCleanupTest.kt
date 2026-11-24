@@ -98,6 +98,45 @@ class SafMirrorCleanupTest {
     }
 
     @Test
+    fun matchChildren_doesNotUseFilesAsCaseOnlyDirectoryMatches() {
+        assertEquals(
+            emptyMap<String, String>(),
+            SafMirrorCleanup.matchChildren(
+                listOf("pixel8"), listOf("PIXEL8"), emptySet(),
+            ),
+        )
+        // Exact conflicts remain reserved and are rejected by the mirror.
+        assertEquals(
+            mapOf("pixel8" to "pixel8"),
+            SafMirrorCleanup.matchChildren(
+                listOf("pixel8"), listOf("pixel8", "PIXEL8"), setOf("PIXEL8"),
+            ),
+        )
+        assertEquals(
+            mapOf("pixel8" to "PIXEL8"),
+            SafMirrorCleanup.matchChildren(
+                listOf("pixel8"), listOf("PIXEL8"), setOf("PIXEL8"),
+            ),
+        )
+    }
+
+    @Test
+    fun matchChildren_reservesExactFilesBeforeDirectoryFallbacks() {
+        assertEquals(
+            mapOf("PIXEL8" to "PIXEL8"),
+            SafMirrorCleanup.matchChildren(
+                listOf("pixel8", "PIXEL8"), listOf("PIXEL8"), setOf("PIXEL8"), setOf("pixel8"),
+            ),
+        )
+        assertEquals(
+            emptyMap<String, String>(),
+            SafMirrorCleanup.matchChildren(
+                listOf("pixel8"), listOf("PIXEL8"), setOf("PIXEL8"), emptySet(),
+            ),
+        )
+    }
+
+    @Test
     fun staleSafHostnames_keepsOnlyActualMirrorDestination() {
         // When both case variants exist, only the one actually written is protected.
         assertEquals(
