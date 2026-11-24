@@ -321,6 +321,16 @@ internal fun parseForegroundSessions(
     // Activities of the open app that have resumed and not yet paused. An app can
     // resume its next activity before the previous one pauses; that earlier PAUSE
     // must not end the session while the newer activity is still in front.
+    //
+    // Entries are class names, because the public UsageEvents API exposes no
+    // per-instance id. Two instances of the same class (e.g. two windows of one
+    // activity) share an entry, so the first one's PAUSE ends the session. That is
+    // the same as before this set existed. If an activity's PAUSE never arrives,
+    // its stale entry keeps the session open only until another app resumes or the
+    // screen turns off, which still close it unconditionally. ACTIVITY_STOPPED is
+    // deliberately not used to clear entries. Android stops the old activity after
+    // the new one resumes, so a STOPPED for an older instance of a class would
+    // close a session that a newer instance of the same class has just opened.
     val resumedActivities = mutableSetOf<String>()
 
     fun closeSession(sessionEnd: Long) {

@@ -109,4 +109,24 @@ class ForegroundSessionsTest {
         )
         assertEquals(listOf(Triple("chat", 0L, 10 * 60_000L)), sessions)
     }
+
+    @Test
+    fun missingPauseOfEarlierActivityIsBoundedByTheNextAppResuming() {
+        fun activity(type: Int, time: Long, pkg: String, cls: String) = UsageEvent(type, time, pkg, cls)
+        val sessions = parse(
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat", "chat.Main"),
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 30_000L, "chat", "chat.Conversation"),
+            // chat.Main's PAUSE never arrives, so its entry stays after Conversation pauses.
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 10 * 60_000L, "chat", "chat.Conversation"),
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 10 * 60_000L + 500L, "launcher", "launcher.Home"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 11 * 60_000L, "launcher", "launcher.Home"),
+        )
+        assertEquals(
+            listOf(
+                Triple("chat", 0L, 10 * 60_000L + 500L),
+                Triple("launcher", 10 * 60_000L + 500L, 11 * 60_000L),
+            ),
+            sessions,
+        )
+    }
 }
