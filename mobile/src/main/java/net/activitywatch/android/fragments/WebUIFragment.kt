@@ -1067,7 +1067,7 @@ class WebUIFragment : Fragment() {
 
 internal fun writeExport(context: Context, uri: Uri, source: File): Boolean {
     return try {
-        context.contentResolver.openOutputStream(uri)?.use { out ->
+        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
             source.inputStream().use { input -> input.copyTo(out) }
             out.flush()
         } != null
