@@ -168,13 +168,21 @@ class DashboardThemePaintTest {
                 // A failed stylesheet still reveals the readable light page.
                 stylesheetMissing.set(true)
                 evaluate(webView, "window.__previousDocument = true; location.reload()")
-                await {
-                    var visible = false
-                    scenario.onActivity { visible = webView.visibility == View.VISIBLE }
-                    visible && evaluate(
-                        webView,
-                        "!window.__previousDocument && !!document.getElementById('wrapper')",
-                    ) == "true"
+                try {
+                    await {
+                        var visible = false
+                        scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                        visible && evaluate(
+                            webView,
+                            "!window.__previousDocument && !!document.getElementById('wrapper')",
+                        ) == "true"
+                    }
+                } catch (e: AssertionError) {
+                    // This step times out intermittently in CI (aw-android#332).
+                    // Report what the theme hook saw so the failure names its cause.
+                    throw AssertionError(
+                        "${e.message}; stylesheet state: ${evaluate(webView, STYLESHEET_STATE_JS)}", e
+                    )
                 }
                 assertEquals(
                     "\"rgb(247, 250, 252)\"",
@@ -298,6 +306,26 @@ class DashboardThemePaintTest {
     }
 
     private companion object {
+        val STYLESHEET_STATE_JS = """
+            (function () {
+              var l = document.querySelector('link[href*="dark.css"]');
+              var e = l ? performance.getEntriesByName(l.href, 'resource') : [];
+              return JSON.stringify({
+                readyState: document.readyState,
+                previousDocument: !!window.__previousDocument,
+                wrapper: !!document.getElementById('wrapper'),
+                link: !!l,
+                presentAtHookInstall: !!(l && l.__awPresentAtHookInstall),
+                watched: !!(l && l.__awWatched),
+                settledFlag: !!(l && l.__awSettled),
+                sheet: !!(l && l.sheet),
+                timingEntries: e.length,
+                responseEnd: e.length ? e[e.length - 1].responseEnd : null,
+                themeState: typeof window.__awAndroidThemeState === 'function'
+                  ? window.__awAndroidThemeState() : null
+              });
+            })()
+        """.trimIndent()
         // The link is appended while the document is still parsing, so its 404
         // error fires before the load event (and therefore before the hook is
         // injected from onPageFinished).
