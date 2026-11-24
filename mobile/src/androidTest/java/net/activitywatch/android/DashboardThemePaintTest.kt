@@ -170,8 +170,28 @@ class DashboardThemePaintTest {
                 // DIAGNOSTIC ONLY (aw-android#332): the race below loses about one
                 // run in three, so a single pass rarely shows it. Repeat the 404
                 // reload so one CI run almost surely reports the failing state.
+                // Every attempt after the first replays the step that
+                // precedes it in the real sequence (a held, then released,
+                // dark.css reload), so each attempt matches the precondition
+                // of the CI failures, not just the first.
                 // Drop the repeat (back to one pass) before this PR leaves draft.
                 repeat(DIAG_404_REPEATS) { attempt ->
+                    if (attempt > 0) {
+                        stylesheetMissing.set(false)
+                        val requestsBefore = stylesheetRequests.get()
+                        releaseStylesheet.set(CountDownLatch(1))
+                        evaluate(webView, "location.reload()")
+                        await("held dark.css, attempt ${attempt + 1}") {
+                            stylesheetRequests.get() == requestsBefore + 1
+                        }
+                        releaseStylesheet.get().countDown()
+                        await("dark reveal, attempt ${attempt + 1}") {
+                            var visible = false
+                            scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                            visible
+                        }
+                        stylesheetMissing.set(true)
+                    }
                     evaluate(webView, "window.__previousDocument = true; location.reload()")
                     try {
                         await {
@@ -217,6 +237,7 @@ class DashboardThemePaintTest {
                 // paint the light base styles first.
                 stylesheetMissing.set(false)
                 themeSettleFailsafeMs = 1_000
+                val requestsBeforeSlowDashboard = stylesheetRequests.get()
                 releaseStylesheet.set(CountDownLatch(1))
                 evaluate(webView, "location.href = '$url'")
                 // Wait until the WebView has actually navigated to `/` before
@@ -243,7 +264,7 @@ class DashboardThemePaintTest {
                     )
                 }
                 await("held dark.css after dashboard navigation") {
-                    stylesheetRequests.get() >= 3
+                    stylesheetRequests.get() > requestsBeforeSlowDashboard
                 }
                 await("dashboard document complete") {
                     evaluate(webView, "document.readyState") == "\"complete\""
