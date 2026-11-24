@@ -365,7 +365,8 @@ class SanitizedHostnameMigrationTest {
 
     @Test
     fun migrate_doesNotOverwriteTargetWhenRecoveringInterruptedRename() {
-        val sync = kotlin.io.path.createTempDirectory("aw-sync-conflict").toFile()
+        val root = kotlin.io.path.createTempDirectory("aw-sync-conflict").toFile()
+        val sync = File(root, "sync").apply { mkdir() }
         try {
             recordPendingRename(sync)
             val pending = File(sync, ".aw-rename-test/dev-1/sync.db")
@@ -382,7 +383,7 @@ class SanitizedHostnameMigrationTest {
             assertEquals("pending", pending.readText())
             assertEquals("target", target.readText())
         } finally {
-            sync.deleteRecursively()
+            root.deleteRecursively()
         }
     }
 

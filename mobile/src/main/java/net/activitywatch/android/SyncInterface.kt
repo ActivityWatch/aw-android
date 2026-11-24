@@ -593,13 +593,10 @@ class SyncInterface(context: Context) {
                         }
                     ) {
                         Log.w(TAG, "SAF cannot represent distinct directory ${entry.name}")
-                        // Only remove an empty, newly returned directory with a
-                        // fresh identity. Never delete an alias of existing data.
-                        discardRejectedSafDirectory(
-                            subDir,
-                            created = existing == null,
-                            knownUris = (destEntries.values + mirroredDirs.values).map { it.uri }.toSet(),
-                        )
+                        // SAF has no atomic delete-if-empty operation. A peer can
+                        // populate even a fresh directory after we list it, and
+                        // DocumentFile.delete() may recursively delete its files.
+                        // Leave rejected directories rather than risk peer data.
                         counts[1]++
                         continue
                     }
@@ -789,16 +786,6 @@ internal fun mirroredHostnameName(
     hostname: String,
     isSameLocalDirectory: (String) -> Boolean,
 ): String? = if (hostname in listed) hostname else listed.singleOrNull(isSameLocalDirectory)
-
-internal fun discardRejectedSafDirectory(
-    directory: DocumentFile,
-    created: Boolean,
-    knownUris: Set<Uri>,
-) {
-    if (created && directory.uri !in knownUris && directory.listFiles().isEmpty()) {
-        if (!directory.delete()) Log.w(TAG, "Could not remove rejected SAF directory")
-    }
-}
 
 private const val SAF_MIRROR_MANIFEST = "saf_mirror_manifest.json"
 
