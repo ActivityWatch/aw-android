@@ -50,6 +50,10 @@ class WebWatcherTest {
         WebPage("https://w3.org", "W3C"),
     )
 
+    // Visited after typing into the focused address bar. The watcher writes events on one
+    // thread in order, so once this visit is stored, any event for the typed text is too.
+    private val afterFocusPage = WebPage("https://iana.org", "Internet Assigned Numbers Authority")
+
     @Test
     fun registerWebActivities() {
         val ri = RustInterface(context)
@@ -64,9 +68,11 @@ class WebWatcherTest {
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
             val focusedText = if (browser == "com.brave.browser") typeInFocusedBraveBar() else null
+            if (focusedText != null) openUris(uris = listOf(afterFocusPage.url), browser = browser)
             openHome() // to commit last event
 
-            val matchers = testWebPages.map { it.toMatcher(browser) }
+            val expectedPages = if (focusedText != null) testWebPages + afterFocusPage else testWebPages
+            val matchers = expectedPages.map { it.toMatcher(browser) }
 
             await("expected events for: $browser").atMost(MAX_CONDITION_WAIT_TIME_MILLIS, MILLISECONDS).until {
                 val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
