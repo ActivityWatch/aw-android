@@ -22,7 +22,4 @@ internal fun logicalDayWindow(
     startOfDay: LocalTime,
     zone: ZoneId,
 ): Pair<ZonedDateTime, ZonedDateTime> =
-    date.atStartOfDay(zone)
-        .plusHours(startOfDay.hour.toLong())
-        .plusMinutes(startOfDay.minute.toLong())
-        .let { start -> start to start.plusDays(1) }
+    date.atTime(startOfDay).atZone(zone) to date.plusDays(1).atTime(startOfDay).atZone(zone)
