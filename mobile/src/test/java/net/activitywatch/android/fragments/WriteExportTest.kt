@@ -1,5 +1,6 @@
 package net.activitywatch.android.fragments
 
+import android.app.Application
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
@@ -12,6 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -20,6 +22,7 @@ import java.io.File
  * The export must ask for "wt", as the SAF mirror already does.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28], application = Application::class)
 class WriteExportTest {
     class RecordingProvider : ContentProvider() {
         override fun onCreate() = true
