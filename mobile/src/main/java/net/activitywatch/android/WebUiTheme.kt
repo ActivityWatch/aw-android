@@ -123,10 +123,6 @@ internal val ANDROID_THEME_HOOK_JS = """
       // PerformanceResourceTiming's responseEnd distinguishes the two cases:
       // > 0 means the response was received before the hook; treat a null
       // sheet as "failed" and reveal the readable fallback now.
-      // A fast failure (an empty 404) can also leave an empty sheet and no
-      // timing entry on older WebViews (aw-android#332). A link only gets a
-      // sheet once its load has finished, so an empty sheet here is settled.
-      if (link.sheet) return true;
       try {
         var entries = performance.getEntriesByName(link.href, 'resource');
         if (entries.length > 0 && entries[entries.length - 1].responseEnd > 0) {
