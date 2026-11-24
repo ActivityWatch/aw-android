@@ -84,7 +84,14 @@ class AuthSettingsActivity : AppCompatActivity() {
 
         btnRegenerate.setOnClickListener {
             lifecycleScope.launch {
-                val newKey = withContext(Dispatchers.IO) { configManager.generateAndSetApiKey() }
+                // A new key also re-enables auth: the server enforces whatever key is in
+                // config.toml, so the preference must agree or the dashboard loads
+                // without a token after restart.
+                val newKey = withContext(Dispatchers.IO) {
+                    val key = configManager.generateAndSetApiKey()
+                    if (key != null) AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(true)
+                    key
+                }
                 if (newKey == null) {
                     scheduleRefreshUI()
                     Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
