@@ -170,33 +170,36 @@ class BackgroundService : Service() {
         // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
         // Watcher-bucket migration must follow hostname migration so IDs are stable first.
-        val needsHostnameMigration = !prefs.hasMigratedHostname()
-        val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
-        val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
-        if ((needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) &&
-            !migrationsQueued) {
-            migrationsQueued = true
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val ri = awaitRustInterface() ?: return@launch
-                    if (needsHostnameMigration) {
-                        val hostname = ri.getDeviceName(this@BackgroundService)
-                        val result = ri.migrateHostname(hostname)
-                        Log.i(TAG, "Hostname migration result: $result")
-                        if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
-                            prefs.setHostnameMigrated()
+        // Check the flag before reading prefs: a run clears it only after recording its
+        // successes, so a step it just finished is not read as pending and rerun.
+        if (!migrationsQueued) {
+            val needsHostnameMigration = !prefs.hasMigratedHostname()
+            val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
+            val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
+            if (needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) {
+                migrationsQueued = true
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val ri = awaitRustInterface() ?: return@launch
+                        if (needsHostnameMigration) {
+                            val hostname = ri.getDeviceName(this@BackgroundService)
+                            val result = ri.migrateHostname(hostname)
+                            Log.i(TAG, "Hostname migration result: $result")
+                            if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
+                                prefs.setHostnameMigrated()
+                            }
                         }
+                        if (needsWatcherBucketMigration) {
+                            migrateWatcherAndroidTestBuckets(prefs, ri)
+                        }
+                        if (needsNotifyOptInMigration) {
+                            migrateNotifyOptIn(prefs, ri)
+                        }
+                    } finally {
+                        // Success is recorded in prefs, so a retry reruns only the failed steps.
+                        // Without this, one failure kept NotifyWorker gated until the service was recreated.
+                        migrationsQueued = false
                     }
-                    if (needsWatcherBucketMigration) {
-                        migrateWatcherAndroidTestBuckets(prefs, ri)
-                    }
-                    if (needsNotifyOptInMigration) {
-                        migrateNotifyOptIn(prefs, ri)
-                    }
-                } finally {
-                    // Success is recorded in prefs, so a retry reruns only the failed steps.
-                    // Without this, one failure kept NotifyWorker gated until the service was recreated.
-                    migrationsQueued = false
                 }
             }
         }
