@@ -141,23 +141,23 @@ object CategoryTimeWidgetUpdater {
                     Log.e(TAG, "Could not hide the loading indicator on widget $appWidgetId", e)
                 }
             }
-        } else if (isSuperseded()) {
-            Log.d(TAG, "A later widget update rendered data; skipping the stale fallback")
         } else {
-            renderFallback(context, appWidgetManager, appWidgetIds)
+            renderFallback(context, appWidgetManager, appWidgetIds, isSuperseded)
         }
     }
 
     /**
      * Render the "no data yet" state. Does no datastore access, so it is safe to call when
-     * the datastore is the problem.
+     * the datastore is the problem. [isSuperseded] is checked before each widget write, so a
+     * fallback that stalls between widgets stops once a later pass has rendered data.
      */
     fun renderFallback(
         context: Context,
         appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray
+        appWidgetIds: IntArray,
+        isSuperseded: () -> Boolean = { false },
     ) {
-        render(context, appWidgetManager, appWidgetIds, null)
+        render(context, appWidgetManager, appWidgetIds, null, isSuperseded)
     }
 
     private fun loadData(context: Context): WidgetData {
@@ -179,7 +179,8 @@ object CategoryTimeWidgetUpdater {
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
-        data: WidgetData?
+        data: WidgetData?,
+        isSuperseded: () -> Boolean = { false },
     ) {
         if (appWidgetIds.isEmpty()) return
         val views = try {
@@ -189,6 +190,10 @@ object CategoryTimeWidgetUpdater {
             return
         }
         for (appWidgetId in appWidgetIds) {
+            if (isSuperseded()) {
+                Log.d(TAG, "A later widget update rendered data; skipping the stale fallback")
+                return
+            }
             try {
                 appWidgetManager.updateAppWidget(appWidgetId, views)
                 Log.d(TAG, "Widget $appWidgetId updated (${if (data == null) "no data" else "${data.categories.size} categories"})")

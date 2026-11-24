@@ -79,7 +79,8 @@ internal object AsyncBroadcast {
      */
     class Fallback internal constructor(private val successesAtFailure: Long) {
         /**
-         * True once any broadcast's work has succeeded since this failure. A fallback must
+         * True once any broadcast's work has succeeded since this broadcast submitted its work
+         * (a later pass's render is newer than this fallback). A fallback must
          * check this right before rendering, so it does not overwrite newer data.
          */
         val isSuperseded: Boolean get() = AsyncBroadcast.successes.get() != successesAtFailure
@@ -120,6 +121,9 @@ internal object AsyncBroadcast {
         val once = FinishOnce(finish, log)
         return scope.launch {
             try {
+                // Snapshot before submitting: a pass queued after this one can finish before
+                // this coroutine resumes from a failure, and must still supersede its fallback.
+                val successesAtStart = successes.get()
                 val failure: Throwable? = try {
                     val pending = work()
                     // Overrunning work still renders when it completes, so count it then.
@@ -131,7 +135,7 @@ internal object AsyncBroadcast {
                 }
                 if (failure != null) {
                     log("Widget broadcast work failed", failure)
-                    val scopeForFallback = Fallback(successes.get())
+                    val scopeForFallback = Fallback(successesAtStart)
                     if (fallbackRunning.compareAndSet(false, true)) {
                         val fallback = detached(workDispatcher) {
                             try {
