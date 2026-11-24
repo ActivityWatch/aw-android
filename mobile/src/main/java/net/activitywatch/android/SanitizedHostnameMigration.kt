@@ -163,7 +163,11 @@ object SanitizedHostnameMigration {
                         renameDir(File(syncDir, action.from), File(syncDir, action.to))
                     is FolderAction.MoveDeviceDir -> {
                         val destHost = File(syncDir, action.toHostname)
-                        if (!destHost.exists() && !destHost.mkdirs()) {
+                        if (isCaseFoldedSameDir(syncDir, action.fromHostname, action.toHostname)) {
+                            // Case-insensitive storage: the legacy dir already is the
+                            // current hostname dir, so the device dir is in place (#402).
+                            true
+                        } else if (!destHost.exists() && !destHost.mkdirs()) {
                             warn("Could not create ${destHost.path}")
                             false
                         } else {
@@ -319,8 +323,49 @@ object SanitizedHostnameMigration {
         }
     }
 
+    /**
+     * True when [to] "exists" only because the filesystem folds case: the names
+     * differ only in case and the parent holds no entry named exactly [to].
+     * Android external storage is case-insensitive, so `PIXEL8` -> `pixel8`
+     * (ActivityWatch/aw-android#402) sees its own source as the target.
+     */
+    internal fun isCaseFoldedSameDir(parent: File, from: String, to: String): Boolean {
+        if (from == to || !from.equals(to, ignoreCase = true)) return false
+        if (!File(parent, to).exists()) return false
+        val names = parent.list() ?: return false
+        return to !in names
+    }
+
+    /**
+     * Rename via a temporary name so a case-only rename also applies on
+     * case-insensitive storage, where a direct rename is a no-op or refused.
+     * If the second step fails, the first is undone.
+     */
+    internal fun renameCaseOnly(from: File, to: File): Boolean {
+        val parent = from.parentFile ?: return false
+        val tmp = File(parent, ".${to.name}.aw-rename")
+        if (tmp.exists()) {
+            warn("Refusing case-only rename of ${from.path}; ${tmp.path} exists")
+            return false
+        }
+        if (!from.renameTo(tmp)) {
+            warn("renameTo failed for ${from.path} → ${tmp.path}")
+            return false
+        }
+        if (tmp.renameTo(to)) return true
+        warn("renameTo failed for ${tmp.path} → ${to.path}; restoring ${from.name}")
+        if (!tmp.renameTo(from)) warn("Could not restore ${tmp.path} → ${from.path}")
+        return false
+    }
+
     private fun renameDir(from: File, to: File): Boolean {
         if (!from.exists()) return false
+        val parent = from.parentFile
+        if (parent != null && parent == to.parentFile &&
+            isCaseFoldedSameDir(parent, from.name, to.name)
+        ) {
+            return renameCaseOnly(from, to)
+        }
         if (to.exists()) {
             warn("Refusing to rename ${from.path} onto existing ${to.path}")
             return false

@@ -552,7 +552,14 @@ class SyncInterface(context: Context) {
                 if (entry.isDirectory) {
                     // Reuse an existing subdirectory if present; otherwise create it. A
                     // non-directory of the same name cannot be mirrored into.
-                    val existing = destEntries[entry.name]
+                    // Fall back to a case-only variant: case-insensitive
+                    // storage would otherwise uniquify the new name (#402).
+                    val existing =
+                        destEntries[entry.name]
+                            ?: SafMirrorCleanup.matchChildName(
+                                destEntries.filterValues { it.isDirectory }.keys.filterNotNull(),
+                                entry.name,
+                            )?.let { destEntries[it] }
                     val subDir = when {
                         existing != null && existing.isDirectory -> existing
                         existing != null -> {
@@ -676,7 +683,7 @@ class SyncInterface(context: Context) {
                 ?: throw IOException("Could not list local own-device sync directory")
         val localFileNames = localEntries.filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
 
-        val safHostnameDir = safDir.findFile(hostname)?.takeIf { it.isDirectory } ?: return
+        val safHostnameDir = findChildDir(safDir, hostname) ?: return
         val safDeviceDir = safHostnameDir.findFile(deviceId)?.takeIf { it.isDirectory } ?: return
         if (cancelRequested) throw IOException("SAF mirror cancelled")
         val safFiles =
@@ -703,7 +710,7 @@ class SyncInterface(context: Context) {
                 android.os.Build.MODEL,
             )
         val deviceId = localDeviceId()
-        for (name in legacy) {
+        for (name in SafMirrorCleanup.staleSafHostnames(legacy, current)) {
             val stale = safDir.findFile(name) ?: continue
             if (!stale.isDirectory) continue
             val removed =
@@ -728,6 +735,12 @@ class SyncInterface(context: Context) {
                 Log.w(TAG, "Could not remove stale SAF hostname dir '$name'")
             }
         }
+    }
+
+    private fun findChildDir(parent: DocumentFile, name: String): DocumentFile? {
+        val dirs = parent.listFiles().filter { it.isDirectory && it.name != null }
+        val match = SafMirrorCleanup.matchChildName(dirs.map { it.name!! }, name) ?: return null
+        return dirs.firstOrNull { it.name == match }
     }
 
     private fun deleteDocumentRecursively(doc: DocumentFile): Boolean {

@@ -50,4 +50,31 @@ class SafMirrorCleanupTest {
             ),
         )
     }
+
+    @Test
+    fun matchChildName_prefersExactName() {
+        assertEquals("pixel8", SafMirrorCleanup.matchChildName(listOf("PIXEL8", "pixel8"), "pixel8"))
+    }
+
+    @Test
+    fun matchChildName_reusesCaseOnlyVariant() {
+        // #402: SAF still holds PIXEL8/ after the local dir became pixel8/.
+        assertEquals("PIXEL8", SafMirrorCleanup.matchChildName(listOf("PIXEL8", "other"), "pixel8"))
+    }
+
+    @Test
+    fun matchChildName_refusesAmbiguousOrMissing() {
+        assertEquals(null, SafMirrorCleanup.matchChildName(listOf("PIXEL8", "Pixel8"), "pixel8"))
+        assertEquals(null, SafMirrorCleanup.matchChildName(listOf("other"), "pixel8"))
+    }
+
+    @Test
+    fun staleSafHostnames_keepsCaseOnlyVariantOfCurrent() {
+        // Deleting PIXEL8/ on case-insensitive storage deletes this device's mirror.
+        assertEquals(
+            listOf("Pixel 8", "unknown"),
+            SafMirrorCleanup.staleSafHostnames(listOf("PIXEL8", "Pixel 8", "unknown"), "pixel8"),
+        )
+    }
 }
+

@@ -324,4 +324,37 @@ class SanitizedHostnameMigrationTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun renameCaseOnly_movesContentsViaTemporaryName() {
+        val sync = kotlin.io.path.createTempDirectory("aw-sync-case").toFile()
+        try {
+            val from = File(sync, "PIXEL8")
+            File(from, "dev-1").mkdirs()
+            File(File(from, "dev-1"), "sync.db").writeText("data")
+
+            assertTrue(SanitizedHostnameMigration.renameCaseOnly(from, File(sync, "pixel8")))
+
+            assertEquals(listOf("pixel8"), sync.list()!!.toList())
+            assertEquals("data", File(sync, "pixel8/dev-1/sync.db").readText())
+        } finally {
+            sync.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun isCaseFoldedSameDir_falseWhenBothCaseVariantsReallyExist() {
+        val sync = kotlin.io.path.createTempDirectory("aw-sync-case").toFile()
+        try {
+            File(sync, "PIXEL8").mkdirs()
+            File(sync, "pixel8").mkdirs()
+            // Case-sensitive storage with two real dirs: not the same dir.
+            assertFalse(SanitizedHostnameMigration.isCaseFoldedSameDir(sync, "PIXEL8", "pixel8"))
+            assertFalse(SanitizedHostnameMigration.isCaseFoldedSameDir(sync, "PIXEL8", "PIXEL8"))
+            assertFalse(SanitizedHostnameMigration.isCaseFoldedSameDir(sync, "PIXEL8", "other"))
+        } finally {
+            sync.deleteRecursively()
+        }
+    }
 }
+
