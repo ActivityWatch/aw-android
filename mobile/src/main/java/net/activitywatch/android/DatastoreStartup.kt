@@ -24,19 +24,26 @@ private const val TAG = "DatastoreStartup"
  */
 internal object DatastoreStartup {
     private val ready = CountDownLatch(1)
+    @Volatile private var captureFailure: Exception? = null
 
     fun start(context: Context) {
         val appContext = context.applicationContext
-        val prefs = AWPreferences(appContext)
-        captureExistingData(appContext, prefs)
-        val current = deviceHostname(appContext)
-        if (prefs.sanitizedHostnameMigratedTo() == current) {
-            ready.countDown()
-            return
-        }
         thread(name = "hostname-rewrite") {
             try {
-                rewriteBucketHostnames(appContext, prefs, current)
+                val prefs = AWPreferences(appContext)
+                try {
+                    captureExistingData(appContext, prefs)
+                } catch (e: Exception) {
+                    // Do not open/create a DB if the write-once signal isn't durable.
+                    // Wake waiters with an error rather than leaving them blocked forever.
+                    captureFailure = e
+                    Log.e(TAG, "Could not persist the notify restore signal", e)
+                    return@thread
+                }
+                val current = deviceHostname(appContext)
+                if (prefs.sanitizedHostnameMigratedTo() != current) {
+                    rewriteBucketHostnames(appContext, prefs, current)
+                }
             } catch (e: Exception) {
                 // The preference stays unset, so the next process start retries.
                 Log.e(TAG, "Bucket hostname rewrite failed", e)
@@ -51,12 +58,17 @@ internal object DatastoreStartup {
      * would let the datastore open while Android SQLite still has sqlite.db, which is the
      * crash this exists to prevent. The rewrite is one small UPDATE that only runs after a
      * hostname change, and RustInterface should not be constructed on the main thread.
+     * Throws if the notify restore signal could not be saved: opening a new datastore in
+     * that case would corrupt the signal on the next process start.
      */
     fun awaitReady() {
         if (ready.count > 0 && OffThreadInit.isAndroidMainThread()) {
             Log.w(TAG, "Main thread waiting for the bucket hostname rewrite")
         }
         ready.await()
+        captureFailure?.let {
+            throw IllegalStateException("Datastore startup could not persist the notify restore signal", it)
+        }
     }
 
     /**
@@ -69,9 +81,11 @@ internal object DatastoreStartup {
      * anything opens the datastore and is never re-derived, so a retried migration cannot
      * mistake the data this install wrote for restored data.
      */
-    private fun captureExistingData(context: Context, prefs: AWPreferences) {
+    internal fun captureExistingData(context: Context, prefs: AWPreferences) {
         if (prefs.hasMigratedNotifyOptIn() || prefs.notifyOptInExistingData() != null) return
-        prefs.setNotifyOptInExistingData(existingDataSignal(File(context.filesDir, "sqlite.db")))
+        check(prefs.setNotifyOptInExistingData(existingDataSignal(File(context.filesDir, "sqlite.db")))) {
+            "Failed to save notifyOptInExistingData"
+        }
     }
 
     private fun rewriteBucketHostnames(context: Context, prefs: AWPreferences, current: String) {

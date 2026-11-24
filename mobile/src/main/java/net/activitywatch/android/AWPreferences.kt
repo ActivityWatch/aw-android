@@ -83,9 +83,8 @@ class AWPreferences(context: Context) {
 
     // commit(), not apply(): if the process died before an async write reached disk, the
     // next start would re-derive the signal from a datastore this install already created.
-    fun setNotifyOptInExistingData(existing: Boolean) {
+    fun setNotifyOptInExistingData(existing: Boolean): Boolean =
         sharedPreferences.edit().putBoolean("notifyOptInExistingData", existing).commit()
-    }
 
     // Per hostname, since staging lives under {sync_dir}/{hostname}/ (see StagingReset).
     fun isStagingResetDone(hostname: String): Boolean {
