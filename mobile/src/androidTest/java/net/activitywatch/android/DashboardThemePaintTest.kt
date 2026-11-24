@@ -167,22 +167,30 @@ class DashboardThemePaintTest {
 
                 // A failed stylesheet still reveals the readable light page.
                 stylesheetMissing.set(true)
-                evaluate(webView, "window.__previousDocument = true; location.reload()")
-                try {
-                    await {
-                        var visible = false
-                        scenario.onActivity { visible = webView.visibility == View.VISIBLE }
-                        visible && evaluate(
-                            webView,
-                            "!window.__previousDocument && !!document.getElementById('wrapper')",
-                        ) == "true"
+                // DIAGNOSTIC ONLY (aw-android#332): the race below loses about one
+                // run in three, so a single pass rarely shows it. Repeat the 404
+                // reload so one CI run almost surely reports the failing state.
+                // Drop the repeat (back to one pass) before this PR leaves draft.
+                repeat(DIAG_404_REPEATS) { attempt ->
+                    evaluate(webView, "window.__previousDocument = true; location.reload()")
+                    try {
+                        await {
+                            var visible = false
+                            scenario.onActivity { visible = webView.visibility == View.VISIBLE }
+                            visible && evaluate(
+                                webView,
+                                "!window.__previousDocument && !!document.getElementById('wrapper')",
+                            ) == "true"
+                        }
+                    } catch (e: AssertionError) {
+                        // This step times out intermittently in CI (aw-android#332).
+                        // Report what the theme hook saw so the failure names its cause.
+                        throw AssertionError(
+                            "${e.message}; attempt ${attempt + 1}/$DIAG_404_REPEATS; " +
+                                "stylesheet state: ${evaluate(webView, STYLESHEET_STATE_JS)}",
+                            e
+                        )
                     }
-                } catch (e: AssertionError) {
-                    // This step times out intermittently in CI (aw-android#332).
-                    // Report what the theme hook saw so the failure names its cause.
-                    throw AssertionError(
-                        "${e.message}; stylesheet state: ${evaluate(webView, STYLESHEET_STATE_JS)}", e
-                    )
                 }
                 assertEquals(
                     "\"rgb(247, 250, 252)\"",
@@ -306,6 +314,7 @@ class DashboardThemePaintTest {
     }
 
     private companion object {
+        const val DIAG_404_REPEATS = 8
         val STYLESHEET_STATE_JS = """
             (function () {
               var l = document.querySelector('link[href*="dark.css"]');
