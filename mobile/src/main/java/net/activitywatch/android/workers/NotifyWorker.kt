@@ -16,6 +16,7 @@ import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
+import net.activitywatch.android.utils.logicalDayWindow
 import net.activitywatch.android.watcher.SessionEventWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import org.json.JSONArray
@@ -23,6 +24,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
+import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
 import org.threeten.bp.format.DateTimeFormatter
 import org.threeten.bp.format.DateTimeParseException
@@ -301,8 +303,7 @@ class NotifyWorker internal constructor(
     ): Map<String?, Double> {
         val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         val logicalDate = logicalDayDate(now, startOfDayHour)
-        val startOfDay = logicalDate.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
-        val endOfDay = startOfDay.plusDays(1)
+        val (startOfDay, endOfDay) = logicalDayWindow(logicalDate, LocalTime.of(startOfDayHour, 0), zone)
 
         val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
         Log.d(TAG, "Querying timeperiod: $timeperiod")
