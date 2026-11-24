@@ -374,6 +374,19 @@ jobs:
         systemProp.org.gradle.internal.repository.initial.backoff=5000
         EOF
 
+    # Robolectric downloads its android-all-instrumented SDK jar at test time,
+    # outside Gradle, into ~/.m2/repository with no retry. Neither the Gradle
+    # cache nor the retry properties above reach that fetch, and a Maven
+    # Central 429 there fails every Robolectric test class
+    # (`AssertionError at MavenArtifactFetcher.java:129`, e.g. master run
+    # 45224529370 and PR run 45427549886). Cache the downloaded jars.
+    - name: Cache Robolectric SDK jars
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: robolectric-${{ hashFiles('mobile/build.gradle') }}
+        restore-keys: robolectric-
+
     # Test
     - name: Test
       run: |
