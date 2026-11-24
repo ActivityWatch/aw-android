@@ -18,12 +18,24 @@ object ServerPort {
     // android.os.UserHandle.PER_USER_RANGE: uid = userId * PER_USER_RANGE + appId
     private const val PER_USER_RANGE = 100_000
 
+    // Each user moves the port by a whole hundred, so a flavor keeps its base
+    // port's last two digits (standard 5600 -> x00, research 5667 -> x67) and no
+    // user of one flavor can land on a port of the other. A plain `+ userId`
+    // put standard user 67 on research's 5667.
+    private const val USER_PORT_STRIDE = 100
+    private const val MAX_PORT = 65_535
+
     @Volatile
     var value: Int = BuildConfig.SERVER_PORT
         private set
 
-    fun forUid(uid: Int, basePort: Int = BuildConfig.SERVER_PORT): Int =
-        basePort + uid / PER_USER_RANGE
+    fun forUid(uid: Int, basePort: Int = BuildConfig.SERVER_PORT): Int {
+        val port = basePort + (uid / PER_USER_RANGE) * USER_PORT_STRIDE
+        // Past user ~599 the stride leaves the port range. Fall back to the base
+        // port (the pre-#68 behaviour: startup reports it in use) rather than
+        // handing the server an invalid port.
+        return if (port <= MAX_PORT) port else basePort
+    }
 
     fun initFromProcess() {
         value = forUid(Process.myUid())

@@ -14,13 +14,34 @@ class ServerPortTest {
     @Test
     fun workProfileGetsItsOwnPort() {
         // user 10 (a typical managed/work profile), same app id
-        assertEquals(5610, ServerPort.forUid(1_010_123, basePort = 5600))
-        assertEquals(5611, ServerPort.forUid(1_110_123, basePort = 5600))
+        assertEquals(6600, ServerPort.forUid(1_010_123, basePort = 5600))
+        assertEquals(6700, ServerPort.forUid(1_110_123, basePort = 5600))
     }
 
     @Test
     fun offsetAppliesToTheNightlyFlavorToo() {
-        assertEquals(5677, ServerPort.forUid(1_010_123, basePort = 5667))
+        assertEquals(6667, ServerPort.forUid(1_010_123, basePort = 5667))
+    }
+
+    @Test
+    fun flavorsNeverShareAPortForAnyUser() {
+        // An additive `+ userId` offset put standard user 67 on research's 5667,
+        // so whichever install started second found its port in use.
+        // 0..598 is every user both flavors can place inside the port range.
+        val users = 0..598
+        val standard = users.map { ServerPort.forUid(it * 100_000 + 10_123, basePort = 5600) }
+        val research = users.map { ServerPort.forUid(it * 100_000 + 10_123, basePort = 5667) }
+        assertEquals(users.count(), standard.toSet().size)
+        assertEquals(users.count(), research.toSet().size)
+        assertEquals(emptySet<Int>(), standard.toSet() intersect research.toSet())
+        assertEquals(65_400, standard.last())
+        assertEquals(65_467, research.last())
+    }
+
+    @Test
+    fun userBeyondThePortRangeFallsBackToTheBasePort() {
+        assertEquals(5600, ServerPort.forUid(600 * 100_000 + 10_123, basePort = 5600))
+        assertEquals(5667, ServerPort.forUid(599 * 100_000 + 10_123, basePort = 5667))
     }
 
     @Test
