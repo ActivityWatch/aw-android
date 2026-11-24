@@ -28,6 +28,7 @@ internal object DatastoreStartup {
     fun start(context: Context) {
         val appContext = context.applicationContext
         val prefs = AWPreferences(appContext)
+        captureExistingData(appContext, prefs)
         val current = deviceHostname(appContext)
         if (prefs.sanitizedHostnameMigratedTo() == current) {
             ready.countDown()
@@ -58,6 +59,21 @@ internal object DatastoreStartup {
         ready.await()
     }
 
+    /**
+     * Records once whether this install started with a datastore it did not create.
+     *
+     * Auto Backup restores files before the app's first launch, so a restored datastore is
+     * already on disk here, while a fresh install has none until the server creates it. The
+     * aw-notify opt-in migration uses this to tell a restore onto a new phone (install times
+     * look fresh) from a real fresh install (ActivityWatch/aw-android#405). It runs before
+     * anything opens the datastore and is never re-derived, so a retried migration cannot
+     * mistake the data this install wrote for restored data.
+     */
+    private fun captureExistingData(context: Context, prefs: AWPreferences) {
+        if (prefs.hasMigratedNotifyOptIn() || prefs.notifyOptInExistingData() != null) return
+        prefs.setNotifyOptInExistingData(existingDataSignal(File(context.filesDir, "sqlite.db")))
+    }
+
     private fun rewriteBucketHostnames(context: Context, prefs: AWPreferences, current: String) {
         val dbFile = File(context.filesDir, "sqlite.db")
         if (!dbFile.isFile) {
@@ -72,3 +88,12 @@ internal object DatastoreStartup {
         }
     }
 }
+
+/**
+ * Whether the datastore at [dbFile] holds data: the database or its WAL is a non-empty file.
+ * An empty or missing file is what a fresh install has before the server first writes.
+ */
+internal fun existingDataSignal(dbFile: File): Boolean =
+    dbFile.isNonEmptyFile() || File(dbFile.path + "-wal").isNonEmptyFile()
+
+private fun File.isNonEmptyFile(): Boolean = isFile && length() > 0
