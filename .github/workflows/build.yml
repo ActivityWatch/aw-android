@@ -339,7 +339,16 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
-        cache: 'gradle'
+
+    # Use a separate namespace: emulator jobs do not fetch Robolectric's JVM
+    # dependencies and could otherwise win the immutable setup-java cache key.
+    - name: Cache JVM Gradle dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**/Versions.kt', 'buildSrc/**/Dependencies.kt', 'gradle/*.versions.toml', '**/versions.properties') }}
 
     # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
     - name: Set up Android SDK
