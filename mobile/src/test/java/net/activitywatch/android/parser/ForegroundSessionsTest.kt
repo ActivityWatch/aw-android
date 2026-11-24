@@ -96,4 +96,17 @@ class ForegroundSessionsTest {
         )
         assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
     }
+
+    @Test
+    fun earlierActivityPausingAfterSameAppResumedAgainKeepsTheSessionOpen() {
+        fun activity(type: Int, time: Long, cls: String) = UsageEvent(type, time, "chat", cls)
+        val sessions = parse(
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat.Main"),
+            // The next activity resumes before the previous one has paused.
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 30_000L, "chat.Conversation"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 30_200L, "chat.Main"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 10 * 60_000L, "chat.Conversation"),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 10 * 60_000L)), sessions)
+    }
 }

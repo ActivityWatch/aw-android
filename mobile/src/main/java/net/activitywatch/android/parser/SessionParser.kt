@@ -318,10 +318,15 @@ internal fun parseForegroundSessions(
     var openPackage: String? = null
     var openClassName = ""
     var openStart = 0L
+    // Activities of the open app that have resumed and not yet paused. An app can
+    // resume its next activity before the previous one pauses; that earlier PAUSE
+    // must not end the session while the newer activity is still in front.
+    val resumedActivities = mutableSetOf<String>()
 
     fun closeSession(sessionEnd: Long) {
         val pkg = openPackage ?: return
         openPackage = null
+        resumedActivities.clear()
         val endTime = if (openStart == storedSessionStart) {
             minOf(sessionEnd, openStart + MAX_REASONABLE_SESSION_DURATION - 1)
         } else {
@@ -346,18 +351,23 @@ internal fun parseForegroundSessions(
             UsageEvents.Event.ACTIVITY_RESUMED -> {
                 // Same app re-resumed without an intervening PAUSE: keep the original session
                 // open (earliest start) rather than restarting it.
-                if (openPackage == event.packageName) continue
+                if (openPackage == event.packageName) {
+                    resumedActivities.add(event.className)
+                    continue
+                }
                 // A different app came to the foreground: end the previous session here.
                 closeSession(event.timeStamp)
                 openPackage = event.packageName
                 openClassName = event.className
                 openStart = event.timeStamp
+                resumedActivities.add(event.className)
             }
             UsageEvents.Event.ACTIVITY_PAUSED -> {
                 // Only the currently-foreground app's PAUSE ends the session; stale/out-of-order
                 // PAUSEs for other apps are ignored.
                 if (openPackage == event.packageName) {
-                    closeSession(event.timeStamp)
+                    resumedActivities.remove(event.className)
+                    if (resumedActivities.isEmpty()) closeSession(event.timeStamp)
                 }
             }
             // Nothing is in the foreground once the screen is off, whether or not the app's
