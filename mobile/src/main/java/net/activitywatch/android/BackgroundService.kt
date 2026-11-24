@@ -63,6 +63,8 @@ class BackgroundService : Service() {
     // onStartCommand can run more than once per launch (activity start plus a
     // sticky/boot restart). The migrations below are blocking datastore-worker
     // commands; queueing them twice doubled the startup stall in aw-android#261.
+    // Cleared when the run ends, so a later start command retries whatever failed.
+    @Volatile
     private var migrationsQueued = false
 
     // Set in onDestroy. The server start runs on an IO coroutine that can outlive
@@ -175,20 +177,26 @@ class BackgroundService : Service() {
             !migrationsQueued) {
             migrationsQueued = true
             CoroutineScope(Dispatchers.IO).launch {
-                val ri = awaitRustInterface() ?: return@launch
-                if (needsHostnameMigration) {
-                    val hostname = ri.getDeviceName(this@BackgroundService)
-                    val result = ri.migrateHostname(hostname)
-                    Log.i(TAG, "Hostname migration result: $result")
-                    if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
-                        prefs.setHostnameMigrated()
+                try {
+                    val ri = awaitRustInterface() ?: return@launch
+                    if (needsHostnameMigration) {
+                        val hostname = ri.getDeviceName(this@BackgroundService)
+                        val result = ri.migrateHostname(hostname)
+                        Log.i(TAG, "Hostname migration result: $result")
+                        if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
+                            prefs.setHostnameMigrated()
+                        }
                     }
-                }
-                if (needsWatcherBucketMigration) {
-                    migrateWatcherAndroidTestBuckets(prefs, ri)
-                }
-                if (needsNotifyOptInMigration) {
-                    migrateNotifyOptIn(prefs, ri)
+                    if (needsWatcherBucketMigration) {
+                        migrateWatcherAndroidTestBuckets(prefs, ri)
+                    }
+                    if (needsNotifyOptInMigration) {
+                        migrateNotifyOptIn(prefs, ri)
+                    }
+                } finally {
+                    // Success is recorded in prefs, so a retry reruns only the failed steps.
+                    // Without this, one failure kept NotifyWorker gated until the service was recreated.
+                    migrationsQueued = false
                 }
             }
         }
