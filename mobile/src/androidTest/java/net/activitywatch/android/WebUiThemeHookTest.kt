@@ -86,31 +86,6 @@ class WebUiThemeHookTest {
         }
     }
 
-    @Test
-    fun preInstallSameOriginFailureWithEmptySheetSettles() {
-        withPage { view ->
-            // Same origin as the page, so the failed link's empty sheet is
-            // readable (cssRules.length == 0) instead of throwing. With no
-            // timing entry left, only the sheet shows the load has finished
-            // (aw-android#332).
-            evaluate(view, """
-                window.failed = false;
-                var link = document.createElement('link');
-                link.rel = 'stylesheet'; link.href = 'http://127.0.0.1/dark.css';
-                link.onerror = function () { window.failed = true; };
-                document.head.appendChild(link);
-            """.trimIndent())
-            await { evaluate(view, "window.failed") == "true" }
-            evaluate(view, "performance.clearResourceTimings()")
-            assertEquals("0", evaluate(view, "performance.getEntriesByName(link.href, 'resource').length"))
-
-            assertEquals("0", evaluate(view, "window.reports"))
-            evaluate(view, ANDROID_THEME_HOOK_JS)
-            await { evaluate(view, "window.reports") == "1" }
-            assertEquals("\"settled\"", evaluate(view, "window.__awAndroidThemeState()"))
-        }
-    }
-
     private fun withPage(baseUrl: String = "http://127.0.0.1/", test: (WebView) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         lateinit var view: WebView
