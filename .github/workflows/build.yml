@@ -363,6 +363,17 @@ jobs:
       run: |
         python3 scripts/check-jnilibs.py
 
+    # Gradle already retries HTTP 429 as transient, but only 3 attempts with a
+    # 1s doubling backoff, which a Maven Central rate-limit window outlasts.
+    # Allow 6 attempts from 5s (5+10+20+40+80s) before failing the download.
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
+
     # Test
     - name: Test
       run: |
