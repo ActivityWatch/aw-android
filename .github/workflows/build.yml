@@ -445,11 +445,22 @@ jobs:
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
+    # Same Maven Central 429 exposure as the Test job: cache Gradle
+    # dependencies and retry rate-limited downloads longer.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+        cache: 'gradle'
+
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
@@ -549,11 +560,22 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs/
 
+    # Same Maven Central 429 exposure as the Test job: cache Gradle
+    # dependencies and retry rate-limited downloads longer.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+        cache: 'gradle'
+
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
