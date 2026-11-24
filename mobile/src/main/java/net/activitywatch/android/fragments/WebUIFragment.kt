@@ -164,8 +164,14 @@ internal val ANDROID_EXPORT_HOOK_JS = """
     if (typeof Android === 'undefined') return;
     Android.beginExport(filename, mimeType || '');
     text = String(text || '');
-    for (var i = 0; i < text.length; i += CHUNK) {
-      Android.appendExport(text.substring(i, i + CHUNK));
+    for (var i = 0; i < text.length; ) {
+      var end = Math.min(i + CHUNK, text.length);
+      // Each chunk crosses the bridge as its own Java String, so a surrogate
+      // pair split here would arrive as two U+FFFD. Keep pairs together.
+      var last = text.charCodeAt(end - 1);
+      if (end < text.length && end - 1 > i && last >= 0xD800 && last <= 0xDBFF) end--;
+      Android.appendExport(text.substring(i, end));
+      i = end;
     }
     Android.finishExport();
   }
