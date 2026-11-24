@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.BroadcastReceiver
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -27,6 +28,7 @@ class WebWatcherDestroyTest {
     ) {
         var submitted = 0
         override fun execute(command: Runnable) {
+            check(!isShutdown) { "Write submitted after shutdown" }
             submitted++
         }
     }
@@ -54,6 +56,7 @@ class WebWatcherDestroyTest {
         service.onDestroy()
 
         assertEquals(1, writer.submitted)
+        assertTrue(writer.isShutdown)
         assertEquals(null, tracker().currentBrowser)
     }
 
