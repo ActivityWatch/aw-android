@@ -218,6 +218,19 @@ object SanitizedHostnameMigration {
         localDeviceId: String?,
     ): MigrationResult {
         if (!syncDir.isDirectory) return MigrationResult(0, 0)
+        // Complete the second half before taking the planner's directory snapshot.
+        // Never overwrite a separately created target after an interrupted rename.
+        val pendingRenames = syncDir.listFiles() ?: return MigrationResult(0, 1)
+        for (pending in pendingRenames) {
+            if (!pending.name.startsWith(".") || !pending.name.endsWith(".aw-rename")) continue
+            val targetName = pending.name.removePrefix(".").removeSuffix(".aw-rename")
+            if (!isSafeDirName(targetName)) return MigrationResult(0, 1)
+            val target = File(syncDir, targetName)
+            if (!pending.isDirectory || target.exists() || !pending.renameTo(target)) {
+                warn("Could not recover interrupted rename ${pending.path}")
+                return MigrationResult(0, 1)
+            }
+        }
         val deviceIdsByHostname = linkedMapOf<String, Set<String>>()
         val hostnameDirs = mutableSetOf<String>()
         val unmanagedEntryDirs = mutableSetOf<String>()

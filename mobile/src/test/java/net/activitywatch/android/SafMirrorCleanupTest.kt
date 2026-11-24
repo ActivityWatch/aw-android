@@ -69,11 +69,44 @@ class SafMirrorCleanupTest {
     }
 
     @Test
-    fun staleSafHostnames_keepsCaseOnlyVariantOfCurrent() {
-        // Deleting PIXEL8/ on case-insensitive storage deletes this device's mirror.
+    fun matchChildren_reservesExactMatchesRegardlessOfSourceOrder() {
+        for (sources in listOf(listOf("pixel8", "PIXEL8"), listOf("PIXEL8", "pixel8"))) {
+            assertEquals(
+                mapOf("PIXEL8" to "PIXEL8"),
+                SafMirrorCleanup.matchChildren(sources, listOf("PIXEL8")),
+            )
+        }
+        assertEquals(
+            mapOf("pixel8" to "pixel8", "PIXEL8" to "PIXEL8"),
+            SafMirrorCleanup.matchChildren(listOf("pixel8", "PIXEL8"), listOf("PIXEL8", "pixel8")),
+        )
+    }
+
+    @Test
+    fun matchChildren_assignsEachFallbackAtMostOnce() {
+        val matches = SafMirrorCleanup.matchChildren(listOf("pixel8", "Pixel8"), listOf("PIXEL8"))
+        assertEquals(1, matches.size)
+        assertEquals(listOf("PIXEL8"), matches.values.toList())
+        assertEquals(
+            mapOf("pixel8" to "PIXEL8"),
+            SafMirrorCleanup.matchChildren(listOf("pixel8"), listOf("PIXEL8")),
+        )
+        assertEquals(
+            emptyMap<String, String>(),
+            SafMirrorCleanup.matchChildren(listOf("pixel8"), listOf("PIXEL8", "Pixel8")),
+        )
+    }
+
+    @Test
+    fun staleSafHostnames_keepsOnlyActualMirrorDestination() {
+        // When both case variants exist, only the one actually written is protected.
+        assertEquals(
+            listOf("PIXEL8"),
+            SafMirrorCleanup.staleSafHostnames(listOf("PIXEL8"), "pixel8"),
+        )
         assertEquals(
             listOf("Pixel 8", "unknown"),
-            SafMirrorCleanup.staleSafHostnames(listOf("PIXEL8", "Pixel 8", "unknown"), "pixel8"),
+            SafMirrorCleanup.staleSafHostnames(listOf("PIXEL8", "Pixel 8", "unknown"), "PIXEL8"),
         )
     }
 }

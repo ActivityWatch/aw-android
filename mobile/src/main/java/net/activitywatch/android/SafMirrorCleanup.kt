@@ -26,12 +26,19 @@ internal object SafMirrorCleanup {
         return names.filter { it.equals(wanted, ignoreCase = true) }.singleOrNull()
     }
 
-    /**
-     * Legacy hostnames whose SAF dirs may be removed after a mirror pass. A
-     * name equal to [current] ignoring case is excluded: on case-insensitive
-     * storage it is the directory the mirror just wrote this device's data
-     * into, and deleting it would drop the mirror after every sync.
-     */
-    fun staleSafHostnames(legacy: Collection<String>, current: String): List<String> =
-        legacy.filter { !it.equals(current, ignoreCase = true) }
+    /** Reserve exact names before assigning case-only fallbacks, independent of copy order. */
+    fun matchChildren(sources: Collection<String>, destinations: Collection<String>): Map<String, String> {
+        val matches = sources.filter { it in destinations }.associateWith { it }.toMutableMap()
+        val available = destinations.toMutableSet().apply { removeAll(matches.values.toSet()) }
+        for (source in sources.filterNot { it in matches }.sorted()) {
+            val match = matchChildName(available, source) ?: continue
+            matches[source] = match
+            available.remove(match)
+        }
+        return matches
+    }
+
+    /** Protect the actual destination, not every similarly spelled directory. */
+    fun staleSafHostnames(legacy: Collection<String>, mirroredHostname: String): List<String> =
+        legacy.filter { it != mirroredHostname }
 }

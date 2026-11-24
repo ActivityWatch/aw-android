@@ -326,6 +326,60 @@ class SanitizedHostnameMigrationTest {
     }
 
     @Test
+    fun migrate_recoversInterruptedCaseRenameBeforePlanning() {
+        val sync = kotlin.io.path.createTempDirectory("aw-sync-recover").toFile()
+        try {
+            val db = File(sync, ".pixel8.aw-rename/dev-1/sync.db")
+            assertTrue(db.parentFile!!.mkdirs())
+            db.writeText("interrupted")
+            SanitizedHostnameMigration.migrateSyncFolders(sync, "pixel8", listOf("PIXEL8"), "dev-1")
+            assertEquals("interrupted", File(sync, "pixel8/dev-1/sync.db").readText())
+            assertFalse(File(sync, ".pixel8.aw-rename").exists())
+        } finally {
+            sync.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun migrate_doesNotOverwriteTargetWhenRecoveringInterruptedRename() {
+        val sync = kotlin.io.path.createTempDirectory("aw-sync-conflict").toFile()
+        try {
+            val pending = File(sync, ".pixel8.aw-rename/dev-1/sync.db")
+            assertTrue(pending.parentFile!!.mkdirs())
+            pending.writeText("pending")
+            val target = File(sync, "pixel8/dev-1/sync.db")
+            assertTrue(target.parentFile!!.mkdirs())
+            target.writeText("target")
+            val result = SanitizedHostnameMigration.migrateSyncFolders(
+                sync, "pixel8", listOf("PIXEL8"), "dev-1",
+            )
+            assertEquals(1, result.failed)
+            assertEquals("pending", pending.readText())
+            assertEquals("target", target.readText())
+        } finally {
+            sync.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun migrate_recoversPendingRenameEvenWhenCurrentHostnameChanged() {
+        val sync = kotlin.io.path.createTempDirectory("aw-sync-changed").toFile()
+        try {
+            val pending = File(sync, ".pixel8.aw-rename/dev-1/sync.db")
+            assertTrue(pending.parentFile!!.mkdirs())
+            pending.writeText("pending")
+            val result = SanitizedHostnameMigration.migrateSyncFolders(
+                sync, "new_phone", emptyList(), "dev-1",
+            )
+            assertEquals(0, result.failed)
+            assertEquals("pending", File(sync, "pixel8/dev-1/sync.db").readText())
+            assertFalse(File(sync, ".pixel8.aw-rename").exists())
+        } finally {
+            sync.deleteRecursively()
+        }
+    }
+
+    @Test
     fun renameCaseOnly_movesContentsViaTemporaryName() {
         val sync = kotlin.io.path.createTempDirectory("aw-sync-case").toFile()
         try {
@@ -346,8 +400,8 @@ class SanitizedHostnameMigrationTest {
     fun isCaseFoldedSameDir_falseWhenBothCaseVariantsReallyExist() {
         val sync = kotlin.io.path.createTempDirectory("aw-sync-case").toFile()
         try {
-            File(sync, "PIXEL8").mkdirs()
-            File(sync, "pixel8").mkdirs()
+            assertTrue(File(sync, "PIXEL8").mkdirs())
+            org.junit.Assume.assumeTrue(File(sync, "pixel8").mkdirs())
             // Case-sensitive storage with two real dirs: not the same dir.
             assertFalse(SanitizedHostnameMigration.isCaseFoldedSameDir(sync, "PIXEL8", "pixel8"))
             assertFalse(SanitizedHostnameMigration.isCaseFoldedSameDir(sync, "PIXEL8", "PIXEL8"))
