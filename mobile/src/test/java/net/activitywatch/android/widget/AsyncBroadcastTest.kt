@@ -171,6 +171,56 @@ class AsyncBroadcastTest {
         assertTrue(uncaught.isEmpty())
     }
 
+    /** A fallback that outlives its wait must not overwrite data a later pass rendered. */
+    @Test
+    fun lateFallback_isSuperseded_byLaterSuccessfulPass() = runBlocking {
+        val fallbackStarted = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val supersededAtRender = AtomicReference<Boolean>()
+        val fallbackDone = CountDownLatch(1)
+        AsyncBroadcast.launch(
+            finish = {},
+            budgetMs = 100,
+            fallbackBudgetMs = 100,
+            scope = scope(),
+            log = log,
+            onFailure = {
+                fallbackStarted.countDown()
+                release.await()
+                supersededAtRender.set(isSuperseded)
+                fallbackDone.countDown()
+            },
+        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
+        assertTrue("fallback not started", fallbackStarted.await(2, TimeUnit.SECONDS))
+
+        // A later pass succeeds (and renders data) while the first fallback is stuck.
+        AsyncBroadcast.launch(finish = {}, scope = scope(), log = log) {
+            AsyncBroadcast.detached { }
+        }.join()
+
+        release.countDown()
+        assertTrue("fallback not done", fallbackDone.await(2, TimeUnit.SECONDS))
+        assertEquals(true, supersededAtRender.get())
+
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (AsyncBroadcast.isFallbackRunning && System.nanoTime() < deadline) Thread.sleep(10)
+        assertTrue(uncaught.isEmpty())
+    }
+
+    /** Without a later success, the fallback is not superseded and still renders. */
+    @Test
+    fun fallbackWithoutLaterSuccess_isNotSuperseded() = runBlocking {
+        val superseded = AtomicReference<Boolean>()
+        AsyncBroadcast.launch(
+            finish = {},
+            budgetMs = 100,
+            scope = scope(),
+            log = log,
+            onFailure = { superseded.set(isSuperseded) },
+        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
+        assertEquals(false, superseded.get())
+    }
+
     /** A request queued behind stuck work is still waited for within the budget. */
     @Test
     fun workQueuedBehindStuckPass_stillFinishesOnTime() = runBlocking {

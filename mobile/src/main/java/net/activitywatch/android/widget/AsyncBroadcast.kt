@@ -3,6 +3,7 @@ package net.activitywatch.android.widget
 import android.util.Log
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -69,6 +70,21 @@ internal object AsyncBroadcast {
 
     internal val isFallbackRunning: Boolean get() = fallbackRunning.get()
 
+    /** Count of broadcast work that completed successfully, whenever it completed. */
+    private val successes = AtomicLong()
+
+    /**
+     * Receiver of [launch]'s `onFailure`. The fallback runs detached and can outlive its
+     * wait, so it may finish after a later pass has already rendered real data.
+     */
+    class Fallback internal constructor(private val successesAtFailure: Long) {
+        /**
+         * True once any broadcast's work has succeeded since this failure. A fallback must
+         * check this right before rendering, so it does not overwrite newer data.
+         */
+        val isSuperseded: Boolean get() = AsyncBroadcast.successes.get() != successesAtFailure
+    }
+
     /** Starts [work] in a coroutine that is not a child of the caller, for [launch]. */
     fun detached(
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -89,7 +105,7 @@ internal object AsyncBroadcast {
      * [TimeoutException] when it overran (the work is then still running, so [onFailure] must
      * not overwrite what it renders). [onFailure] also runs detached, for at most
      * [fallbackBudgetMs], so a slow fallback can't hold the broadcast either. Anything it
-     * throws is logged.
+     * throws is logged. Its [Fallback.isSuperseded] turns true when later work succeeds.
      */
     fun launch(
         finish: () -> Unit,
@@ -98,7 +114,7 @@ internal object AsyncBroadcast {
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         workDispatcher: CoroutineDispatcher = Dispatchers.IO,
         log: (String, Throwable?) -> Unit = ::logError,
-        onFailure: (Throwable) -> Unit = {},
+        onFailure: Fallback.(Throwable) -> Unit = {},
         work: () -> Deferred<Unit>,
     ): Job {
         val once = FinishOnce(finish, log)
@@ -106,6 +122,8 @@ internal object AsyncBroadcast {
             try {
                 val failure: Throwable? = try {
                     val pending = work()
+                    // Overrunning work still renders when it completes, so count it then.
+                    pending.invokeOnCompletion { if (it == null) successes.incrementAndGet() }
                     val done = withTimeoutOrNull(budgetMs) { pending.await() }
                     if (done == null) TimeoutException("Widget update exceeded ${budgetMs} ms") else null
                 } catch (e: Throwable) {
@@ -113,10 +131,11 @@ internal object AsyncBroadcast {
                 }
                 if (failure != null) {
                     log("Widget broadcast work failed", failure)
+                    val scopeForFallback = Fallback(successes.get())
                     if (fallbackRunning.compareAndSet(false, true)) {
                         val fallback = detached(workDispatcher) {
                             try {
-                                onFailure(failure)
+                                scopeForFallback.onFailure(failure)
                             } catch (e: Throwable) {
                                 log("Rendering the widget fallback failed", e)
                             } finally {

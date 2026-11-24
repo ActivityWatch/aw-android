@@ -119,9 +119,14 @@ object CategoryTimeWidgetUpdater {
      * On a timeout the work is still running and will render data (or, if it fails, the
      * "no data yet" state from [updateWidgets]), so only the loading spinner is hidden, via a
      * partial update that can't overwrite whatever the work renders. Any other failure means
-     * the work has ended, so the "no data yet" state is rendered.
+     * the work has ended, so the "no data yet" state is rendered, unless [isSuperseded]
+     * reports that a later pass has rendered data since (this fallback can run late).
      */
-    fun onUpdateFailed(context: Context, failure: Throwable) {
+    fun onUpdateFailed(
+        context: Context,
+        failure: Throwable,
+        isSuperseded: () -> Boolean = { false },
+    ) {
         val appWidgetManager = AppWidgetManager.getInstance(context)
         val appWidgetIds = appWidgetManager.getAppWidgetIds(
             ComponentName(context, CategoryTimeWidgetProvider::class.java)
@@ -136,6 +141,8 @@ object CategoryTimeWidgetUpdater {
                     Log.e(TAG, "Could not hide the loading indicator on widget $appWidgetId", e)
                 }
             }
+        } else if (isSuperseded()) {
+            Log.d(TAG, "A later widget update rendered data; skipping the stale fallback")
         } else {
             renderFallback(context, appWidgetManager, appWidgetIds)
         }
