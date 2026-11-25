@@ -312,7 +312,7 @@ class DashboardThemePaintTest {
         // injected from onPageFinished).
         val PAGE_EARLY = """
             <!doctype html>
-            <html><head><script>
+            <html><head><style>body { background: rgb(247, 250, 252); }</style><script>
               var link = document.createElement('link');
               link.rel = 'stylesheet';
               link.href = '/dark.css';
