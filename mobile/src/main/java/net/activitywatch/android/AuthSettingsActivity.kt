@@ -13,6 +13,7 @@ import android.widget.Button
 import android.widget.CompoundButton
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
@@ -237,14 +238,16 @@ class AuthSettingsActivity : AppCompatActivity() {
         }
     }
 
-    private companion object {
+    companion object {
         // One queue and one scope for the whole process: the state they protect
         // (config.toml plus the dashboard preference) is shared, and a save started by
         // a closed screen must not interleave with a save from a reopened one. Two
         // per-activity locks let a pending disable from the old screen land after the
         // new screen turned auth back on, which leaves the server running without a key.
-        val AUTH_ACTION_MUTEX = Mutex()
-        val AUTH_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // Tests read it to drain the queue: it outlives each test's main looper.
+        @VisibleForTesting
+        internal val AUTH_ACTION_MUTEX = Mutex()
+        private val AUTH_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

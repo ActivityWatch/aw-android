@@ -4,6 +4,7 @@ import android.app.Application
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -28,6 +29,18 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class AuthSettingsRegenerateTest {
+    // Auth actions run on a process-lifetime scope and resume on the main looper, which
+    // Robolectric resets between tests. A test that returns while an action is still
+    // finishing (it observed the IO write, not the main-thread tail) would drop that
+    // continuation and leave the shared mutex held, so every later test in the same
+    // sandbox times out waiting for it. Drain the queue before the looper is reset.
+    @After
+    fun drainAuthActions() {
+        BlockingConfigManager.release.countDown()
+        BlockingConfigManager.clearRelease.countDown()
+        awaitMain { !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
+    }
+
     @Test
     fun regenerateWhileDisabledReenablesDashboardAuth() {
         val context = RuntimeEnvironment.getApplication()
