@@ -209,6 +209,60 @@ class AuthSettingsRegenerateTest {
         }
     }
 
+
+    @Test
+    @Config(
+        shadows = [BlockingConfigManager::class],
+        instrumentedPackages = ["net.activitywatch.android.ConfigManager"],
+    )
+    fun saveFromClosedScreenBlocksReopenedScreen() {
+        val context = RuntimeEnvironment.getApplication()
+        shadowOf(context).grantPermissions("${context.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+        ConfigManager(context).generateAndSetApiKey()
+        AWPreferences(context).setDashboardAuthEnabled(true)
+        val first = Robolectric.buildActivity(AuthSettingsActivity::class.java).setup()
+        BlockingConfigManager.started = CountDownLatch(1)
+        BlockingConfigManager.release = CountDownLatch(1)
+        BlockingConfigManager.cleared = CountDownLatch(1)
+        BlockingConfigManager.clearRelease = CountDownLatch(1)
+        try {
+            val firstActivity = first.get()
+            val firstSwitch = firstActivity.findViewById<SwitchCompat>(R.id.switch_auth_enabled)
+            awaitMain { firstSwitch.isChecked }
+            firstSwitch.isChecked = false
+            awaitMain { BlockingConfigManager.cleared.count == 0L }
+            first.pause().stop().destroy()
+
+            // Reopening settings must not start a second, independent queue: the pending
+            // disable from the closed screen has to finish before this screen's save.
+            val second = Robolectric.buildActivity(AuthSettingsActivity::class.java).setup()
+            try {
+                val secondActivity = second.get()
+                secondActivity.findViewById<Button>(R.id.btn_regenerate_key).performClick()
+                ShadowLooper.idleMainLooper()
+                assertEquals(
+                    "a save from a closed screen must finish before the reopened screen writes",
+                    1L,
+                    BlockingConfigManager.started.count,
+                )
+                BlockingConfigManager.clearRelease.countDown()
+                awaitMain { BlockingConfigManager.started.count == 0L }
+                BlockingConfigManager.release.countDown()
+                awaitMain {
+                    secondActivity.findViewById<TextView>(R.id.tv_status).text.toString() ==
+                        "Authentication enabled (restart app to apply)"
+                }
+                assertTrue(AWPreferences(context).isDashboardAuthEnabled())
+                assertNotNull(ConfigManager(context).readAuthConfig().apiKey)
+            } finally {
+                second.pause().stop().destroy()
+            }
+        } finally {
+            BlockingConfigManager.release.countDown()
+            BlockingConfigManager.clearRelease.countDown()
+        }
+    }
+
     private fun awaitMain(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
         while (!condition()) {

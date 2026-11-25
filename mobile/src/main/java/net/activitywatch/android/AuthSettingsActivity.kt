@@ -40,13 +40,13 @@ class AuthSettingsActivity : AppCompatActivity() {
 
     // Serialize complete actions (IO and UI) in click order. Cancelling a coroutine
     // does not stop a synchronous config write already running on Dispatchers.IO.
-    private val authActionMutex = Mutex()
+    private val authActionMutex = AUTH_ACTION_MUTEX
 
     // A settings write is what the user asked for, so it must finish even when the
     // screen that started it goes away: on lifecycleScope a toggle still queued behind
     // a regenerate was cancelled by Back while the regenerate itself completed, which
     // left auth on after restart. Process-lifetime, not activity-lifetime.
-    private val authScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val authScope = AUTH_SCOPE
 
     // Bumped on every user toggle. An action that had to wait for the mutex must not
     // write the switch back if a newer toggle already expressed a different intent.
@@ -230,6 +230,16 @@ class AuthSettingsActivity : AppCompatActivity() {
             isUpdatingSwitch = false
             btnCopy.visibility = View.GONE
         }
+    }
+
+    private companion object {
+        // One queue and one scope for the whole process: the state they protect
+        // (config.toml plus the dashboard preference) is shared, and a save started by
+        // a closed screen must not interleave with a save from a reopened one. Two
+        // per-activity locks let a pending disable from the old screen land after the
+        // new screen turned auth back on, which leaves the server running without a key.
+        val AUTH_ACTION_MUTEX = Mutex()
+        val AUTH_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
