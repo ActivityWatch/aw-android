@@ -104,11 +104,18 @@ class DatastoreStartupTest {
     @Test
     fun notifyOptInExistingData_savedValueWinsOverUnsaved() {
         val app = RuntimeEnvironment.getApplication()
-        freshPrefs(app)
+        val shared = freshPrefs(app)
+        File(app.filesDir, "sqlite.db").delete()
+        val gate = DatastoreStartupGate()
+        // The save fails, so the gate keeps `false` in memory only.
+        gate.start(failingCommitContext(app, shared) {})
+        gate.awaitReady()
         val prefs = AWPreferences(app)
-        assertEquals(null, DatastoreStartupGate().notifyOptInExistingData(prefs))
+        assertEquals(false, gate.notifyOptInExistingData(prefs))
+
+        // A later successful save of a conflicting value must win over the in-memory one.
         prefs.setNotifyOptInExistingData(true)
-        assertEquals(true, DatastoreStartupGate().notifyOptInExistingData(prefs))
+        assertEquals(true, gate.notifyOptInExistingData(prefs))
     }
 
     private fun freshPrefs(app: Context): SharedPreferences =
