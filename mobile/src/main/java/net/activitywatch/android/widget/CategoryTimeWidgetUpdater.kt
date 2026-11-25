@@ -26,6 +26,7 @@ import org.json.JSONObject
 import org.threeten.bp.LocalDateTime
 import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
+import org.threeten.bp.ZonedDateTime
 import org.threeten.bp.format.DateTimeFormatter
 
 private const val TAG = "CategoryTimeWidget"
@@ -409,7 +410,7 @@ object CategoryTimeWidgetUpdater {
 
             // Match aw-webui's day boundary: if current time is before startOfDay we're still
             // in the previous day's period (e.g. 3:45 AM with startOfDay=04:00 → "yesterday")
-            val today = logicalDate(LocalDateTime.now(zone), startOfDayTime)
+            val today = logicalDate(ZonedDateTime.now(zone), startOfDayTime)
             val (startOfDay, endOfDay) = logicalDayWindow(today, startOfDayTime, zone)
 
             val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"

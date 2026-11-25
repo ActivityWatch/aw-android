@@ -26,6 +26,25 @@ class LogicalDayTest {
     }
 
     @Test
+    fun springGapUsesTheResolvedBoundary() {
+        val date = LocalDate.of(2026, 3, 29)
+        val boundary = LocalTime.of(2, 30)
+        assertEquals(date.minusDays(1), logicalDate(date.atTime(3, 10).atZone(stockholm), boundary))
+        assertEquals(date, logicalDate(date.atTime(3, 30).atZone(stockholm), boundary))
+    }
+
+    @Test
+    fun repeatedHourStaysInTheDayThatAlreadyStarted() {
+        val date = LocalDate.of(2026, 10, 25)
+        val boundary = LocalTime.of(2, 30)
+        val now = date.atTime(2, 10).atZone(stockholm).withLaterOffsetAtOverlap()
+        assertEquals(date, logicalDate(now, boundary))
+        val firstOccurrence = now.withEarlierOffsetAtOverlap()
+        assertEquals(date.minusDays(1), logicalDate(firstOccurrence, boundary))
+        assertEquals(date, logicalDate(date.atTime(boundary).atZone(stockholm), boundary))
+    }
+
+    @Test
     fun adjacentDaysShareTheirBoundaryAcrossDst() {
         for (date in listOf(LocalDate.of(2026, 3, 28), LocalDate.of(2026, 10, 24))) {
             val (_, prevEnd) = logicalDayWindow(date, fourAm, stockholm)

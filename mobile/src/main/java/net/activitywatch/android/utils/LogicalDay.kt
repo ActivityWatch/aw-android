@@ -1,14 +1,16 @@
 package net.activitywatch.android.utils
 
 import org.threeten.bp.LocalDate
-import org.threeten.bp.LocalDateTime
 import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
 import org.threeten.bp.ZonedDateTime
 
-/** The logical day [now] belongs to: before [startOfDay] it is still the previous day's period. */
-internal fun logicalDate(now: LocalDateTime, startOfDay: LocalTime): LocalDate =
-    if (now.toLocalTime() < startOfDay) now.toLocalDate().minusDays(1) else now.toLocalDate()
+/** The logical day [now] belongs to, using the same resolved boundary as [logicalDayWindow]. */
+internal fun logicalDate(now: ZonedDateTime, startOfDay: LocalTime): LocalDate {
+    val date = now.toLocalDate()
+    val boundary = date.atTime(startOfDay).atZone(now.zone)
+    return if (now.isBefore(boundary)) date.minusDays(1) else date
+}
 
 /**
  * The [start, end) window of logical day [date] in [zone].
