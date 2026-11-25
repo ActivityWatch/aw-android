@@ -384,4 +384,26 @@ class NativeWindowInsetsTest {
             if (wasFirstTime) prefs.resetFirstTimeRunFlag()
         }
     }
+
+    @Test fun appMenuOpensNativeDrawerAndBackClosesIt() {
+        val prefs = AWPreferences(instrumentation.targetContext)
+        val wasFirstTime = prefs.isFirstTime()
+        prefs.setFirstTimeRunFlag()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                val menuButton = By.res(packageName, "open_app_menu")
+                val drawerHeader = By.res(packageName, "imageView")
+                requireNotNull(device.wait(Until.findObject(menuButton), 5_000)).click()
+                assertTrue("App menu must open the native drawer", device.wait(Until.hasObject(drawerHeader), 5_000))
+                scenario.onActivity {
+                    assertTrue(it.findViewById<DrawerLayout>(R.id.drawer_layout).isDrawerOpen(GravityCompat.START))
+                }
+                device.pressBack()
+                assertTrue("Back must close the drawer", device.wait(Until.gone(drawerHeader), 5_000))
+                assertTrue("Back must leave the dashboard visible", device.wait(Until.hasObject(menuButton), 5_000))
+            }
+        } finally {
+            if (wasFirstTime) prefs.resetFirstTimeRunFlag()
+        }
+    }
 }

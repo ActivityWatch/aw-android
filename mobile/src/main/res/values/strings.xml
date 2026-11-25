@@ -8,6 +8,7 @@
     <string name="action_settings">Settings</string>
     <string name="dashboard_settings">Dashboard Settings</string>
     <string name="api_authentication">API Authentication</string>
+    <string name="open_app_menu">App menu</string>
     <string name="sync_settings">Sync Settings</string>
     <string name="open_in_browser">Open in browser</string>
     <string name="importing_usage_history">Importing usage history… the dashboard may be incomplete until it finishes.</string>

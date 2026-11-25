@@ -1,26 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout
+<LinearLayout
         xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto"
         xmlns:tools="http://schemas.android.com/tools"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         tools:context=".MainActivity">
 
-    <!--com.google.android.material.appbar.AppBarLayout
+    <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/open_app_menu"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:drawablePadding="8dp"
+            android:text="@string/open_app_menu"
+            android:textAllCaps="false"
+            app:drawableStartCompat="@drawable/ic_app_menu"/>
+
+    <include
+            layout="@layout/content_main"
             android:layout_width="match_parent"
-            android:theme="@style/AppTheme.AppBarOverlay">
-
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="#FFFFFF"
-            app:popupTheme="@style/AppTheme.PopupOverlay" />
-
-    </com.google.android.material.appbar.AppBarLayout-->
-
-    <include layout="@layout/content_main"/>
-
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+</LinearLayout>

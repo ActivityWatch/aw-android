@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.widget.TextViewCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -187,6 +188,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         val fg = ContextCompat.getColor(this, if (dark) R.color.chrome_on_dark else R.color.chrome_on_light)
         val accent = ContextCompat.getColor(this, R.color.colorAccent)
         binding.root.setBackgroundColor(bg)
+        val menuButton = binding.appBarMain.openAppMenu
+        menuButton.setTextColor(fg)
+        TextViewCompat.setCompoundDrawableTintList(menuButton, ColorStateList.valueOf(fg))
         val nav = binding.navView
         nav.setBackgroundColor(bg)
         val itemColors = ColorStateList(
@@ -238,6 +242,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
         usw.setupAlarm()
 
         binding.navView.setNavigationItemSelectedListener(this)
+        binding.appBarMain.openAppMenu.setOnClickListener {
+            binding.drawerLayout.openDrawer(GravityCompat.START)
+        }
 
         // Ensure API key exists in config before the server starts so it picks it up at init.
         dashboardApiKey = ensureDashboardApiKey(this)

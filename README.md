@@ -22,6 +22,11 @@ For other platforms, see [activitywatch.net/downloads](https://activitywatch.net
 
 Install the app from the [Play Store](https://play.google.com/store/apps/details?id=net.activitywatch.android), [F-Droid](https://f-droid.org/en/packages/net.activitywatch.android/), or the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
 
+Tap **App menu** at the top left to open the native navigation drawer and access
+items such as **Sync Settings** and **API authentication**. This works without an
+edge swipe, so Android's Back gesture remains available and dismisses the open drawer.
+The dashboard's separate top-right menu still offers shortcuts to both settings.
+
 ### For Oculus Quest
 
 > **Note** 
