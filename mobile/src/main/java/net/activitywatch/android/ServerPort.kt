@@ -18,10 +18,11 @@ object ServerPort {
     // android.os.UserHandle.PER_USER_RANGE: uid = userId * PER_USER_RANGE + appId
     private const val PER_USER_RANGE = 100_000
 
-    // Each user moves the port by a whole hundred, so a flavor keeps its base
-    // port's last two digits (standard 5600 -> x00, research 5667 -> x67) and no
-    // user of one flavor can land on a port of the other. A plain `+ userId`
-    // put standard user 67 on research's 5667.
+    // Keep each flavor's last two digits (standard x00, research x67) distinct.
+    // Non-main users start above Chromium/Fetch's highest restricted port,
+    // 10080: the stride alone hit X11's 6000 and IRC's 6667. User 0 retains
+    // the existing base port for backwards compatibility.
+    private const val PROFILE_PORT_OFFSET = 5000
     private const val USER_PORT_STRIDE = 100
     private const val MAX_PORT = 65_535
 
@@ -30,8 +31,10 @@ object ServerPort {
         private set
 
     fun forUid(uid: Int, basePort: Int = BuildConfig.SERVER_PORT): Int {
-        val port = basePort + (uid / PER_USER_RANGE) * USER_PORT_STRIDE
-        // Past user ~599 the stride leaves the port range. Fall back to the base
+        val userId = uid / PER_USER_RANGE
+        if (userId == 0) return basePort
+        val port = basePort + PROFILE_PORT_OFFSET + userId * USER_PORT_STRIDE
+        // Past user ~549 the stride leaves the port range. Fall back to the base
         // port (the pre-#68 behaviour: startup reports it in use) rather than
         // handing the server an invalid port.
         return if (port <= MAX_PORT) port else basePort

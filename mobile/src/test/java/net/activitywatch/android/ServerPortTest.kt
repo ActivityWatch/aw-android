@@ -2,6 +2,7 @@ package net.activitywatch.android
 
 import net.activitywatch.android.fragments.resolveEmbeddedExportUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ServerPortTest {
@@ -9,26 +10,41 @@ class ServerPortTest {
     fun mainProfileKeepsTheBasePort() {
         // user 0, app id 10123
         assertEquals(5600, ServerPort.forUid(10_123, basePort = 5600))
+        assertEquals(5667, ServerPort.forUid(10_123, basePort = 5667))
     }
 
     @Test
     fun workProfileGetsItsOwnPort() {
         // user 10 (a typical managed/work profile), same app id
-        assertEquals(6600, ServerPort.forUid(1_010_123, basePort = 5600))
-        assertEquals(6700, ServerPort.forUid(1_110_123, basePort = 5600))
+        assertEquals(11600, ServerPort.forUid(1_010_123, basePort = 5600))
+        assertEquals(11700, ServerPort.forUid(1_110_123, basePort = 5600))
     }
 
     @Test
     fun offsetAppliesToTheNightlyFlavorToo() {
-        assertEquals(6667, ServerPort.forUid(1_010_123, basePort = 5667))
+        assertEquals(11667, ServerPort.forUid(1_010_123, basePort = 5667))
+    }
+
+    @Test
+    fun profilePortsAreSafeForBrowserDashboards() {
+        // Chromium/Fetch restricted ports at or above our lowest base port.
+        // In particular, the old stride assigned standard user 4 to X11's
+        // 6000 and research user 10 to IRC's 6667 (ERR_UNSAFE_PORT).
+        val blocked = setOf(6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080)
+        for (base in listOf(5600, 5667)) {
+            for (user in 0..600) {
+                val port = ServerPort.forUid(user * 100_000 + 10_123, basePort = base)
+                assertFalse("base=$base user=$user port=$port", port in blocked)
+            }
+        }
     }
 
     @Test
     fun flavorsNeverShareAPortForAnyUser() {
         // An additive `+ userId` offset put standard user 67 on research's 5667,
         // so whichever install started second found its port in use.
-        // 0..598 is every user both flavors can place inside the port range.
-        val users = 0..598
+        // 0..548 is every user both flavors can place inside the port range.
+        val users = 0..548
         val standard = users.map { ServerPort.forUid(it * 100_000 + 10_123, basePort = 5600) }
         val research = users.map { ServerPort.forUid(it * 100_000 + 10_123, basePort = 5667) }
         assertEquals(users.count(), standard.toSet().size)
@@ -40,8 +56,9 @@ class ServerPortTest {
 
     @Test
     fun userBeyondThePortRangeFallsBackToTheBasePort() {
-        assertEquals(5600, ServerPort.forUid(600 * 100_000 + 10_123, basePort = 5600))
-        assertEquals(5667, ServerPort.forUid(599 * 100_000 + 10_123, basePort = 5667))
+        assertEquals(65500, ServerPort.forUid(549 * 100_000 + 10_123, basePort = 5600))
+        assertEquals(5600, ServerPort.forUid(550 * 100_000 + 10_123, basePort = 5600))
+        assertEquals(5667, ServerPort.forUid(549 * 100_000 + 10_123, basePort = 5667))
     }
 
     @Test
