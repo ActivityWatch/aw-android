@@ -238,6 +238,13 @@ class AuthSettingsRegenerateTest {
             val second = Robolectric.buildActivity(AuthSettingsActivity::class.java).setup()
             try {
                 val secondActivity = second.get()
+                val secondSwitch = secondActivity.findViewById<SwitchCompat>(R.id.switch_auth_enabled)
+                // Its saved state is not loaded yet, so a tap now would be overwritten by
+                // the refresh still queued behind the closed screen's save.
+                assertFalse(
+                    "the switch must not accept taps before the saved state loads",
+                    secondSwitch.isEnabled,
+                )
                 secondActivity.findViewById<Button>(R.id.btn_regenerate_key).performClick()
                 ShadowLooper.idleMainLooper()
                 assertEquals(
@@ -246,6 +253,7 @@ class AuthSettingsRegenerateTest {
                     BlockingConfigManager.started.count,
                 )
                 BlockingConfigManager.clearRelease.countDown()
+                awaitMain { secondSwitch.isEnabled }
                 awaitMain { BlockingConfigManager.started.count == 0L }
                 BlockingConfigManager.release.countDown()
                 awaitMain {
@@ -262,6 +270,7 @@ class AuthSettingsRegenerateTest {
             BlockingConfigManager.clearRelease.countDown()
         }
     }
+
 
     private fun awaitMain(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000

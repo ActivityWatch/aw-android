@@ -80,6 +80,9 @@ class AuthSettingsActivity : AppCompatActivity() {
         btnCopy = findViewById(R.id.btn_copy_key)
         btnRegenerate = findViewById(R.id.btn_regenerate_key)
         switchAuthEnabled = findViewById(R.id.switch_auth_enabled)
+        // The saved state is not on screen yet: a tap now would be overwritten by the
+        // queued refresh, which reads the pre-tap state. Enable it once that lands.
+        switchAuthEnabled.isEnabled = false
 
         scheduleRefreshUI()
 
@@ -215,6 +218,8 @@ class AuthSettingsActivity : AppCompatActivity() {
     }
 
     private fun applyAuthToUI(auth: ConfigManager.AuthConfig) {
+        // The first applied state is the saved one; from here taps are meaningful.
+        switchAuthEnabled.isEnabled = true
         if (auth.isEnabled) {
             tvApiKey.text = auth.apiKey
             tvStatus.text = "Authentication is enabled"
