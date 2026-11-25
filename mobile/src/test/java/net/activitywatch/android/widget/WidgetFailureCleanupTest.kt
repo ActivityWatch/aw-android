@@ -123,7 +123,13 @@ class WidgetFailureCleanupTest {
         val showLoading = companion.javaClass.getDeclaredMethod(
             "showLoadingState", Context::class.java, AppWidgetManager::class.java, Int::class.javaPrimitiveType
         ).apply { isAccessible = true }
-        for (id in intArrayOf(1, 2)) showLoading.invoke(companion, context, manager, id)
+        for (id in intArrayOf(1, 2)) {
+            showLoading.invoke(companion, context, manager, id)
+            val writes = shadow.writes.filter { it.id == id }
+            val host = writes.first().views.apply(context, FrameLayout(context))
+            for (write in writes.drop(1)) write.views.reapply(context, host)
+            assertEquals(View.VISIBLE, host.findViewById<View>(R.id.widget_loading_indicator).visibility)
+        }
         CategoryTimeWidgetUpdater.onUpdateFailed(context, IllegalStateException("refresh failed"))
 
         // Rebuild from the saved full update plus subsequent partial updates, not a
