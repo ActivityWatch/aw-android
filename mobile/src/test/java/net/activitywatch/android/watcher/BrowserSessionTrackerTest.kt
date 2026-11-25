@@ -3,6 +3,7 @@ package net.activitywatch.android.watcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.threeten.bp.Duration
 import org.threeten.bp.Instant
 
 class BrowserSessionTrackerTest {
@@ -150,5 +151,20 @@ class BrowserSessionTrackerTest {
 
         checkNotNull(completed)
         assertEquals(0L, completed.duration.seconds)
+    }
+
+    @Test
+    fun `completed session keeps sub-second duration for the heartbeat`() {
+        val session = CompletedBrowserSession(
+            url = "example.com",
+            browser = "chrome",
+            title = "",
+            start = Instant.ofEpochSecond(1000),
+            duration = Duration.ofMillis(1900),
+        )
+
+        // A 1.9 s visit must not be stored as 1 s, nor a 0.8 s visit as 0 s.
+        assertEquals(1.9, session.durationSeconds, 1e-9)
+        assertEquals(0.8, session.copy(duration = Duration.ofMillis(800)).durationSeconds, 1e-9)
     }
 }

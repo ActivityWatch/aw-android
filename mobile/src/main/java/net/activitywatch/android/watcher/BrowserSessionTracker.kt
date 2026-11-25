@@ -9,7 +9,10 @@ internal data class CompletedBrowserSession(
     val title: String,
     val start: Instant,
     val duration: Duration
-)
+) {
+    // Seconds passed to the heartbeat.
+    val durationSeconds: Double get() = duration.toMillis() / 1000.0
+}
 
 // Pure session/state-machine logic extracted out of WebWatcher so it can be unit-tested
 // (mobile/src/test) without an AccessibilityService or device/emulator.

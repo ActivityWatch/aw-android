@@ -401,7 +401,7 @@ class WebWatcher : AccessibilityService() {
 
         Log.i(TAG, "Registered event: $data")
         writer.execute {
-            ri?.heartbeatHelper(bucket_id, session.start, session.duration.seconds.toDouble(), data, 1.0)
+            ri?.heartbeatHelper(bucket_id, session.start, session.durationSeconds, data, 1.0)
         }
     }
 
