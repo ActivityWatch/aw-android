@@ -330,11 +330,26 @@ jobs:
         python3 scripts/user-facing-changelog.py --self-test
         python3 scripts/check-production-rollout.py --self-test
 
+    # Cache Gradle dependencies: without it every run fetches the whole test
+    # classpath from Maven Central, which rate-limits GitHub-hosted runners
+    # (HTTP 429 on robolectric nativeruntime-dist-compat in runs 45189400898
+    # and 45352722774), failing the job before any test runs.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+
+    # Use a separate namespace: emulator jobs do not fetch Robolectric's JVM
+    # dependencies and could otherwise win the immutable setup-java cache key.
+    - name: Cache JVM Gradle dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**/Versions.kt', 'buildSrc/**/Dependencies.kt', 'gradle/*.versions.toml', '**/versions.properties') }}
+        restore-keys: gradle-jvm-${{ runner.os }}-${{ runner.arch }}-
 
     # Android SDK & NDK (NDK required at Gradle configuration time even for JVM unit tests)
     - name: Set up Android SDK
@@ -358,10 +373,43 @@ jobs:
       run: |
         python3 scripts/check-jnilibs.py
 
+    # Gradle already retries HTTP 429 as transient, but only 3 attempts with a
+    # 1s doubling backoff, which a Maven Central rate-limit window outlasts.
+    # Allow 6 attempts from 5s (5+10+20+40+80s) before failing the download.
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
+
+    # Robolectric downloads its android-all-instrumented SDK jar at test time,
+    # outside Gradle, into ~/.m2/repository with no retry. Neither the Gradle
+    # cache nor the retry properties above reach that fetch, and a Maven
+    # Central 429 there fails every Robolectric test class
+    # (`AssertionError at MavenArtifactFetcher.java:129`, e.g. master run
+    # 45224529370 and PR run 45427549886). Cache the downloaded jars.
+    - name: Restore Robolectric SDK jars
+      id: robolectric-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: robolectric-${{ hashFiles('mobile/build.gradle', 'mobile/src/test/**') }}
+        restore-keys: robolectric-
+
     # Test
     - name: Test
       run: |
         make test
+
+    # Save successful SDK downloads before the independent R8 build can fail.
+    - name: Save Robolectric SDK jars
+      if: steps.robolectric-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: ${{ steps.robolectric-cache.outputs.cache-primary-key }}
 
     # R8 runs only for the release build type (#268), and the Makefile builds
     # `debug` unless RELEASE is set — so a broken keep rule or a missing-class
@@ -379,9 +427,8 @@ jobs:
   test-e2e:
     name: Test E2E
     needs: [build-rust]
-    #if: false  # disabled
-    #runs-on: "macos-12"  # macOS-latest
-    runs-on: ubicloud-standard-8
+    # Ubicloud's runner has no /dev/kvm; use a host with nested virtualization.
+    runs-on: ubuntu-24.04
     env:
       MATRIX_E_SDK: ${{ matrix.api-level }}
     strategy:
@@ -408,11 +455,32 @@ jobs:
       run: |
         pushd mobile/src/main/jniLibs && ls -R && popd
 
+    # Same Maven Central 429 exposure as the Test job: cache Gradle
+    # dependencies and retry rate-limited downloads longer.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+
+    # Release smoke does not fetch the instrumentation classpath. Keep its
+    # immutable cache separate so it cannot prevent E2E dependencies being saved.
+    - name: Cache E2E Gradle dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-e2e-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**/Versions.kt', 'buildSrc/**/Dependencies.kt', 'gradle/*.versions.toml', '**/versions.properties') }}
+        restore-keys: gradle-e2e-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
@@ -426,7 +494,7 @@ jobs:
         ls $ANDROID_NDK_HOME
         echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
 
-    # The runner exposes /dev/kvm but the runner user is not in the kvm group,
+    # GitHub's Ubuntu runner exposes /dev/kvm but the runner user is not in the kvm group,
     # so the emulator falls back to TCG software emulation ("ProbeKVM: This
     # user doesn't have permissions to use KVM"). Under TCG the emulator
     # intermittently goes `adb: device offline` after boot. Grant access so
@@ -435,8 +503,11 @@ jobs:
       run: |
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
         sudo udevadm control --reload-rules
-        sudo udevadm trigger --name-match=kvm
+        # Use the device path rather than the bare name on newer udevadm.
+        sudo udevadm trigger --name-match=/dev/kvm
         sudo udevadm settle
+        sudo chmod 0666 /dev/kvm
+        test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm
         ls -l /dev/kvm
 
     - name: Run Emulator and E2E tests
@@ -495,7 +566,8 @@ jobs:
   test-release-smoke:
     name: Test release variant (R8 smoke)
     needs: [build-rust]
-    runs-on: ubicloud-standard-8
+    # Same KVM-capable host as test-e2e; Ubicloud has no /dev/kvm.
+    runs-on: ubuntu-24.04
     steps:
 
     - uses: actions/checkout@v4
@@ -508,11 +580,30 @@ jobs:
         name: jniLibs
         path: mobile/src/main/jniLibs/
 
+    # Same Maven Central 429 exposure as the Test job: cache Gradle
+    # dependencies and retry rate-limited downloads longer.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
+
+    - name: Cache release smoke Gradle dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-release-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**/Versions.kt', 'buildSrc/**/Dependencies.kt', 'gradle/*.versions.toml', '**/versions.properties') }}
+        restore-keys: gradle-release-smoke-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Retry rate-limited dependency downloads longer
+      run: |
+        mkdir -p ~/.gradle
+        cat >> ~/.gradle/gradle.properties <<'EOF'
+        systemProp.org.gradle.internal.repository.max.tentatives=6
+        systemProp.org.gradle.internal.repository.initial.backoff=5000
+        EOF
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
@@ -532,15 +623,18 @@ jobs:
       run: |
         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
         sudo udevadm control --reload-rules
-        sudo udevadm trigger --name-match=kvm
+        # Use the device path rather than the bare name on newer udevadm.
+        sudo udevadm trigger --name-match=/dev/kvm
         sudo udevadm settle
+        sudo chmod 0666 /dev/kvm
+        test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm
         ls -l /dev/kvm
 
     - name: Run emulator and smoke the release variant
       uses: reactivecircus/android-emulator-runner@v2
       # The action's own post-boot adb calls (unlock / screen-off timeout /
-      # disabling animations) can wedge on this software-emulated runner (no
-      # KVM, TCG) and never reach the script at all — on 1fd93de the step sat
+      # disabling animations) could wedge on the old software-emulated runner
+      # (no KVM, TCG) and never reach the script at all — on 1fd93de the step sat
       # silent for ~28min until this cap fired. Boot is ~2min and the smoke
       # ~3min, so a tighter cap fails a wedged emulator fast instead of
       # burning half an hour of runner time.
