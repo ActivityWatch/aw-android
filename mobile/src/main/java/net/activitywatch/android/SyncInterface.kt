@@ -718,7 +718,9 @@ class SyncInterface(context: Context) {
                 ?: throw IOException("Could not list local own-device sync directory")
         val localFileNames = localEntries.filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
 
-        val safDeviceDir = mirroredDirectories["$ownHostnameName/$deviceId"] ?: return
+        val safDeviceDir = mirroredDeviceDirectory(mirroredDirectories, ownHostnameName, deviceId) {
+            SanitizedHostnameMigration.isCaseFoldedSameDir(File(syncDir, ownHostnameName), it, deviceId)
+        } ?: return
         if (cancelRequested) throw IOException("SAF mirror cancelled")
         val safFiles =
             safDeviceDir.listFiles().filter { !it.isDirectory && it.name != null }.associateBy {
@@ -793,6 +795,20 @@ internal fun mirroredHostnameName(
     hostname: String,
     isSameLocalDirectory: (String) -> Boolean,
 ): String? = if (hostname in listed) hostname else listed.singleOrNull(isSameLocalDirectory)
+
+/** Resolve an own-device destination using its listed local directory identity. */
+internal fun <T> mirroredDeviceDirectory(
+    directories: Map<String, T>,
+    hostname: String,
+    deviceId: String,
+    isSameLocalDirectory: (String) -> Boolean,
+): T? {
+    val prefix = "$hostname/"
+    val deviceNames = directories.keys.filter { it.startsWith(prefix) }
+        .map { it.removePrefix(prefix) }.filterTo(mutableSetOf()) { '/' !in it }
+    val listedName = mirroredHostnameName(deviceNames, deviceId, isSameLocalDirectory) ?: return null
+    return directories[prefix + listedName]
+}
 
 private const val SAF_MIRROR_MANIFEST = "saf_mirror_manifest.json"
 

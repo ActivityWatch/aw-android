@@ -25,6 +25,15 @@ class SafDirectoryIdentityTest {
     }
 
     @Test
+    fun cleanupResolvesOnlyTheProvenLocalDeviceSpelling() {
+        val destinations = mapOf("pixel8/DEV-1" to "own", "pixel8/peer" to "peer")
+        assertEquals("own", net.activitywatch.android.mirroredDeviceDirectory(destinations, "pixel8", "dev-1") { it == "DEV-1" })
+        assertEquals(null, net.activitywatch.android.mirroredDeviceDirectory(destinations, "pixel8", "dev-1") { false })
+        assertEquals("exact", net.activitywatch.android.mirroredDeviceDirectory(destinations + ("pixel8/dev-1" to "exact"), "pixel8", "dev-1") { true })
+        assertEquals(null, net.activitywatch.android.mirroredDeviceDirectory(destinations + ("pixel8/Dev-1" to "ambiguous"), "pixel8", "dev-1") { true })
+    }
+
+    @Test
     fun rejectedDirectoryCannotDeleteFilesAddedByAnotherSyncTool() {
         val root = kotlin.io.path.createTempDirectory("aw-saf-peer-write").toFile()
         try {
