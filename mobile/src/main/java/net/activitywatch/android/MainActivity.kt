@@ -36,7 +36,8 @@ import java.nio.charset.StandardCharsets
 
 private const val TAG = "MainActivity"
 
-val baseURL = "http://127.0.0.1:${BuildConfig.SERVER_PORT}"
+val baseURL: String
+    get() = "http://127.0.0.1:${ServerPort.value}"
 
 // Same destination as the drawer "Activity" item. Notification taps set
 // EXTRA_OPEN_ACTIVITY_VIEW so we land here instead of dashboard home.
