@@ -49,8 +49,8 @@ class AuthSettingsActivity : AppCompatActivity() {
     // left auth on after restart. Process-lifetime, not activity-lifetime.
     private val authScope = AUTH_SCOPE
 
-    // Bumped on every user toggle. An action that had to wait for the mutex must not
-    // write the switch back if a newer toggle already expressed a different intent.
+    // Bumped on every user toggle or regeneration. An action that had to wait for the
+    // mutex must not write the switch back if a newer action expressed another intent.
     private var toggleGeneration = 0
 
     private val isScreenGone: Boolean
@@ -104,6 +104,7 @@ class AuthSettingsActivity : AppCompatActivity() {
         }
 
         btnRegenerate.setOnClickListener {
+            val generation = ++toggleGeneration
             launchAuthAction {
                 // A new key also re-enables auth: the server enforces whatever key is in
                 // config.toml, so the preference must agree or the dashboard loads
@@ -120,7 +121,7 @@ class AuthSettingsActivity : AppCompatActivity() {
                     }
                     return@launchAuthAction
                 }
-                if (isScreenGone) return@launchAuthAction
+                if (isScreenGone || generation != toggleGeneration) return@launchAuthAction
                 tvApiKey.text = newKey
                 btnCopy.visibility = View.VISIBLE
                 isUpdatingSwitch = true

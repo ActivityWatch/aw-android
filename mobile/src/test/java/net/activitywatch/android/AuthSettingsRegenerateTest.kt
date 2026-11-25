@@ -90,6 +90,7 @@ class AuthSettingsRegenerateTest {
             BlockingConfigManager.started = CountDownLatch(1)
             BlockingConfigManager.release = CountDownLatch(1)
             BlockingConfigManager.cleared = CountDownLatch(1)
+            BlockingConfigManager.clearRelease = CountDownLatch(1)
             activity.findViewById<Button>(R.id.btn_regenerate_key).performClick()
             // Poll while yielding to the looper: a blocking await on the main thread
             // deadlocks when a queued refresh still holds the action mutex.
@@ -101,6 +102,12 @@ class AuthSettingsRegenerateTest {
                 BlockingConfigManager.cleared.await(200, TimeUnit.MILLISECONDS),
             )
             BlockingConfigManager.release.countDown()
+            awaitMain { BlockingConfigManager.cleared.count == 0L }
+            assertFalse(
+                "regeneration must not restore On while a newer Off is still saving",
+                authSwitch.isChecked,
+            )
+            BlockingConfigManager.clearRelease.countDown()
             awaitMain {
                 activity.findViewById<TextView>(R.id.tv_status).text.toString() ==
                     "Authentication disabled (restart app to apply)"
@@ -111,6 +118,7 @@ class AuthSettingsRegenerateTest {
             assertEquals("", ensureDashboardApiKey(context))
         } finally {
             BlockingConfigManager.release.countDown()
+            BlockingConfigManager.clearRelease.countDown()
             controller.pause().stop().destroy()
         }
     }
