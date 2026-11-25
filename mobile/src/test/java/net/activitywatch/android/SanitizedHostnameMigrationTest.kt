@@ -436,6 +436,45 @@ class SanitizedHostnameMigrationTest {
     }
 
     @Test
+    fun migrate_clearsObsoleteJournalAfterSyncContentsWereRemoved() {
+        val root = kotlin.io.path.createTempDirectory("aw-sync-cleared-journal").toFile()
+        val sync = File(root, "sync").apply { mkdir() }
+        try {
+            recordPendingRename(sync)
+            val result = SanitizedHostnameMigration.migrateSyncFolders(
+                sync, "pixel8", listOf("PIXEL8"), "dev-1",
+            )
+            assertEquals(0, result.failed)
+            assertFalse(result.recoveryPending)
+            assertFalse(SanitizedHostnameMigration.caseRenameJournal(sync).exists())
+            assertTrue(sync.list()!!.isEmpty())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun migrate_keepsJournalWhenRenamePathsContainUnexpectedFiles() {
+        for (name in listOf("PIXEL8", ".aw-rename-test", "pixel8")) {
+            val root = kotlin.io.path.createTempDirectory("aw-sync-journal-file").toFile()
+            val sync = File(root, "sync").apply { mkdir() }
+            try {
+                recordPendingRename(sync)
+                val unexpected = File(sync, name).apply { writeText("preserve") }
+                val result = SanitizedHostnameMigration.migrateSyncFolders(
+                    sync, "pixel8", listOf("PIXEL8"), "dev-1",
+                )
+                assertEquals(1, result.failed)
+                assertTrue(result.recoveryPending)
+                assertTrue(SanitizedHostnameMigration.caseRenameJournal(sync).isFile)
+                assertEquals("preserve", unexpected.readText())
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun migrate_rejectsInvalidJournalWithoutTouchingData() {
         val sync = kotlin.io.path.createTempDirectory("aw-sync-invalid-journal").toFile()
         try {

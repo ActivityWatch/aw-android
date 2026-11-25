@@ -61,9 +61,15 @@ class SafDirectoryIdentityTest {
             assertTrue(result.isEmpty())
             assertEquals(1, counts[1])
             assertTrue("Rejected SAF directories must not be deleted", rejected.isDirectory)
-            // A peer can populate the retained directory without a later cleanup
-            // deleting it. The rejected mapping is still reported as a failure.
+            // Exercise another mirror attempt after a peer populates the rejected
+            // directory. Rejection must still leave the peer's content untouched.
             File(rejected, "peer.db").writeText("peer data")
+            val retry = mirror.invoke(
+                sync, source, provider, "", emptyMap<String, SafMirrorStamp>(),
+                mutableMapOf<String, SafMirrorStamp>(), counts,
+            ) as Map<*, *>
+            assertTrue(retry.isEmpty())
+            assertEquals(2, counts[1])
             assertEquals("peer data", File(rejected, "peer.db").readText())
         } finally {
             root.deleteRecursively()

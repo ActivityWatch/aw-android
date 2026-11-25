@@ -373,10 +373,15 @@ object SanitizedHostnameMigration {
                 if (!pending.isDirectory || target.exists() || File(syncDir, fromName).exists() ||
                     !pending.renameTo(target)
                 ) return false
-            } else if (!target.isDirectory && !File(syncDir, fromName).isDirectory) {
+            } else if (!target.isDirectory && !File(syncDir, fromName).isDirectory &&
+                (target.exists() || File(syncDir, fromName).exists())
+            ) {
                 return false
             }
-            // Covers a crash before the first rename or after the second rename.
+            // Covers a crash before the first rename or after the second rename,
+            // and an obsolete journal after the user cleared all three paths.
+            // Keep malformed journals fail-closed: without their names we cannot
+            // prove that a stranded temporary is safe to publish as a hostname.
             return journal.delete()
         } catch (e: IOException) {
             warn("Could not recover case rename: ${e.message}")
