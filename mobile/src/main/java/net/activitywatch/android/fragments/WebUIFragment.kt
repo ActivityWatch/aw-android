@@ -1067,10 +1067,12 @@ class WebUIFragment : Fragment() {
 
 internal fun writeExport(context: Context, uri: Uri, source: File): Boolean {
     return try {
-        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
-            source.inputStream().use { input -> input.copyTo(out) }
-            out.flush()
-        } != null
+        source.inputStream().use { input ->
+            context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                input.copyTo(out)
+                out.flush()
+            } != null
+        }
     } catch (e: Exception) {
         Log.e(TAG, "Failed to write export", e)
         false

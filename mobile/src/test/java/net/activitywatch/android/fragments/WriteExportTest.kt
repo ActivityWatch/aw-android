@@ -7,6 +7,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,7 +29,13 @@ class WriteExportTest {
         override fun onCreate() = true
         override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
             modes += mode
-            return ParcelFileDescriptor.open(target, ParcelFileDescriptor.parseMode(mode))
+            // Model providers where "w" overwrites without truncating old bytes.
+            val flags = if (mode == "w") {
+                ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE
+            } else {
+                ParcelFileDescriptor.parseMode(mode)
+            }
+            return ParcelFileDescriptor.open(target, flags)
         }
         override fun query(
             uri: Uri,
@@ -67,6 +74,25 @@ class WriteExportTest {
 
         assertEquals(listOf("wt"), RecordingProvider.modes)
         assertEquals("[1]", RecordingProvider.target.readText())
+    }
+
+    @Test
+    fun `missing cached export leaves the destination untouched`() {
+        val context = RuntimeEnvironment.getApplication()
+        Robolectric.setupContentProvider(RecordingProvider::class.java, AUTHORITY)
+        RecordingProvider.modes.clear()
+        val original = "[1,2,3,4,5,6,7,8,9]"
+        RecordingProvider.target = File(context.cacheDir, "dest.json").apply {
+            writeText(original)
+        }
+        val source = File(context.cacheDir, "missing.json")
+        source.delete()
+        assertFalse(source.exists())
+
+        assertFalse(writeExport(context, Uri.parse("content://$AUTHORITY/export.json"), source))
+
+        assertEquals(original, RecordingProvider.target.readText())
+        assertTrue(RecordingProvider.modes.isEmpty())
     }
 
     private companion object {
