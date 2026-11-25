@@ -86,10 +86,10 @@ internal object AsyncBroadcast {
      * the child to return. Work that overruns keeps going and still renders its own result.
      *
      * If [work] throws or overruns, [onFailure] is called with the exception, or with a
-     * [TimeoutException] when it overran (the work is then still running, so [onFailure] must
-     * not overwrite what it renders). [onFailure] also runs detached, for at most
-     * [fallbackBudgetMs], so a slow fallback can't hold the broadcast either. Anything it
-     * throws is logged.
+     * [TimeoutException] when it overran. [onFailure] also runs detached, for at most
+     * [fallbackBudgetMs], so a slow fallback can't hold the broadcast either. It must never
+     * overwrite rendered data: even after a non-timeout failure, a later pass can render
+     * while this callback is still running. Anything it throws is logged.
      */
     fun launch(
         finish: () -> Unit,

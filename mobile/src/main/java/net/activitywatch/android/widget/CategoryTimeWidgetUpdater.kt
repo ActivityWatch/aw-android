@@ -18,7 +18,6 @@ import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
 import com.jakewharton.threetenabp.AndroidThreeTen
-import java.util.concurrent.TimeoutException
 import org.json.JSONArray
 import org.json.JSONObject
 import org.threeten.bp.LocalDate
@@ -116,41 +115,28 @@ object CategoryTimeWidgetUpdater {
     /**
      * Called when a widget broadcast's work failed or overran its budget.
      *
-     * On a timeout the work is still running and will render data (or, if it fails, the
-     * "no data yet" state from [updateWidgets]), so only the loading spinner is hidden, via a
-     * partial update that can't overwrite whatever the work renders. Any other failure means
-     * the work has ended, so the "no data yet" state is rendered.
+     * Only hide the loading spinner, for every kind of failure. This cleanup runs detached
+     * and may still be inside a binder call when a later pass renders. A partial update
+     * cannot replace that pass's totals, even if the cleanup's write lands last. A check
+     * before a full update cannot close that race, and locking across binder calls would
+     * let a stuck cleanup block fresh data. [updateWidgets] still renders "no data yet"
+     * when loading data fails; a broadcast failure preserves the last rendered state.
      */
     fun onUpdateFailed(context: Context, failure: Throwable) {
+        Log.e(TAG, "Widget update failed; preserving rendered data", failure)
         val appWidgetManager = AppWidgetManager.getInstance(context)
         val appWidgetIds = appWidgetManager.getAppWidgetIds(
             ComponentName(context, CategoryTimeWidgetProvider::class.java)
         )
-        if (failure is TimeoutException) {
-            for (appWidgetId in appWidgetIds) {
-                try {
-                    val views = RemoteViews(context.packageName, R.layout.widget_category_time)
-                    views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
-                    appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Could not hide the loading indicator on widget $appWidgetId", e)
-                }
+        for (appWidgetId in appWidgetIds) {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_category_time)
+                views.setViewVisibility(R.id.widget_loading_indicator, View.GONE)
+                appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not hide the loading indicator on widget $appWidgetId", e)
             }
-        } else {
-            renderFallback(context, appWidgetManager, appWidgetIds)
         }
-    }
-
-    /**
-     * Render the "no data yet" state. Does no datastore access, so it is safe to call when
-     * the datastore is the problem.
-     */
-    fun renderFallback(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray
-    ) {
-        render(context, appWidgetManager, appWidgetIds, null)
     }
 
     private fun loadData(context: Context): WidgetData {
