@@ -141,7 +141,8 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_category_time)
             views.setViewVisibility(R.id.widget_loading_indicator, View.VISIBLE)
-            appWidgetManager.updateAppWidget(appWidgetId, views)
+            // Keep the cached totals and tap bindings if refresh fails or the host rebuilds.
+            appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
             Log.d(TAG, "Showing loading indicator for widget $appWidgetId")
         }
 
