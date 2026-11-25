@@ -41,7 +41,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         AsyncBroadcast.launch(
             finish = { pendingResult?.finish() },
-            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) { isSuperseded } },
+            onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
         ) { requestUpdate(context, refreshUsage = false) }
     }
 
@@ -64,7 +64,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                 val pendingResult = goAsync()
                 AsyncBroadcast.launch(
                     finish = { pendingResult?.finish() },
-                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) { isSuperseded } },
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
                 ) { requestUpdate(context, refreshUsage = true) }
             }
             ACTION_PERIODIC_UPDATE -> {
@@ -80,7 +80,7 @@ class CategoryTimeWidgetProvider : AppWidgetProvider() {
                         }
                         pendingResult?.finish()
                     },
-                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) { isSuperseded } },
+                    onFailure = { CategoryTimeWidgetUpdater.onUpdateFailed(context, it) },
                 ) { requestUpdate(context, refreshUsage = false) }
             }
         }

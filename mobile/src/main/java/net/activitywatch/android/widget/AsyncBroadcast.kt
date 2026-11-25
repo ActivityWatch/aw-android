@@ -3,7 +3,6 @@ package net.activitywatch.android.widget
 import android.util.Log
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -70,22 +69,6 @@ internal object AsyncBroadcast {
 
     internal val isFallbackRunning: Boolean get() = fallbackRunning.get()
 
-    /** Count of broadcast work that completed successfully, whenever it completed. */
-    private val successes = AtomicLong()
-
-    /**
-     * Receiver of [launch]'s `onFailure`. The fallback runs detached and can outlive its
-     * wait, so it may finish after a later pass has already rendered real data.
-     */
-    class Fallback internal constructor(private val successesAtFailure: Long) {
-        /**
-         * True once any broadcast's work has succeeded since this broadcast submitted its work
-         * (a later pass's render is newer than this fallback). A fallback must
-         * check this right before rendering, so it does not overwrite newer data.
-         */
-        val isSuperseded: Boolean get() = AsyncBroadcast.successes.get() != successesAtFailure
-    }
-
     /** Starts [work] in a coroutine that is not a child of the caller, for [launch]. */
     fun detached(
         dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -103,10 +86,10 @@ internal object AsyncBroadcast {
      * the child to return. Work that overruns keeps going and still renders its own result.
      *
      * If [work] throws or overruns, [onFailure] is called with the exception, or with a
-     * [TimeoutException] when it overran (the work is then still running, so [onFailure] must
-     * not overwrite what it renders). [onFailure] also runs detached, for at most
-     * [fallbackBudgetMs], so a slow fallback can't hold the broadcast either. Anything it
-     * throws is logged. Its [Fallback.isSuperseded] turns true when later work succeeds.
+     * [TimeoutException] when it overran. [onFailure] also runs detached, for at most
+     * [fallbackBudgetMs], so a slow fallback can't hold the broadcast either. It must never
+     * overwrite rendered data: even after a non-timeout failure, a later pass can render
+     * while this callback is still running. Anything it throws is logged.
      */
     fun launch(
         finish: () -> Unit,
@@ -115,19 +98,14 @@ internal object AsyncBroadcast {
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         workDispatcher: CoroutineDispatcher = Dispatchers.IO,
         log: (String, Throwable?) -> Unit = ::logError,
-        onFailure: Fallback.(Throwable) -> Unit = {},
+        onFailure: (Throwable) -> Unit = {},
         work: () -> Deferred<Unit>,
     ): Job {
         val once = FinishOnce(finish, log)
         return scope.launch {
             try {
-                // Snapshot before submitting: a pass queued after this one can finish before
-                // this coroutine resumes from a failure, and must still supersede its fallback.
-                val successesAtStart = successes.get()
                 val failure: Throwable? = try {
                     val pending = work()
-                    // Overrunning work still renders when it completes, so count it then.
-                    pending.invokeOnCompletion { if (it == null) successes.incrementAndGet() }
                     val done = withTimeoutOrNull(budgetMs) { pending.await() }
                     if (done == null) TimeoutException("Widget update exceeded ${budgetMs} ms") else null
                 } catch (e: Throwable) {
@@ -135,11 +113,10 @@ internal object AsyncBroadcast {
                 }
                 if (failure != null) {
                     log("Widget broadcast work failed", failure)
-                    val scopeForFallback = Fallback(successesAtStart)
                     if (fallbackRunning.compareAndSet(false, true)) {
                         val fallback = detached(workDispatcher) {
                             try {
-                                scopeForFallback.onFailure(failure)
+                                onFailure(failure)
                             } catch (e: Throwable) {
                                 log("Rendering the widget fallback failed", e)
                             } finally {

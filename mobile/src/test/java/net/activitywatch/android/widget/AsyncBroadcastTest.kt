@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
@@ -113,22 +114,26 @@ class AsyncBroadcastTest {
         val release = CountDownLatch(1)
         val failure = AtomicReference<Throwable?>(null)
         val start = System.nanoTime()
+        val pending = AsyncBroadcast.detached { release.await() } // not cancellable, like a JNI call
         val job = AsyncBroadcast.launch(
             finish = { finished.countDown() },
             budgetMs = 200,
             scope = scope(),
             log = log,
             onFailure = { failure.set(it) },
-        ) {
-            AsyncBroadcast.detached { release.await() } // not cancellable, like a JNI call
-        }
+        ) { pending }
 
-        assertTrue("broadcast not finished within budget", finished.await(2, TimeUnit.SECONDS))
-        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
-        assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
-        job.join()
-        assertTrue(failure.get() is TimeoutException)
-        release.countDown()
+        try {
+            assertTrue("broadcast not finished within budget", finished.await(2, TimeUnit.SECONDS))
+            val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+            assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
+            job.join()
+            assertTrue(failure.get() is TimeoutException)
+        } finally {
+            release.countDown()
+            pending.await()
+            job.join()
+        }
         assertTrue(uncaught.isEmpty())
     }
 
@@ -138,7 +143,7 @@ class AsyncBroadcastTest {
         val finished = CountDownLatch(1)
         val release = CountDownLatch(1)
         val start = System.nanoTime()
-        AsyncBroadcast.launch(
+        val job = AsyncBroadcast.launch(
             finish = { finished.countDown() },
             budgetMs = 100,
             fallbackBudgetMs = 100,
@@ -147,82 +152,31 @@ class AsyncBroadcastTest {
             onFailure = { release.await() },
         ) { AsyncBroadcast.detached { error("datastore not ready") } }
 
-        assertTrue("broadcast not finished", finished.await(2, TimeUnit.SECONDS))
-        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
-        assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
-
-        // While that fallback is stuck, later failures don't start more of them.
-        val laterFallbacks = AtomicInteger()
-        AsyncBroadcast.launch(
-            finish = {},
-            budgetMs = 100,
-            fallbackBudgetMs = 100,
-            scope = scope(),
-            log = log,
-            onFailure = { laterFallbacks.incrementAndGet() },
-        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
-        assertEquals(0, laterFallbacks.get())
-
-        release.countDown()
-        // The flag is process-wide: let it clear so other tests' fallbacks run.
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        while (AsyncBroadcast.isFallbackRunning && System.nanoTime() < deadline) Thread.sleep(10)
-        assertTrue(!AsyncBroadcast.isFallbackRunning)
-        assertTrue(uncaught.isEmpty())
-    }
-
-    /** A fallback that outlives its wait must not overwrite data a later pass rendered. */
-    @Test
-    fun lateFallback_isSuperseded_byLaterSuccessfulPass() = runBlocking {
-        val fallbackStarted = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        val supersededAtRender = AtomicReference<Boolean>()
-        val fallbackDone = CountDownLatch(1)
-        AsyncBroadcast.launch(
-            finish = {},
-            budgetMs = 100,
-            fallbackBudgetMs = 100,
-            scope = scope(),
-            log = log,
-            onFailure = {
-                fallbackStarted.countDown()
-                release.await()
-                supersededAtRender.set(isSuperseded)
-                fallbackDone.countDown()
-            },
-        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
         try {
-            assertTrue("fallback not started", fallbackStarted.await(2, TimeUnit.SECONDS))
+            assertTrue("broadcast not finished", finished.await(2, TimeUnit.SECONDS))
+            val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+            assertTrue("finished after ${elapsedMs} ms", elapsedMs < 1500)
 
-            // A later pass succeeds (and renders data) while the first fallback is stuck.
-            AsyncBroadcast.launch(finish = {}, scope = scope(), log = log) {
-                AsyncBroadcast.detached { }
-            }.join()
+            // While that fallback is stuck, later failures don't start more of them.
+            val laterFallbacks = AtomicInteger()
+            AsyncBroadcast.launch(
+                finish = {},
+                budgetMs = 100,
+                fallbackBudgetMs = 100,
+                scope = scope(),
+                log = log,
+                onFailure = { laterFallbacks.incrementAndGet() },
+            ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
+            assertEquals(0, laterFallbacks.get())
         } finally {
-            // Always unblock the fallback: the running flag is process-wide.
             release.countDown()
+            job.join()
+            // The flag is process-wide: let it clear so other tests' fallbacks run.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+            while (AsyncBroadcast.isFallbackRunning && System.nanoTime() < deadline) Thread.sleep(10)
+            assertTrue(!AsyncBroadcast.isFallbackRunning)
         }
-        assertTrue("fallback not done", fallbackDone.await(2, TimeUnit.SECONDS))
-        assertEquals(true, supersededAtRender.get())
-
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        while (AsyncBroadcast.isFallbackRunning && System.nanoTime() < deadline) Thread.sleep(10)
-        assertTrue(!AsyncBroadcast.isFallbackRunning)
         assertTrue(uncaught.isEmpty())
-    }
-
-    /** Without a later success, the fallback is not superseded and still renders. */
-    @Test
-    fun fallbackWithoutLaterSuccess_isNotSuperseded() = runBlocking {
-        val superseded = AtomicReference<Boolean>()
-        AsyncBroadcast.launch(
-            finish = {},
-            budgetMs = 100,
-            scope = scope(),
-            log = log,
-            onFailure = { superseded.set(isSuperseded) },
-        ) { AsyncBroadcast.detached { error("datastore not ready") } }.join()
-        assertEquals(false, superseded.get())
     }
 
     /** A request queued behind stuck work is still waited for within the budget. */
@@ -232,6 +186,7 @@ class AsyncBroadcastTest {
         val worker = CoalescingWorker<Int>(scope(), { a, b -> a + b }) { release.await() }
         val finishCalls = AtomicInteger()
         val failures = CopyOnWriteArrayList<Throwable>()
+        val pending = CopyOnWriteArrayList<Deferred<Unit>>()
         val jobs = (1..3).map {
             AsyncBroadcast.launch(
                 finish = { finishCalls.incrementAndGet() },
@@ -239,12 +194,17 @@ class AsyncBroadcastTest {
                 scope = scope(),
                 log = log,
                 onFailure = { failures.add(it) },
-            ) { worker.submit(1) }
+            ) { worker.submit(1).also { pending.add(it) } }
         }
-        jobs.forEach { it.join() }
-        assertEquals(3, finishCalls.get())
-        assertTrue(failures.all { it is TimeoutException })
-        release.countDown()
+        try {
+            jobs.forEach { it.join() }
+            assertEquals(3, finishCalls.get())
+            assertTrue(failures.all { it is TimeoutException })
+        } finally {
+            release.countDown()
+            jobs.forEach { it.join() }
+            pending.forEach { it.await() }
+        }
         assertTrue(uncaught.isEmpty())
     }
 
