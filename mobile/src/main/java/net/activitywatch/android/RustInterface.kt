@@ -195,19 +195,19 @@ class RustInterface(context: Context? = null) {
                 Log.i(TAG, "Server already started, skipping")
                 return
             }
-            when (probeServerPort(BuildConfig.SERVER_PORT)) {
+            when (probeServerPort(ServerPort.value)) {
                 PortProbe.FREE -> {}
                 PortProbe.IN_USE -> {
                     Log.e(
                         TAG,
-                        "Port ${BuildConfig.SERVER_PORT} is already in use, server probably already started"
+                        "Port ${ServerPort.value} is already in use, server probably already started"
                     )
                     return
                 }
                 PortProbe.SOCKET_DENIED -> {
                     Log.e(
                         TAG,
-                        "Cannot open a socket on port ${BuildConfig.SERVER_PORT}; not starting the " +
+                        "Cannot open a socket on port ${ServerPort.value}; not starting the " +
                             "server. On GrapheneOS, check that the app's Network permission is enabled."
                     )
                     return
@@ -222,8 +222,8 @@ class RustInterface(context: Context? = null) {
             // will not block the UI thread
             try {
                 // Start server
-                Log.w(TAG, "Starting server on port ${BuildConfig.SERVER_PORT}...")
-                startServer(BuildConfig.SERVER_PORT)
+                Log.w(TAG, "Starting server on port ${ServerPort.value}...")
+                startServer(ServerPort.value)
             } finally {
                 // Reset unconditionally, including when startServer() throws
                 // (JNI/native failure): otherwise serverStarted stays true and
