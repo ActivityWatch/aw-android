@@ -28,6 +28,8 @@ import org.json.JSONObject
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
+import java.time.OffsetDateTime
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -50,6 +52,10 @@ class WebWatcherTest {
         WebPage("https://w3.org", "W3C"),
     )
 
+    // Visited after typing into the focused address bar. The watcher writes events on one
+    // thread in order, so once this visit is stored, any event for the typed text is too.
+    private val afterFocusPage = WebPage("https://iana.org", "Internet Assigned Numbers Authority")
+
     @Test
     fun registerWebActivities() {
         val ri = RustInterface(context)
@@ -64,9 +70,14 @@ class WebWatcherTest {
         browsers.forEach { browser ->
             openUris(uris = testWebPages.map { it.url }, browser = browser)
             val focusedText = if (browser == "com.brave.browser") typeInFocusedBraveBar() else null
+            // Only a visit from this run counts: a stored one from an earlier run would end the wait early.
+            val afterFocusStart = focusedText?.let {
+                Instant.now().also { openUris(uris = listOf(afterFocusPage.url), browser = browser) }
+            }
             openHome() // to commit last event
 
-            val matchers = testWebPages.map { it.toMatcher(browser) }
+            val matchers = testWebPages.map { it.toMatcher(browser) } +
+                listOfNotNull(afterFocusStart?.let { afterFocusPage.toMatcher(browser, notBefore = it) })
 
             await("expected events for: $browser").atMost(MAX_CONDITION_WAIT_TIME_MILLIS, MILLISECONDS).until {
                 val events = ri.getEventsJSON(BUCKET_NAME, 100).asListOfJsonObjects()
@@ -145,10 +156,11 @@ private fun JSONArray.asListOfJsonObjects() = this.let {
 }
 
 data class WebPage(val url: String, val title: String) {
-    fun toMatcher(expectedBrowser: String): WebWatcherEventMatcher = WebWatcherEventMatcher(
+    fun toMatcher(expectedBrowser: String, notBefore: Instant? = null): WebWatcherEventMatcher = WebWatcherEventMatcher(
         expectedUrl = url.removePrefix("https://"),
         expectedTitle = title.takeIf { shouldMatchTitle(expectedBrowser) },
         expectedBrowser = expectedBrowser,
+        notBefore = notBefore,
     )
 
     // Samsung Internet and Brave do not expose page titles through the WebView node.
@@ -159,7 +171,8 @@ data class WebPage(val url: String, val title: String) {
 class WebWatcherEventMatcher(
     private val expectedUrl: String,
     private val expectedTitle: String?,
-    private val expectedBrowser: String
+    private val expectedBrowser: String,
+    private val notBefore: Instant? = null,
 ) : TypeSafeMatcher<JSONObject>() {
 
     override fun describeTo(description: org.hamcrest.Description?) {
@@ -181,5 +194,9 @@ class WebWatcherEventMatcher(
                 && url?.startsWith(expectedUrl) ?: false
                 && expectedTitle?.let { it == title } ?: true
                 && browser == expectedBrowser
+                && notBefore?.let { startsAtOrAfter(timestamp, it) } ?: true
     }
+
+    private fun startsAtOrAfter(timestamp: String, instant: Instant): Boolean =
+        runCatching { !OffsetDateTime.parse(timestamp).toInstant().isBefore(instant) }.getOrDefault(false)
 }
