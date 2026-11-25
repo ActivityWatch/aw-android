@@ -509,7 +509,7 @@ class SyncInterface(context: Context) {
         val manifestFile = File(appContext.filesDir, SAF_MIRROR_MANIFEST)
         val previous = loadSafMirrorManifest(manifestFile, uriStr)
         val written = HashMap<String, SafMirrorStamp>()
-        val mirroredHostnames = mirrorDirectory(File(syncDir), safDir, "", previous, written, counts)
+        val mirroredDirectories = mirrorDirectory(File(syncDir), safDir, "", previous, written, counts)
         // Saved before the error checks below so a partial pass still records what it wrote.
         saveSafMirrorManifest(manifestFile, uriStr, written)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} unchanged=${counts[2]} → $uriStr")
@@ -526,17 +526,19 @@ class SyncInterface(context: Context) {
         // local legacy folder could not be renamed, it is deleted here each run
         // after being mirrored, so the Syncthing-visible fork stays gone.
         val hostname = getDeviceName()
-        val ownHostnameName = mirroredHostnameName(mirroredHostnames.keys, hostname) {
+        val hostnameNames = mirroredDirectories.keys.filterTo(mutableSetOf()) { '/' !in it }
+        val ownHostnameName = mirroredHostnameName(hostnameNames, hostname) {
             SanitizedHostnameMigration.isCaseFoldedSameDir(File(syncDir), it, hostname)
         } ?: return
-        val ownHostnameDir = mirroredHostnames.getValue(ownHostnameName)
-        deleteStaleSafDatabaseFiles(ownHostnameDir)
+        val ownHostnameDir = mirroredDirectories.getValue(ownHostnameName)
+        deleteStaleSafDatabaseFiles(mirroredDirectories, ownHostnameName)
         deleteStaleSafHostnameDirs(safDir, ownHostnameDir)
     }
 
     /**
      * Recursively mirror [sourceDir] into [destDir], creating subdirectories as needed so the
      * `<device_id>/` layout aw-sync produces is reproduced verbatim in the SAF tree.
+     * Returns actual destinations keyed by their source-relative directory paths.
      */
     private fun mirrorDirectory(
         sourceDir: File,
@@ -600,8 +602,10 @@ class SyncInterface(context: Context) {
                         counts[1]++
                         continue
                     }
-                    mirroredDirs[entry.name] = subDir
-                    mirrorDirectory(entry, subDir, "$relativeDir${entry.name}/", previous, written, counts)
+                    mirroredDirs[relativeDir + entry.name] = subDir
+                    mirroredDirs.putAll(
+                        mirrorDirectory(entry, subDir, "$relativeDir${entry.name}/", previous, written, counts)
+                    )
                 } else {
                     // Reuse an existing file if present; otherwise create a new one. A
                     // same-named DIRECTORY must be rejected rather than written into: an
@@ -684,10 +688,13 @@ class SyncInterface(context: Context) {
     /**
      * Remove database files that the additive SAF mirror left behind in this device's directory.
      *
-     * The hostname and device-id lookups deliberately descend to exactly one locally owned
-     * directory. Peer hostname and device-id directories are never enumerated or mutated.
+     * Use the actual mirrored destination for exactly one locally owned directory,
+     * including case-only device-id matches. Peer directories are never cleaned.
      */
-    private fun deleteStaleSafDatabaseFiles(safHostnameDir: DocumentFile) {
+    private fun deleteStaleSafDatabaseFiles(
+        mirroredDirectories: Map<String, DocumentFile>,
+        ownHostnameName: String,
+    ) {
         val hostname = getDeviceName()
         val deviceId = localDeviceId()
         if (deviceId == null) {
@@ -711,7 +718,7 @@ class SyncInterface(context: Context) {
                 ?: throw IOException("Could not list local own-device sync directory")
         val localFileNames = localEntries.filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
 
-        val safDeviceDir = safHostnameDir.findFile(deviceId)?.takeIf { it.isDirectory } ?: return
+        val safDeviceDir = mirroredDirectories["$ownHostnameName/$deviceId"] ?: return
         if (cancelRequested) throw IOException("SAF mirror cancelled")
         val safFiles =
             safDeviceDir.listFiles().filter { !it.isDirectory && it.name != null }.associateBy {

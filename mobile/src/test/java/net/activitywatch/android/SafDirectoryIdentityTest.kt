@@ -76,6 +76,61 @@ class SafDirectoryIdentityTest {
         }
     }
 
+    @Test
+    fun cleanupUsesTheMirroredDeviceDirectoryAndPreservesPeers() {
+        val root = kotlin.io.path.createTempDirectory("aw-saf-device-case").toFile()
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val deviceIdFile = File(context.filesDir, "device_id")
+        try {
+            android.provider.Settings.Global.putString(context.contentResolver, "device_name", "pixel8")
+            deviceIdFile.writeText("dev-1")
+            val source = File(root, "source").apply { mkdir() }
+            val localDevice = File(source, "pixel8/dev-1").apply { mkdirs() }
+            val current = File(localDevice, "sync.db").apply { writeText("current database") }
+            val destination = File(root, "destination").apply { mkdir() }
+            val safHostname = File(destination, "pixel8").apply { mkdir() }
+            val safDevice = File(safHostname, "DEV-1").apply { mkdir() }
+            val mirrored = File(safDevice, "sync.db").apply { writeText(current.readText()) }
+            File(safDevice, "test.db").writeText("obsolete database")
+            File(safDevice, "test.db-wal").writeText("obsolete WAL")
+            File(safDevice, "notes.txt").writeText("keep notes")
+            val peer = File(safHostname, "peer-device").apply { mkdir() }
+            File(peer, "test.db").writeText("peer database")
+            // A trusted manifest skips byte copying, exercising the actual directory
+            // matching and cleanup without needing a ContentProvider for file I/O.
+            val stamp = SafMirrorStamp(current.length(), current.lastModified(), mirrored.length(), mirrored.lastModified())
+            val unsafeClass = Class.forName("sun.misc.Unsafe")
+            val unsafeField = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }
+            val sync = unsafeClass.getMethod("allocateInstance", Class::class.java)
+                .invoke(unsafeField.get(null), SyncInterface::class.java) as SyncInterface
+            for ((name, value) in mapOf("appContext" to context, "syncDir" to source.absolutePath)) {
+                SyncInterface::class.java.getDeclaredField(name).apply { isAccessible = true }.set(sync, value)
+            }
+            val mirror = SyncInterface::class.java.getDeclaredMethod(
+                "mirrorDirectory", File::class.java, DocumentFile::class.java,
+                String::class.java, Map::class.java, Map::class.java, IntArray::class.java,
+            ).apply { isAccessible = true }
+            val counts = intArrayOf(0, 0, 0)
+            val result = mirror.invoke(
+                sync, source, LocalDocument(destination), "", mapOf("pixel8/dev-1/sync.db" to stamp),
+                mutableMapOf<String, SafMirrorStamp>(), counts,
+            ) as Map<*, *>
+            assertEquals(0, counts[1])
+            assertEquals(1, counts[2])
+            SyncInterface::class.java.getDeclaredMethod("deleteStaleSafDatabaseFiles", Map::class.java, String::class.java)
+                .apply { isAccessible = true }.invoke(sync, result, "pixel8")
+            assertTrue("Obsolete database must be removed from the actual mirrored device", !File(safDevice, "test.db").exists())
+            assertTrue(!File(safDevice, "test.db-wal").exists())
+            assertEquals("current database", mirrored.readText())
+            assertEquals("keep notes", File(safDevice, "notes.txt").readText())
+            assertEquals("peer database", File(peer, "test.db").readText())
+        } finally {
+            deviceIdFile.delete()
+            android.provider.Settings.Global.putString(context.contentResolver, "device_name", null)
+            root.deleteRecursively()
+        }
+    }
+
     private open class LocalDocument(private val file: File) : DocumentFile(null) {
         override fun getUri(): Uri = Uri.fromFile(file)
         override fun getName(): String = file.name
