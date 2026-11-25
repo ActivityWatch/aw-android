@@ -121,9 +121,12 @@ class AuthSettingsActivity : AppCompatActivity() {
                     }
                     return@launchAuthAction
                 }
-                if (isScreenGone || generation != toggleGeneration) return@launchAuthAction
+                if (isScreenGone) return@launchAuthAction
+                // The key describes the completed save, even if a newer action is
+                // queued. A later enable may reuse it without generating another key.
                 tvApiKey.text = newKey
                 btnCopy.visibility = View.VISIBLE
+                if (generation != toggleGeneration) return@launchAuthAction
                 isUpdatingSwitch = true
                 switchAuthEnabled.isChecked = true
                 isUpdatingSwitch = false
@@ -213,9 +216,14 @@ class AuthSettingsActivity : AppCompatActivity() {
     // Queue refreshes with writes so a stale read cannot overwrite a newer action.
     private fun scheduleRefreshUI() {
         if (isScreenGone) return
+        val generation = toggleGeneration
         launchAuthAction {
             val auth = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
-            applyAuthToUI(auth)
+            if (isScreenGone) return@launchAuthAction
+            // A queued Regenerate can supersede the initial read before the switch
+            // is enabled. The state has loaded, even when its rendering is stale.
+            switchAuthEnabled.isEnabled = true
+            if (generation == toggleGeneration) applyAuthToUI(auth)
         }
     }
 

@@ -38,6 +38,7 @@ class AuthSettingsRegenerateTest {
     fun drainAuthActions() {
         BlockingConfigManager.release.countDown()
         BlockingConfigManager.clearRelease.countDown()
+        BlockingConfigManager.readRelease.countDown()
         awaitMain { !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
     }
 
@@ -136,6 +137,13 @@ class AuthSettingsRegenerateTest {
         }
 
         @Implementation
+        fun readAuthConfig(): ConfigManager.AuthConfig {
+            readStarted.countDown()
+            check(readRelease.await(5, TimeUnit.SECONDS)) { "test did not release the read" }
+            return Shadow.directlyOn(real, ConfigManager::class.java, "readAuthConfig")
+        }
+
+        @Implementation
         fun clearApiKey(): Boolean {
             cleared.countDown()
             check(clearRelease.await(5, TimeUnit.SECONDS)) { "test did not release the clear" }
@@ -147,6 +155,8 @@ class AuthSettingsRegenerateTest {
             var release = CountDownLatch(0)
             var cleared = CountDownLatch(0)
             var clearRelease = CountDownLatch(0)
+            var readStarted = CountDownLatch(0)
+            var readRelease = CountDownLatch(0)
         }
     }
 
@@ -292,6 +302,76 @@ class AuthSettingsRegenerateTest {
         }
     }
 
+
+    @Test
+    @Config(
+        shadows = [BlockingConfigManager::class],
+        instrumentedPackages = ["net.activitywatch.android.ConfigManager"],
+    )
+    fun regenerationStillDisplaysKeyWhenANewerEnableIsQueued() {
+        val context = RuntimeEnvironment.getApplication()
+        shadowOf(context).grantPermissions("${context.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+        ConfigManager(context).generateAndSetApiKey()
+        AWPreferences(context).setDashboardAuthEnabled(true)
+        val controller = Robolectric.buildActivity(AuthSettingsActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val authSwitch = activity.findViewById<SwitchCompat>(R.id.switch_auth_enabled)
+            awaitMain { authSwitch.isChecked && !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
+            BlockingConfigManager.cleared = CountDownLatch(1)
+            BlockingConfigManager.clearRelease = CountDownLatch(1)
+            authSwitch.isChecked = false
+            awaitMain { BlockingConfigManager.cleared.count == 0L }
+            activity.findViewById<Button>(R.id.btn_regenerate_key).performClick()
+            authSwitch.isChecked = true
+            BlockingConfigManager.clearRelease.countDown()
+            awaitMain { !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
+            assertTrue(authSwitch.isChecked)
+            assertEquals(
+                ConfigManager(context).readAuthConfig().apiKey,
+                activity.findViewById<TextView>(R.id.tv_api_key).text.toString(),
+            )
+        } finally {
+            BlockingConfigManager.clearRelease.countDown()
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
+    @Config(
+        shadows = [BlockingConfigManager::class],
+        instrumentedPackages = ["net.activitywatch.android.ConfigManager"],
+    )
+    fun resumedRefreshDoesNotResetANewerDisable() {
+        val context = RuntimeEnvironment.getApplication()
+        shadowOf(context).grantPermissions("${context.packageName}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+        ConfigManager(context).generateAndSetApiKey()
+        AWPreferences(context).setDashboardAuthEnabled(true)
+        val controller = Robolectric.buildActivity(AuthSettingsActivity::class.java).setup()
+        try {
+            val authSwitch = controller.get().findViewById<SwitchCompat>(R.id.switch_auth_enabled)
+            awaitMain { authSwitch.isChecked && !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
+            controller.pause()
+            BlockingConfigManager.readStarted = CountDownLatch(1)
+            BlockingConfigManager.readRelease = CountDownLatch(1)
+            BlockingConfigManager.cleared = CountDownLatch(1)
+            BlockingConfigManager.clearRelease = CountDownLatch(1)
+            controller.resume()
+            awaitMain { BlockingConfigManager.readStarted.count == 0L }
+            authSwitch.isChecked = false
+            BlockingConfigManager.readRelease.countDown()
+            awaitMain { BlockingConfigManager.cleared.count == 0L }
+            assertFalse("a refresh must not replace a newer Off choice", authSwitch.isChecked)
+            BlockingConfigManager.clearRelease.countDown()
+            awaitMain { !AuthSettingsActivity.AUTH_ACTION_MUTEX.isLocked }
+            assertFalse(authSwitch.isChecked)
+            assertFalse(AWPreferences(context).isDashboardAuthEnabled())
+        } finally {
+            BlockingConfigManager.readRelease.countDown()
+            BlockingConfigManager.clearRelease.countDown()
+            controller.pause().stop().destroy()
+        }
+    }
 
     private fun awaitMain(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
