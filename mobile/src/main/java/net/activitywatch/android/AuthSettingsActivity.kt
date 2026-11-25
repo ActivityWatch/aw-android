@@ -16,7 +16,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,6 +41,19 @@ class AuthSettingsActivity : AppCompatActivity() {
     // Serialize complete actions (IO and UI) in click order. Cancelling a coroutine
     // does not stop a synchronous config write already running on Dispatchers.IO.
     private val authActionMutex = Mutex()
+
+    // A settings write is what the user asked for, so it must finish even when the
+    // screen that started it goes away: on lifecycleScope a toggle still queued behind
+    // a regenerate was cancelled by Back while the regenerate itself completed, which
+    // left auth on after restart. Process-lifetime, not activity-lifetime.
+    private val authScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // Bumped on every user toggle. An action that had to wait for the mutex must not
+    // write the switch back if a newer toggle already expressed a different intent.
+    private var toggleGeneration = 0
+
+    private val isScreenGone: Boolean
+        get() = isFinishing || isDestroyed
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyPersistedWebUiNightMode()
@@ -95,10 +110,13 @@ class AuthSettingsActivity : AppCompatActivity() {
                     key
                 }
                 if (newKey == null) {
-                    scheduleRefreshUI()
-                    Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                    if (!isScreenGone) {
+                        scheduleRefreshUI()
+                        Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                    }
                     return@launchAuthAction
                 }
+                if (isScreenGone) return@launchAuthAction
                 tvApiKey.text = newKey
                 btnCopy.visibility = View.VISIBLE
                 isUpdatingSwitch = true
@@ -111,6 +129,7 @@ class AuthSettingsActivity : AppCompatActivity() {
 
         switchAuthEnabled.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             if (isUpdatingSwitch) return@setOnCheckedChangeListener
+            val generation = ++toggleGeneration
             launchAuthAction {
                 if (isChecked) {
                     val current = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
@@ -124,16 +143,20 @@ class AuthSettingsActivity : AppCompatActivity() {
                             key
                         }
                         if (newKey == null) {
-                            scheduleRefreshUI()
-                            Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                            if (!isScreenGone) {
+                                scheduleRefreshUI()
+                                Toast.makeText(this@AuthSettingsActivity, "Failed to save API key", Toast.LENGTH_LONG).show()
+                            }
                             return@launchAuthAction
                         }
+                        if (isScreenGone) return@launchAuthAction
                         tvApiKey.text = newKey
                         // Only show the toast when a write actually happened
                         Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                     } else {
                         withContext(Dispatchers.IO) { AWPreferences(this@AuthSettingsActivity).setDashboardAuthEnabled(true) }
                     }
+                    if (isScreenGone) return@launchAuthAction
                     btnCopy.visibility = View.VISIBLE
                     tvStatus.text = "Authentication enabled (restart app to apply)"
                 } else {
@@ -146,24 +169,31 @@ class AuthSettingsActivity : AppCompatActivity() {
                         cleared
                     }
                     if (!success) {
-                        scheduleRefreshUI()
-                        Toast.makeText(this@AuthSettingsActivity, "Failed to save API key setting", Toast.LENGTH_LONG).show()
+                        if (!isScreenGone) {
+                            scheduleRefreshUI()
+                            Toast.makeText(this@AuthSettingsActivity, "Failed to save API key setting", Toast.LENGTH_LONG).show()
+                        }
                         return@launchAuthAction
                     }
+                    if (isScreenGone) return@launchAuthAction
                     tvApiKey.text = "(none)"
                     btnCopy.visibility = View.GONE
                     tvStatus.text = "Authentication disabled (restart app to apply)"
                     Toast.makeText(this@AuthSettingsActivity, "Setting saved. Restart app to apply.", Toast.LENGTH_SHORT).show()
                 }
-                isUpdatingSwitch = true
-                switchAuthEnabled.isChecked = isChecked
-                isUpdatingSwitch = false
+                // Only the newest toggle owns the switch: an older save finishing late
+                // must not flip it back to an intent the user has already replaced.
+                if (generation == toggleGeneration && !isScreenGone) {
+                    isUpdatingSwitch = true
+                    switchAuthEnabled.isChecked = isChecked
+                    isUpdatingSwitch = false
+                }
             }
         }
     }
 
     private fun launchAuthAction(action: suspend () -> Unit) {
-        lifecycleScope.launch {
+        authScope.launch {
             authActionMutex.withLock { action() }
         }
     }
@@ -177,6 +207,7 @@ class AuthSettingsActivity : AppCompatActivity() {
 
     // Queue refreshes with writes so a stale read cannot overwrite a newer action.
     private fun scheduleRefreshUI() {
+        if (isScreenGone) return
         launchAuthAction {
             val auth = withContext(Dispatchers.IO) { configManager.readAuthConfig() }
             applyAuthToUI(auth)
