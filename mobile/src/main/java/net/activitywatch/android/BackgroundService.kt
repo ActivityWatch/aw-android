@@ -291,7 +291,7 @@ class BackgroundService : Service() {
             ri.getSetting("aw-notify"),
             isUpgrade = net.activitywatch.android.workers.notifyOptInIsUpgrade(
                 installTimesShowUpgrade = isUpgradeInstall(),
-                existingData = prefs.notifyOptInExistingData() == true,
+                existingData = DatastoreStartup.notifyOptInExistingData(prefs) == true,
             ),
         )
         if (value == null) {

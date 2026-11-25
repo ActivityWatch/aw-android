@@ -8,7 +8,6 @@ import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -69,11 +68,60 @@ class DatastoreStartupTest {
     }
 
     @Test
-    fun start_failedCaptureDoesNotReleaseDatastoreAndWritesOffCallerThread() {
+    fun captureExistingData_failedSaveReturnsSignalWithoutThrowing() {
         val app = RuntimeEnvironment.getApplication()
-        val shared = app.getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE)
-        shared.edit().clear().commit()
+        val shared = freshPrefs(app)
+        File(app.filesDir, "sqlite.db").writeBytes(ByteArray(4096))
+        val context = failingCommitContext(app, shared) {}
+
+        val unsaved = DatastoreStartup.captureExistingData(context, AWPreferences(context))
+
+        assertEquals(true, unsaved)
+        assertFalse(shared.contains("notifyOptInExistingData"))
+    }
+
+    @Test
+    fun start_failedCaptureStillReleasesDatastoreAndWritesOffCallerThread() {
+        val app = RuntimeEnvironment.getApplication()
+        val shared = freshPrefs(app)
+        File(app.filesDir, "sqlite.db").delete()
         var writeThread: Thread? = null
+        val context = failingCommitContext(app, shared) { writeThread = Thread.currentThread() }
+        // A fresh gate, not the process-wide DatastoreStartup, so no state leaks between tests.
+        val gate = DatastoreStartupGate()
+
+        gate.start(context)
+        gate.awaitReady()
+
+        assertTrue(writeThread != null && writeThread !== Thread.currentThread())
+        assertFalse(shared.contains("notifyOptInExistingData"))
+        // The migration in this process still sees the fresh-install signal.
+        assertEquals(false, gate.notifyOptInExistingData(AWPreferences(context)))
+        // The hostname rewrite still ran after the failed save.
+        assertTrue(shared.contains("sanitizedHostnameMigratedTo"))
+    }
+
+    @Test
+    fun notifyOptInExistingData_savedValueWinsOverUnsaved() {
+        val app = RuntimeEnvironment.getApplication()
+        freshPrefs(app)
+        val prefs = AWPreferences(app)
+        assertEquals(null, DatastoreStartupGate().notifyOptInExistingData(prefs))
+        prefs.setNotifyOptInExistingData(true)
+        assertEquals(true, DatastoreStartupGate().notifyOptInExistingData(prefs))
+    }
+
+    private fun freshPrefs(app: Context): SharedPreferences =
+        app.getSharedPreferences(AWPreferences.PREFERENCES_NAME, Context.MODE_PRIVATE).also {
+            it.edit().clear().commit()
+        }
+
+    /** A context whose preferences' commit() always fails; apply() still writes. */
+    private fun failingCommitContext(
+        app: Application,
+        shared: SharedPreferences,
+        onCommit: () -> Unit,
+    ): Context {
         val failing = object : SharedPreferences by shared {
             override fun edit(): SharedPreferences.Editor {
                 val editor = shared.edit()
@@ -82,22 +130,21 @@ class DatastoreStartupTest {
                         editor.putBoolean(key, value)
                         return this
                     }
+                    override fun putString(key: String, value: String?): SharedPreferences.Editor {
+                        editor.putString(key, value)
+                        return this
+                    }
                     override fun commit(): Boolean {
-                        writeThread = Thread.currentThread()
+                        onCommit()
                         return false
                     }
                 }
             }
         }
-        val context = object : ContextWrapper(app) {
+        return object : ContextWrapper(app) {
             override fun getApplicationContext(): Context = this
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = failing
         }
-
-        DatastoreStartup.start(context)
-        assertThrows(IllegalStateException::class.java) { DatastoreStartup.awaitReady() }
-        assertTrue(writeThread != null && writeThread !== Thread.currentThread())
-        assertFalse(shared.contains("sanitizedHostnameMigratedTo"))
     }
 
     @Test
