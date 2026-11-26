@@ -375,6 +375,84 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun pendingRollbackBoundaryCoversTheAffectedPauseNotAnOlderOne() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        val store = PauseIntervalStore(context, wallClockMs = { 550_000L })
+        assertTrue(store.recordPause(560_000L))
+        assertTrue(store.recordResume(570_000L))
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir())
+        try {
+            assertEquals(0L, store.loadOrMigrate(false, 550_000L).single().startMs)
+        } finally {
+            tmp.delete()
+        }
+        assertTrue(store.recordResume(700_000L))
+        val afterResume = store.loadOrMigrate(false, 800_000L)
+        // The older pause also starts after the observation; widening only that one would
+        // leave the rolled-back window between the two pauses importable.
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 580_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 650_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 750_000L))
+        assertNull(afterResume.firstOrNull { it.endMs == null })
+    }
+
+    @Test
+    fun pendingRollbackBoundaryRecoversWhenTheAffectedPauseWasMergedIntoAnEarlierOne() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        val store = PauseIntervalStore(context, wallClockMs = { 550_000L })
+        assertTrue(store.recordPause(500_000L))
+        assertTrue(store.recordResume(650_000L))
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir())
+        try {
+            assertEquals(0L, store.loadOrMigrate(false, 550_000L).single().startMs)
+        } finally {
+            tmp.delete()
+        }
+        // Storage unions the resumed pause into [500_000, 700_000), which starts before the
+        // observation. That must not leave every later import blocked from epoch.
+        assertTrue(store.recordResume(700_000L))
+        val afterResume = store.loadOrMigrate(false, 800_000L)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 560_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 400_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 750_000L))
+    }
+
+    @Test
+    fun resumeAfterAFailedMigrationPersistsTheObservedPause() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        val store = PauseIntervalStore(context)
+        assertTrue(tmp.mkdir())
+        // Non-empty, so the failed write's cleanup cannot remove the obstruction.
+        File(tmp, "keep").writeText("")
+        try {
+            assertEquals(0L, store.loadOrMigrate(true, 10_000L).single().startMs)
+            // The observed pause cannot be saved, so the resume must not succeed.
+            assertFalse(store.recordResume(15_000L))
+            assertFalse(file.exists())
+        } finally {
+            tmp.deleteRecursively()
+        }
+        assertTrue(store.recordResume(20_000L))
+        val afterResume = store.loadOrMigrate(false, 30_000L)
+        assertEquals(10_000L, afterResume.single().startMs)
+        assertEquals(20_000L, afterResume.single().endMs)
+    }
+
+    @Test
     fun liveGateCacheTracksOutOfBandFileChanges() {
         val context = RuntimeEnvironment.getApplication()
         val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)

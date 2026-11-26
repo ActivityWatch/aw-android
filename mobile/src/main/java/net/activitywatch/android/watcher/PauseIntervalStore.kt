@@ -98,7 +98,13 @@ internal class PauseIntervalStore(
 
     /** Close the open interval at [atMs]. No-op (true) when nothing is open. */
     fun recordResume(atMs: Long): Boolean = synchronized(lock) {
-        val current = read() ?: return@synchronized false
+        val stored = read() ?: return@synchronized false
+        // A migration that failed to persist left the observed pause only in memory. It
+        // must be written, closed, before the caller clears the flag: afterwards neither
+        // the missing file nor the flag would tell an import that the window was private.
+        val unsavedStart = earliestUnpersistedPauseStart
+        val restoring = !file.exists() && unsavedStart != Long.MAX_VALUE
+        val current = if (restoring) listOf(PauseInterval(unsavedStart)) else stored
         val openIndex = current.indexOfFirst { it.endMs == null }
         if (openIndex < 0) return@synchronized true
         val open = current[openIndex]
@@ -118,7 +124,9 @@ internal class PauseIntervalStore(
         } else {
             // The refusal floor belongs only to this open pause. Retain its exclusion,
             // but do not apply the completed pause's clock floor to a later pause.
-            write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) }, resumeAfterMs = 0L)
+            val saved = write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) }, resumeAfterMs = 0L)
+            if (saved && restoring) takeUnpersistedPauseStart()
+            saved
         }
     }
 
@@ -173,16 +181,15 @@ internal class PauseIntervalStore(
                     normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
                 } else {
                     // The pause was completed before the pending boundary could be
-                    // persisted. Reopening it would suppress every later import, so widen
-                    // the closed interval that began after the observation instead: its
-                    // start is the boundary the failed write could not lower.
-                    val targetIndex = current.indices
-                        .filter { current[it].endMs != null && current[it].startMs >= pending }
-                        .minByOrNull { current[it].startMs }
-                        ?: return@synchronized listOf(PauseInterval(0L))
-                    current.mapIndexed { index, interval ->
-                        if (index == targetIndex) interval.copy(startMs = minOf(interval.startMs, pending)) else interval
+                    // persisted. Reopening it would suppress every later import. The
+                    // boundary cannot say which closed pause it belongs to, and storage
+                    // may have merged that pause into an earlier one, so exclude
+                    // everything from the boundary through the latest recorded pause end.
+                    val latestEnd = current.mapNotNull { it.endMs }.maxOrNull()
+                    if (latestEnd == null || latestEnd <= pending) {
+                        return@synchronized listOf(PauseInterval(0L))
                     }
+                    current + PauseInterval(pending, latestEnd)
                 }
                 val floor = maxOf(open?.startMs ?: 0L, rollbackResumeFloor())
                 if (!write(widened, floor)) return@synchronized listOf(PauseInterval(0L))
