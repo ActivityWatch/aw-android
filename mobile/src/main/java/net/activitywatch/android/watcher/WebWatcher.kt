@@ -409,7 +409,10 @@ class WebWatcher : AccessibilityService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
-        // Lets already-queued events finish writing.
+        // A visit is only written when the url, browser or window changes, so the page
+        // open right now would be lost with the service (aw-android#409). Queue it
+        // before shutdown, which lets already-queued events finish writing.
+        handleUrl(null, newBrowser = null)
         writer.shutdown()
         unregisterReceiver(packageChangeReceiver)
         detectionExecutor.shutdown()
