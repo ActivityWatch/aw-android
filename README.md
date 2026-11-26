@@ -22,6 +22,19 @@ For other platforms, see [activitywatch.net/downloads](https://activitywatch.net
 
 Install the app from the [Play Store](https://play.google.com/store/apps/details?id=net.activitywatch.android), [F-Droid](https://f-droid.org/en/packages/net.activitywatch.android/), or the [GitHub releases](https://github.com/ActivityWatch/aw-android/releases).
 
+### Pause web and media logging
+
+Use **Pause web and media logging** in the navigation drawer, then confirm the
+scope. The setting survives app/service restarts; use **Resume web and media
+logging** in the same menu to resume. Android permissions stay enabled.
+
+This pauses only ActivityWatch's live accessibility/browser and media collectors.
+**App-usage and unlock history are still imported from Android**, including while
+these collectors are paused. Unfinished browser visits and buffered media segments
+are discarded at the boundary so they cannot span the paused interval. Previously
+completed events may still finish writing. Existing data is not deleted and sync
+continues normally.
+
 ### For Oculus Quest
 
 > **Note** 
