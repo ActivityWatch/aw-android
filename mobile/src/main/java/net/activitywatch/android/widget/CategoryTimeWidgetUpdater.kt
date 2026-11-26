@@ -17,13 +17,15 @@ import androidx.core.content.ContextCompat
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
+import net.activitywatch.android.utils.logicalDate
+import net.activitywatch.android.utils.logicalDayWindow
 import com.jakewharton.threetenabp.AndroidThreeTen
 import org.json.JSONArray
 import org.json.JSONObject
-import org.threeten.bp.LocalDate
 import org.threeten.bp.LocalDateTime
 import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
+import org.threeten.bp.ZonedDateTime
 import org.threeten.bp.format.DateTimeFormatter
 
 private const val TAG = "CategoryTimeWidget"
@@ -394,12 +396,8 @@ object CategoryTimeWidgetUpdater {
 
             // Match aw-webui's day boundary: if current time is before startOfDay we're still
             // in the previous day's period (e.g. 3:45 AM with startOfDay=04:00 → "yesterday")
-            val nowTime = LocalTime.now(zone)
-            val today = if (nowTime < startOfDayTime) LocalDate.now().minusDays(1) else LocalDate.now()
-            val startOfDay = today.atStartOfDay(zone)
-                .plusHours(startOfDayTime.hour.toLong())
-                .plusMinutes(startOfDayTime.minute.toLong())
-            val endOfDay = startOfDay.plusDays(1)
+            val today = logicalDate(ZonedDateTime.now(zone), startOfDayTime)
+            val (startOfDay, endOfDay) = logicalDayWindow(today, startOfDayTime, zone)
 
             val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
             Log.d(TAG, "Querying for timeperiod: $timeperiod (startOfDay=${startOfDayTime})")

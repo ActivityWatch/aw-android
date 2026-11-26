@@ -16,14 +16,17 @@ import net.activitywatch.android.EXTRA_OPEN_ACTIVITY_VIEW
 import net.activitywatch.android.MainActivity
 import net.activitywatch.android.R
 import net.activitywatch.android.RustInterface
+import net.activitywatch.android.utils.logicalDate
+import net.activitywatch.android.utils.logicalDayWindow
 import net.activitywatch.android.watcher.SessionEventWatcher
 import net.activitywatch.android.watcher.UsageStatsWatcher
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.threeten.bp.LocalDate
-import org.threeten.bp.LocalDateTime
+import org.threeten.bp.LocalTime
 import org.threeten.bp.ZoneId
+import org.threeten.bp.ZonedDateTime
 import org.threeten.bp.format.DateTimeFormatter
 import org.threeten.bp.format.DateTimeParseException
 
@@ -54,8 +57,8 @@ private val DEFAULT_ALERTS = listOf(
     CategoryAlert("YouTube",  "📺 YouTube", listOf(30, 60)),
 )
 
-internal fun logicalDayDate(now: LocalDateTime, startOfDayHour: Int): LocalDate =
-    if (now.hour < startOfDayHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
+internal fun logicalDayDate(now: ZonedDateTime, startOfDayHour: Int): LocalDate =
+    logicalDate(now, LocalTime.of(startOfDayHour, 0))
 
 internal fun parseAlerts(json: String): List<CategoryAlert> = parseAlertArray(JSONArray(json), legacy = true)
 
@@ -283,7 +286,7 @@ class NotifyWorker internal constructor(
             }
             val zone = ZoneId.systemDefault()
             val startOfDayHour = parseStartOfDayHour(backend.getSetting("startOfDay"))
-            val now = LocalDateTime.now(zone)
+            val now = ZonedDateTime.now(zone)
             val categorySeconds = getCategorySecondsToday(backend, now, zone, startOfDayHour)
             checkAndNotify(categorySeconds, logicalDayDate(now, startOfDayHour), alerts)
             Result.success()
@@ -295,14 +298,13 @@ class NotifyWorker internal constructor(
 
     private fun getCategorySecondsToday(
         backend: NotifyBackend,
-        now: LocalDateTime,
+        now: ZonedDateTime,
         zone: ZoneId,
         startOfDayHour: Int,
     ): Map<String?, Double> {
         val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         val logicalDate = logicalDayDate(now, startOfDayHour)
-        val startOfDay = logicalDate.atStartOfDay(zone).plusHours(startOfDayHour.toLong())
-        val endOfDay = startOfDay.plusDays(1)
+        val (startOfDay, endOfDay) = logicalDayWindow(logicalDate, LocalTime.of(startOfDayHour, 0), zone)
 
         val timeperiod = "[\"${formatter.format(startOfDay)}/${formatter.format(endOfDay)}\"]"
         Log.d(TAG, "Querying timeperiod: $timeperiod")
