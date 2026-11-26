@@ -186,10 +186,19 @@ class DashboardThemePaintTest {
                 // null sheet as settled instead of waiting for a listener that
                 // can never fire (the failsafe is disabled here).
                 evaluate(webView, "location.href = '/early'")
-                await {
+                // The previous document stays visible and complete until /early
+                // commits, so match the pathname too. Otherwise the 404 is lifted
+                // before /early requests dark.css, and its late commit can drop
+                // the navigation back to / below.
+                await("/early revealed") {
+                    val loaded = evaluate(
+                        webView,
+                        "location.pathname === '/early' && document.readyState === 'complete'",
+                    ) == "true"
+                    // Read visibility only once /early is the current document.
                     var visible = false
                     scenario.onActivity { visible = webView.visibility == View.VISIBLE }
-                    visible && evaluate(webView, "document.readyState") == "\"complete\""
+                    loaded && visible
                 }
                 assertEquals(
                     "\"rgb(247, 250, 252)\"",
@@ -303,7 +312,7 @@ class DashboardThemePaintTest {
         // injected from onPageFinished).
         val PAGE_EARLY = """
             <!doctype html>
-            <html><head><script>
+            <html><head><style>body { background: rgb(247, 250, 252); }</style><script>
               var link = document.createElement('link');
               link.rel = 'stylesheet';
               link.href = '/dark.css';
