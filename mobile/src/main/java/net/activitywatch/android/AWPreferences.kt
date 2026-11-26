@@ -75,6 +75,17 @@ class AWPreferences(context: Context) {
         sharedPreferences.edit().putBoolean("hasMigratedNotifyOptIn", true).apply()
     }
 
+    // Written once by DatastoreStartup before the datastore opens; null until then.
+    fun notifyOptInExistingData(): Boolean? {
+        if (!sharedPreferences.contains("notifyOptInExistingData")) return null
+        return sharedPreferences.getBoolean("notifyOptInExistingData", false)
+    }
+
+    // commit(), not apply(): if the process died before an async write reached disk, the
+    // next start would re-derive the signal from a datastore this install already created.
+    fun setNotifyOptInExistingData(existing: Boolean): Boolean =
+        sharedPreferences.edit().putBoolean("notifyOptInExistingData", existing).commit()
+
     // Per hostname, since staging lives under {sync_dir}/{hostname}/ (see StagingReset).
     fun isStagingResetDone(hostname: String): Boolean {
         return sharedPreferences.getBoolean(StagingReset.prefKey(hostname), false)

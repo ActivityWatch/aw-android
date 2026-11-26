@@ -134,6 +134,16 @@ internal fun notifyOptInMigrationValue(current: String, isUpgrade: Boolean): Str
     return config.put("enabled", true).toString()
 }
 
+/**
+ * Whether the opt-in migration should treat this install as an existing user.
+ *
+ * Install times alone read a backup restored onto a new phone as a fresh install, which
+ * would turn that user's alerts off. A datastore that existed before this install first
+ * opened it marks the restore (ActivityWatch/aw-android#405).
+ */
+internal fun notifyOptInIsUpgrade(installTimesShowUpgrade: Boolean, existingData: Boolean): Boolean =
+    installTimesShowUpgrade || existingData
+
 internal fun parseStartOfDayHour(response: String): Int {
     val value = response.trim()
     val hour = when {

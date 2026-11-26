@@ -289,7 +289,10 @@ class BackgroundService : Service() {
     private fun migrateNotifyOptIn(prefs: AWPreferences, ri: RustInterface) {
         val value = net.activitywatch.android.workers.notifyOptInMigrationValue(
             ri.getSetting("aw-notify"),
-            isUpgrade = isUpgradeInstall(),
+            isUpgrade = net.activitywatch.android.workers.notifyOptInIsUpgrade(
+                installTimesShowUpgrade = isUpgradeInstall(),
+                existingData = DatastoreStartup.notifyOptInExistingData(prefs) == true,
+            ),
         )
         if (value == null) {
             prefs.setNotifyOptInMigrated()

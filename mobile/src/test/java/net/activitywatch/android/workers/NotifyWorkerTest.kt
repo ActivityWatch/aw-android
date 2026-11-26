@@ -137,6 +137,21 @@ class NotifyWorkerTest {
     }
 
     @Test
+    fun notifyOptInMigration_restoredBackupKeepsAlertsOnDespiteFreshInstallTimes() {
+        // A pre-opt-in backup restored onto a new phone: install times look fresh,
+        // but the datastore was already there (ActivityWatch/aw-android#405).
+        val isUpgrade = notifyOptInIsUpgrade(installTimesShowUpgrade = false, existingData = true)
+        assertTrue(isUpgrade)
+        val migrated = notifyOptInMigrationValue("null", isUpgrade)!!
+        assertTrue(JSONObject(migrated).getBoolean("enabled"))
+        assertEquals("All", alertsFromSetting(migrated)[0].label)
+
+        assertTrue(notifyOptInIsUpgrade(installTimesShowUpgrade = true, existingData = false))
+        assertTrue(notifyOptInIsUpgrade(installTimesShowUpgrade = true, existingData = true))
+        assertFalse(notifyOptInIsUpgrade(installTimesShowUpgrade = false, existingData = false))
+    }
+
+    @Test
     fun notifyOptInMigration_configWithoutFlagIsMarkedEnabledAndKeepsAlerts() {
         val before = """{"alerts":[{"category":"Work","thresholds_minutes":[30]}]}"""
         for (isUpgrade in listOf(true, false)) {
