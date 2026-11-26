@@ -312,6 +312,12 @@ class LiveCollectionPauseTest {
         assertNull(migrated.single().endMs)
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 560_000L))
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 650_000L))
+        // The durable exclusion clears the pending boundary. A later resume completes the
+        // pause, and even a stale paused-flag read must not reopen it.
+        assertTrue(store.recordResume(800_000L))
+        val afterResume = store.loadOrMigrate(true, 900_000L)
+        assertEquals(800_000L, afterResume.single().endMs)
+        assertNull(afterResume.firstOrNull { it.endMs == null })
     }
 
     @Test

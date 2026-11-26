@@ -140,28 +140,18 @@ internal class PauseIntervalStore(
                 rememberUnpersistedPauseStart(observedNow)
                 return@synchronized listOf(PauseInterval(0L))
             }
+            // The widened exclusion is durable now: no pending boundary may outlive it
+            // and reopen a pause the user has since completed.
+            takeUnpersistedPauseStart()
             return@synchronized expanded
         }
-        if (!flagPaused) return@synchronized current
-
-        val pending = takeUnpersistedPauseStart()
-        if (file.exists()) {
-            // The durable history is authoritative, but an earlier failed attempt may
-            // have left a pending boundary. Backfill it once a write can succeed; the
-            // new open interval covers everything from that attempt onward.
-            if (pending != null && current.none { it.endMs == null && it.startMs <= pending }) {
-                val migrated = current + PauseInterval(startMs = pending, endMs = null)
-                if (!write(migrated)) {
-                    rememberUnpersistedPauseStart(pending)
-                    return@synchronized listOf(PauseInterval(0L))
-                }
-                return@synchronized PauseIntervals.normalize(migrated)
-            }
-            return@synchronized current
-        }
+        // Once the file exists it is authoritative: a caller may have sampled a stale
+        // paused flag just before a resume closed the interval. Only the missing-file
+        // migration may act on the flag (and on a pending earlier attempt).
+        if (!flagPaused || file.exists()) return@synchronized current
 
         // A later successful write starts at the earliest attempt, never at the retry.
-        val start = minOf(nowMs, pending ?: nowMs)
+        val start = minOf(nowMs, takeUnpersistedPauseStart() ?: nowMs)
         val migrated = current + PauseInterval(startMs = start, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $start")
         if (!write(migrated)) {
