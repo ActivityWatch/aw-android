@@ -39,6 +39,7 @@ import net.activitywatch.android.R
 import net.activitywatch.android.baseURL
 import net.activitywatch.android.ensureDashboardApiKey
 import net.activitywatch.android.initialWebViewBackgroundRes
+import net.activitywatch.android.installThemeStylesheetRecorder
 import net.activitywatch.android.utils.startActivityOrToast
 import org.json.JSONObject
 import java.io.File
@@ -644,6 +645,7 @@ class WebUIFragment : Fragment() {
             "Android",
         )
         installNativeBridge(myWebView)
+        installThemeStylesheetRecorder(myWebView)
         arguments?.let {
             it.getString(ARG_URL)?.let { it1 -> myWebView.loadUrl(it1) }
         }

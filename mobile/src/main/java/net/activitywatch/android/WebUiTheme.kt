@@ -1,8 +1,31 @@
 package net.activitywatch.android
 
 import android.content.res.Configuration
+import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+
+/** Record terminal events before onPageFinished, without reporting an untagged navigation. */
+internal fun installThemeStylesheetRecorder(view: WebView) {
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        WebViewCompat.addDocumentStartJavaScript(view, ANDROID_THEME_STYLESHEET_RECORDER_JS, setOf("*"))
+    }
+}
+
+internal val ANDROID_THEME_STYLESHEET_RECORDER_JS = """
+(function () {
+  if (window !== window.top || window.__awThemeStylesheetRecorder) return;
+  window.__awThemeStylesheetRecorder = true;
+  function terminal(event) {
+    var link = event.target;
+    if (link && link.tagName === 'LINK') link.__awSettled = true;
+  }
+  document.addEventListener('load', terminal, true);
+  document.addEventListener('error', terminal, true);
+})();
+""".trimIndent()
 
 /**
  * Resolve aw-webui's stored theme (`light` / `dark` / `auto`) to a dark chrome
@@ -91,20 +114,27 @@ internal val ANDROID_THEME_HOOK_JS = """
 
   var settledReported = false;
 
-  // This hook is injected from onPageFinished, after the window load event, so
-  // a dark.css link already in the document has already fired load or error.
-  // Its listener would then never fire, leaving the document hidden until the
-  // failsafe. Mark it so a null sheet is read as "failed" below.
-  var linkAtInstall = document.querySelector('link[href*="dark.css"]');
-  if (linkAtInstall) linkAtInstall.__awPresentAtHookInstall = true;
-
   function darkStylesheetSettled(link) {
     if (link.__awSettled) return true;
-    try {
-      if (link.sheet && link.sheet.cssRules.length > 0) return true;
-    } catch (e) {
-      // The sheet exists but its rules are unreadable (cross-origin): loaded.
-      return true;
+    // A link only gets a sheet once its load has finished, so even an empty
+    // one is settled: a fast failure (an empty 404) leaves one (aw-android#332).
+    if (link.sheet) return true;
+    if (!window.__awThemeStylesheetRecorder && !link.__awWatched) {
+      // Old WebViews cannot record events at document start. A missing/empty
+      // sheet is ambiguous (pending or failed), even after window load.
+      // Restart this one link with listeners installed before insertion rather
+      // than guessing. Preserve attributes and cascade position; no loaded CSS
+      // is removed. Modern WebViews never need this extra request.
+      var replacement = link.cloneNode(false);
+      replacement.__awWatched = true;
+      var completed = function () {
+        replacement.__awSettled = true;
+        checkSettled();
+      };
+      replacement.addEventListener('load', completed);
+      replacement.addEventListener('error', completed);
+      link.parentNode.replaceChild(replacement, link);
+      return false;
     }
     if (!link.__awWatched) {
       link.__awWatched = true;
@@ -114,30 +144,6 @@ internal val ANDROID_THEME_HOOK_JS = """
       };
       link.addEventListener('load', done);
       link.addEventListener('error', done);
-    }
-    if (link.__awPresentAtHookInstall && document.readyState === 'complete') {
-      // Present before this hook ran and the document finished loading. A link
-      // that was added before the load event has already dispatched load/error
-      // (our listener above will never fire). However, a link appended in a
-      // post-load fetch callback may still be in-flight when this hook runs.
-      // PerformanceResourceTiming's responseEnd distinguishes the two cases:
-      // > 0 means the response was received before the hook; treat a null
-      // sheet as "failed" and reveal the readable fallback now.
-      // A fast failure (an empty 404) can also leave an empty sheet and no
-      // timing entry on older WebViews (aw-android#332). A link only gets a
-      // sheet once its load has finished, so an empty sheet here is settled.
-      if (link.sheet) return true;
-      try {
-        var entries = performance.getEntriesByName(link.href, 'resource');
-        if (entries.length > 0 && entries[entries.length - 1].responseEnd > 0) {
-          return true;
-        }
-        // Request still in-flight; the listener above will fire on completion.
-        return false;
-      } catch (e) {
-        // performance API unavailable; fall back: treat null sheet as failed.
-        return true;
-      }
     }
     return false;
   }

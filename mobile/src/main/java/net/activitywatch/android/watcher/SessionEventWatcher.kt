@@ -2,6 +2,7 @@ package net.activitywatch.android.watcher
 
 import android.content.Context
 import android.util.Log
+import net.activitywatch.android.AWPreferences
 import net.activitywatch.android.OffThreadInit
 import net.activitywatch.android.RustInterface
 import net.activitywatch.android.data.AppSession
@@ -30,6 +31,7 @@ class SessionEventWatcher(val context: Context) {
         ) { RustInterface(context.applicationContext) }
     }
     private val sessionParser = SessionParser(context)
+    private val pauseStore = PauseIntervalStore(context.applicationContext)
 
     var lastUpdated: Instant? = null
 
@@ -135,35 +137,71 @@ class SessionEventWatcher(val context: Context) {
         lastUpdated = lastSession?.let(::eventStart)
         Log.w(TAG, "lastUpdated: ${lastUpdated?.toString() ?: "never"}")
 
-        val startTimestamp = nextQueryStartTimestamp()
         val storedStart = lastUpdated?.toEpochMilli()
+        val now = System.currentTimeMillis()
+
+        // Import only the windows outside the user's private pause intervals (#385). Each
+        // window is parsed with its own end, so a session is never assembled across a
+        // paused gap and the clip happens before the end is ever persisted — a later
+        // replay cannot shrink a stored event, because heartbeat merge keeps the longer end.
+        val pauses = pauseIntervals()
+        val windows = PauseIntervals.allowedWindows(pauses, nextQueryStartTimestamp(), now)
+
         // Unlocks need their own cursor. Resuming them from the last *session* start
         // re-sent every unlock since then on each run, and the server only merges a
         // heartbeat into the newest event, so all but the last were inserted again.
         val lastUnlock = lastUnlockEvent?.let(::eventStart)
-        val batch = sessionParser.parseSessionsAndUnlocksSince(
-            startTimestamp, queryStartAfter(lastUnlock), storedStart
-        )
-        val sessions = batch.sessions
-        val unlockTimestamps = batch.unlockTimestamps
+        val unlockCursor = queryStartAfter(lastUnlock)
 
         var eventsSent = 0
+        var unlocksSent = 0
 
-        for (session in sessions) {
-            // Insert session as individual event
-            val storedData = lastStoredData.takeIf { session.startTime == storedStart }
-            insertSessionAsEvent(session, storedData)
-            eventsSent++
+        for (window in windows) {
+            // A clipped event starts at the pause's end, not at its original RESUMED.
+            // Recover foreground state even for the FIRST window after restart; using
+            // only storedStart would filter out RESUMED and permanently stop extension.
+            val sessionsSince = PauseIntervals.sessionReplayStart(pauses, storedStart, window)
+
+            val batch = sessionParser.parseSessionsAndUnlocksSince(
+                sessionsSince,
+                Long.MAX_VALUE, // Unlocks replay independently below, not from the session cursor.
+                storedStart,
+                until = window.endMs,
+            )
+            for (session in batch.sessions) {
+                // Replay can include private/previously imported history. Never persist
+                // that lookback, even in the first window of a subsequent import.
+                val clipped = PauseIntervals.clipToWindow(session, window) ?: continue
+                // Insert session as individual event
+                val storedData = lastStoredData.takeIf { clipped.startTime == storedStart }
+                insertSessionAsEvent(clipped, storedData)
+                eventsSent++
+            }
         }
-        
-        for (timestamp in unlockTimestamps) {
-            val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
-            ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+
+        // A killed import may have persisted sessions but not all unlocks. Their allowed
+        // windows must start at the unlock cursor, even when it predates every session.
+        for (window in PauseIntervals.allowedWindows(pauses, unlockCursor, now)) {
+            for (timestamp in sessionParser.parseUnlockEventsForPeriod(window.startMs, window.endMs)) {
+                val instant = DateTimeUtils.toInstant(java.util.Date(timestamp))
+                ri.heartbeatHelper(UNLOCK_BUCKET_ID, instant, 0.0, JSONObject(), 0.0)
+                unlocksSent++
+            }
         }
-        
-        Log.i(TAG, "Finished processing events, sent $eventsSent session events and ${unlockTimestamps.size} unlock events")
+
+        // Do not prune from usage/unlock progress: a browser visit can finish days after
+        // its start and still need an older boundary to prevent heartbeat gap merging.
+        // Retain privacy evidence until every consumer has a proven durable safe floor.
+
+        Log.i(TAG, "Finished processing events, sent $eventsSent session events and $unlocksSent unlock events in ${windows.size} window(s)")
         return eventsSent
     }
+
+    private fun pauseIntervals(): List<PauseInterval> =
+        pauseStore.loadOrMigrate(
+            flagPaused = AWPreferences(context).isLiveCollectionPaused(),
+            nowMs = System.currentTimeMillis(),
+        )
 
 
 

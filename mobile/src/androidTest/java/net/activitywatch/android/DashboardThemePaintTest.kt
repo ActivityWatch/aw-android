@@ -48,6 +48,7 @@ class DashboardThemePaintTest {
         val stylesheetRequests = AtomicInteger()
         val releaseStylesheet = AtomicReference(CountDownLatch(1))
         val stylesheetMissing = AtomicBoolean(false)
+        val stylesheetHoldExpired = AtomicBoolean(false)
         val server = ServerSocket(0)
         // Concurrent handlers: a held /dark.css from the previous document
         // must not stall GET /. Serial accept timed out the /early → /
@@ -82,7 +83,13 @@ class DashboardThemePaintTest {
                                     "/dark.css" -> {
                                         val release = releaseStylesheet.get()
                                         stylesheetRequests.incrementAndGet()
-                                        release.await(15, TimeUnit.SECONDS)
+                                        if (!release.await(15, TimeUnit.SECONDS)) {
+                                            stylesheetHoldExpired.set(true)
+                                            conn.getOutputStream().write(
+                                                "HTTP/1.1 504 Hold Expired\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()
+                                            )
+                                            return@use
+                                        }
                                         "text/css" to "body { background: rgb(15, 19, 26); }"
                                     }
                                     else -> "text/plain" to ""
@@ -247,6 +254,7 @@ class DashboardThemePaintTest {
                 // Past every polling attempt plus scheduling margin, not just
                 // the first extension. The old cap revealed this light page.
                 Thread.sleep(themeSettleFailsafeMs * (THEME_SETTLE_MAX_EXTENSIONS + 1) + 1_500)
+                assertTrue("Stylesheet fixture hold expired", !stylesheetHoldExpired.get())
                 assertEquals(
                     "The held stylesheet must still be pending after the cap",
                     "\"pending\"", evaluate(webView, "window.__awAndroidThemeState()")
@@ -271,6 +279,7 @@ class DashboardThemePaintTest {
                     "\"rgb(15, 19, 26)\"",
                     evaluate(webView, "getComputedStyle(document.body).backgroundColor")
                 )
+                assertTrue("Stylesheet fixture hold expired", !stylesheetHoldExpired.get())
             }
         } finally {
             themeSettleFailsafeMs = originalFailsafeMs

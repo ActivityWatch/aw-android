@@ -224,10 +224,37 @@ class UsageStatsWatcher constructor(val context: Context) {
 
             // TODO: Fix issues that occur when usage stats events are out of order (RESUME before PAUSED)
             var heartbeatsSent = 0
-            val usageEvents = usm.queryEvents(lastUpdated?.toEpochMilli() ?: 0L, Long.MAX_VALUE)
+            // Private intervals (#385). Legacy heartbeats carry pulsetime 24h on ACTIVITY_PAUSED,
+            // so an identically-labelled RESUMED after a short pause lands inside
+            // `last.end + pulsetime` and merges straight across the excluded gap. The first
+            // event inserted after a gap therefore uses insertEvent (pulsetime 0). Starting
+            // in that mode whenever intervals exist is the conservative direction for a
+            // privacy filter: at worst one merge into an older event is skipped.
+            // Bound the query BEFORE sampling intervals. A pause recorded after the snapshot
+            // cannot expose newer Android events through an otherwise unbounded query.
+            val queryUntil = System.currentTimeMillis()
+            val pauseIntervals = PauseIntervalStore(context).loadOrMigrate(
+                flagPaused = net.activitywatch.android.AWPreferences(context).isLiveCollectionPaused(),
+                nowMs = queryUntil,
+            )
+            val queryFrom = lastUpdated?.toEpochMilli() ?: 0L
+            // Timestamp of the previously inserted event (or the resume cursor). The merge
+            // guard is computed per event from this, not from a flag consumed once: a pause
+            // can contain no Android events at all (pause and resume without leaving
+            // ActivityWatch), in which case a flag would be spent on the pre-pause event and
+            // the post-pause one would merge across the gap with pulsetime 24h.
+            var lastInsertedAt = queryFrom
+            val usageEvents = usm.queryEvents(queryFrom, queryUntil)
             nextEvent@ while(usageEvents.hasNextEvent()) {
                 val event = UsageEvents.Event()
                 usageEvents.getNextEvent(event)
+
+                // Nothing inside a private interval may reach the bucket: not the unlock
+                // point, not the activity, not a heartbeat that could extend an older event
+                // into the interval.
+                if (PauseIntervals.isExcluded(pauseIntervals, event.timeStamp)) {
+                    continue@nextEvent
+                }
 
                 // Log screen unlock
                 if(event.eventType !in arrayListOf(UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED)) {
@@ -245,21 +272,28 @@ class UsageStatsWatcher constructor(val context: Context) {
 
                 // Log activity
                 val awEvent = Event.fromUsageEvent(event, context, includeClassname = true)
-                val pulsetime: Double
+                val mergePulsetime: Double
                 when(event.eventType) {
                     UsageEvents.Event.ACTIVITY_RESUMED -> {
                         // ACTIVITY_RESUMED: Activity was opened/reopened
-                        pulsetime = 1.0
+                        mergePulsetime = 1.0
                     }
                     UsageEvents.Event.ACTIVITY_PAUSED -> {
                         // ACTIVITY_PAUSED: Activity was moved to background
-                        pulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
+                        mergePulsetime = 24 * 60 * 60.0   // 24h, we will assume events should never grow longer than that
                     }
                     else -> {
                         Log.w(TAG, "This should never happen!")
                         continue@nextEvent
                     }
                 }
+
+                // pulsetime 0 stops the server from bridging the gap: it merges only
+                // exactly-adjacent events, which an excluded interval cannot produce.
+                val pulsetime =
+                    if (PauseIntervals.crossesPause(pauseIntervals, lastInsertedAt, event.timeStamp)) 0.0
+                    else mergePulsetime
+                lastInsertedAt = event.timeStamp
 
                 ri.heartbeatHelper(bucket_id, awEvent.timestamp, awEvent.duration, awEvent.data, pulsetime)
                 if(heartbeatsSent % 100 == 0) {
