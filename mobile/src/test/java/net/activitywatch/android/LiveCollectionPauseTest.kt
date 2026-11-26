@@ -276,14 +276,42 @@ class LiveCollectionPauseTest {
         } finally {
             tmp.delete()
         }
-        // Once the obstruction is gone the same call migrates and only hides later history.
+        // Once the obstruction is gone the same call migrates, but the durable exclusion
+        // must start at the earliest failed attempt, not at the retry time.
         val migrated = PauseIntervalStore(context).loadOrMigrate(true, 20_000L)
-        assertEquals(20_000L, migrated.single().startMs)
+        assertEquals(10_000L, migrated.single().startMs)
         assertNull(migrated.single().endMs)
         assertTrue(file.exists())
-        assertFalse(
-            net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 15_000L)
-        )
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 15_000L))
+    }
+
+    @Test
+    fun failedRollbackRetryPersistsTheObservedBoundaryNotTheRetryTime() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        // Pause recorded at a wall-clock time ahead of the rollback observation.
+        val store = PauseIntervalStore(context, wallClockMs = { 550_000L })
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir()) // deterministic write failure, including when running as root
+        try {
+            // The rollback widening cannot be persisted, so it must fail closed and
+            // remember the observed boundary for the retried attempt.
+            val pauses = store.loadOrMigrate(false, 550_000L)
+            assertEquals(0L, pauses.single().startMs)
+            assertNull(pauses.single().endMs)
+        } finally {
+            tmp.delete()
+        }
+        // After the obstruction is gone the flag-driven retry re-enters the rollback
+        // branch (the durable open interval still starts after the observed clock) and
+        // widens the exclusion to epoch: never narrower than what was observed.
+        val migrated = store.loadOrMigrate(true, 700_000L)
+        assertEquals(0L, migrated.single().startMs)
+        assertNull(migrated.single().endMs)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 560_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(migrated, 650_000L))
     }
 
     @Test

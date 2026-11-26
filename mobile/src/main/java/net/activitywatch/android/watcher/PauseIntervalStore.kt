@@ -38,6 +38,28 @@ internal class PauseIntervalStore(
          * would then store.
          */
         private val lock = Any()
+
+        /**
+         * Earliest pause boundary observed by a migration attempt that could not be
+         * persisted (process-wide, like [lock]). A later successful write must start the
+         * durable exclusion at this boundary, never at its own retry time: storage that
+         * recovers between attempts must not resurrect the private gap in between.
+         */
+        @Volatile
+        private var earliestUnpersistedPauseStart: Long = Long.MAX_VALUE
+
+        private fun rememberUnpersistedPauseStart(atMs: Long) {
+            if (atMs < earliestUnpersistedPauseStart) earliestUnpersistedPauseStart = atMs
+        }
+
+        /** Consumes the pending boundary: the attempt that finally persists it owns it. */
+        private fun takeUnpersistedPauseStart(): Long? = when (val pending = earliestUnpersistedPauseStart) {
+            Long.MAX_VALUE -> null
+            else -> {
+                earliestUnpersistedPauseStart = Long.MAX_VALUE
+                pending
+            }
+        }
     }
 
     /** Once migrated, the interval file is the durable collection-state authority too. */
@@ -111,17 +133,46 @@ internal class PauseIntervalStore(
             // events. Preserve closed evidence too: after resume an older closed interval
             // can extend beyond the newly closed epoch-based exclusion.
             val expanded = normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
-            write(expanded, maxOf(open.startMs, rollbackResumeFloor()))
+            if (!write(expanded, maxOf(open.startMs, rollbackResumeFloor()))) {
+                // The widened exclusion exists only in memory. Fail closed and remember
+                // the earliest observed boundary: a later successful write must never
+                // start the durable exclusion at its own retry time.
+                rememberUnpersistedPauseStart(observedNow)
+                return@synchronized listOf(PauseInterval(0L))
+            }
             return@synchronized expanded
         }
-        if (!flagPaused || file.exists()) return@synchronized current
-        val migrated = current + PauseInterval(startMs = nowMs, endMs = null)
-        Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $nowMs")
+        if (!flagPaused) return@synchronized current
+
+        val pending = takeUnpersistedPauseStart()
+        if (file.exists()) {
+            // The durable history is authoritative, but an earlier failed attempt may
+            // have left a pending boundary. Backfill it once a write can succeed; the
+            // new open interval covers everything from that attempt onward.
+            if (pending != null && current.none { it.endMs == null && it.startMs <= pending }) {
+                val migrated = current + PauseInterval(startMs = pending, endMs = null)
+                if (!write(migrated)) {
+                    rememberUnpersistedPauseStart(pending)
+                    return@synchronized listOf(PauseInterval(0L))
+                }
+                return@synchronized PauseIntervals.normalize(migrated)
+            }
+            return@synchronized current
+        }
+
+        // A later successful write starts at the earliest attempt, never at the retry.
+        val start = minOf(nowMs, pending ?: nowMs)
+        val migrated = current + PauseInterval(startMs = start, endMs = null)
+        Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $start")
         if (!write(migrated)) {
             // The interval exists only in memory: the file still has no boundary, so a
             // later import would see an empty history and backfill the private window.
-            // Fail closed exactly as an unreadable file does. The migration is retried on
-            // the next call once the obstruction is gone, so public history is not lost.
+            // Fail closed exactly as an unreadable file does, and remember the earliest
+            // attempted boundary so the retried migration cannot start later than the
+            // first failed attempt. (A restart that loses this process-wide memory
+            // before any write succeeds still cannot recover the boundary durably;
+            // there is nowhere to persist it while storage refuses writes.)
+            rememberUnpersistedPauseStart(start)
             return@synchronized listOf(PauseInterval(0L))
         }
         PauseIntervals.normalize(migrated)
