@@ -60,11 +60,27 @@ internal class PauseIntervalStore(
                 pending
             }
         }
+
+        /**
+         * Paused state derived from the last completed read or write, keyed by the file's
+         * (mtime, length). Every accessibility callback asks for this state on the service
+         * main thread, so re-reading and parsing the interval log there would block on disk
+         * I/O (the #261 ANR class). The signature keeps an out-of-band change — a repair
+         * deleting or rewriting the file — from being served from a stale cache.
+         */
+        private var cachedSignature: Pair<Long, Long>? = null
+        private var cachedPaused: Boolean? = null
     }
 
     /** Once migrated, the interval file is the durable collection-state authority too. */
     fun isPaused(fallback: Boolean): Boolean = synchronized(lock) {
-        if (file.exists()) read()?.any { it.endMs == null } ?: true else fallback
+        if (!file.exists()) return@synchronized fallback
+        val signature = file.lastModified() to file.length()
+        if (signature == cachedSignature) return@synchronized cachedPaused ?: true
+        val value = read()?.any { it.endMs == null } ?: true
+        cachedSignature = signature
+        cachedPaused = value
+        value
     }
 
     /**
@@ -145,10 +161,41 @@ internal class PauseIntervalStore(
             takeUnpersistedPauseStart()
             return@synchronized expanded
         }
-        // Once the file exists it is authoritative: a caller may have sampled a stale
-        // paused flag just before a resume closed the interval. Only the missing-file
-        // migration may act on the flag (and on a pending earlier attempt).
-        if (!flagPaused || file.exists()) return@synchronized current
+        if (file.exists()) {
+            // A pending boundary means an earlier attempt observed a private window it
+            // could not persist. The clock may have caught up past the open interval's
+            // start since then, so the rollback branch above no longer fires — but the
+            // exclusion still has to be written before an import can treat that window as
+            // public. Consuming it here is the only retry path left once the file exists.
+            val pending = earliestUnpersistedPauseStart
+            if (pending != Long.MAX_VALUE) {
+                val widened = if (open != null) {
+                    normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
+                } else {
+                    // The pause was completed before the pending boundary could be
+                    // persisted. Reopening it would suppress every later import, so widen
+                    // the closed interval that began after the observation instead: its
+                    // start is the boundary the failed write could not lower.
+                    val targetIndex = current.indices
+                        .filter { current[it].endMs != null && current[it].startMs >= pending }
+                        .minByOrNull { current[it].startMs }
+                        ?: return@synchronized listOf(PauseInterval(0L))
+                    current.mapIndexed { index, interval ->
+                        if (index == targetIndex) interval.copy(startMs = minOf(interval.startMs, pending)) else interval
+                    }
+                }
+                val floor = maxOf(open?.startMs ?: 0L, rollbackResumeFloor())
+                if (!write(widened, floor)) return@synchronized listOf(PauseInterval(0L))
+                takeUnpersistedPauseStart()
+                return@synchronized normalizeForStorage(widened)
+            }
+            // Once the file exists it is authoritative: a caller may have sampled a stale
+            // paused flag just before a resume closed the interval.
+            return@synchronized current
+        }
+
+        // Only the missing-file migration may act on the flag.
+        if (!flagPaused) return@synchronized current
 
         // A later successful write starts at the earliest attempt, never at the retry.
         val start = minOf(nowMs, takeUnpersistedPauseStart() ?: nowMs)
@@ -252,6 +299,9 @@ internal class PauseIntervalStore(
                 file.writeText(root.toString())
                 tmp.delete()
             }
+            // Keep the live-gate cache in step with the write that just committed.
+            cachedSignature = file.lastModified() to file.length()
+            cachedPaused = normalized.any { it.endMs == null }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Unable to persist pause intervals: ${e.message}")

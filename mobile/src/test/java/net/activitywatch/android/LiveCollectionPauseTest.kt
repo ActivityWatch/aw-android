@@ -321,6 +321,76 @@ class LiveCollectionPauseTest {
     }
 
     @Test
+    fun pendingRollbackBoundaryIsPersistedAfterTheClockCatchesUp() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        var clock = 550_000L
+        val store = PauseIntervalStore(context, wallClockMs = { clock })
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir()) // deterministic write failure, including when running as root
+        try {
+            // The widened exclusion cannot be persisted: fail closed and remember 550_000.
+            assertEquals(0L, store.loadOrMigrate(false, 550_000L).single().startMs)
+        } finally {
+            tmp.delete()
+        }
+        // The clock catches up past the open start, so the rollback branch no longer fires
+        // and the file exists: the pending boundary must still be persisted, not dropped.
+        clock = 650_000L
+        val recovered = store.loadOrMigrate(false, 650_000L)
+        assertEquals(0L, recovered.single().startMs)
+        assertNull(recovered.single().endMs)
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(recovered, 560_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(recovered, 650_000L))
+    }
+
+    @Test
+    fun pendingRollbackBoundarySurvivesAResumeBeforeItCanBePersisted() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        var clock = 550_000L
+        val store = PauseIntervalStore(context, wallClockMs = { clock })
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir())
+        try {
+            assertEquals(0L, store.loadOrMigrate(false, 550_000L).single().startMs)
+        } finally {
+            tmp.delete()
+        }
+        // The user resumes before any import can persist the pending boundary.
+        clock = 700_000L
+        assertTrue(store.recordResume(700_000L))
+        val afterResume = store.loadOrMigrate(false, 800_000L)
+        // The private window stays excluded, and the completed pause is not reopened.
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 560_000L))
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 650_000L))
+        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 750_000L))
+        assertNull(afterResume.firstOrNull { it.endMs == null })
+    }
+
+    @Test
+    fun liveGateCacheTracksOutOfBandFileChanges() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        file.delete()
+        val prefs = AWPreferences(context)
+        assertFalse(prefs.isLiveCollectionPaused())
+        assertTrue(PauseIntervalStore(context).recordPause(10_000L))
+        assertTrue(prefs.isLiveCollectionPaused())
+        assertTrue(PauseIntervalStore(context).recordResume(20_000L))
+        assertFalse(prefs.isLiveCollectionPaused())
+        // An out-of-band deletion must not be served from the cached value.
+        file.delete()
+        assertFalse(prefs.isLiveCollectionPaused())
+    }
+
+    @Test
     fun failedResumeKeepsTheOpenIntervalAndPausedCollectors() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = AWPreferences(context)
