@@ -531,9 +531,7 @@ jobs:
           adb pull /sdcard/screenshot.png . || true;
           mkdir -p mobile/build;
           adb logcat -d > mobile/build/logcat.log || true;
-          if adb shell pm list instrumentation | grep -F net.activitywatch.android.debug.test/ > /dev/null;
-          then bash scripts/measure-webview-rotation.sh; rotation_status=$?;
-          else rotation_status=1; fi;
+          bash scripts/measure-webview-rotation.sh; rotation_status=$?;
           if [ "$test_status" -ne 0 ]; then exit "$test_status"; fi;
           exit "$rotation_status"'
 

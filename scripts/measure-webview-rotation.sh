@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Diagnostic only. Reuse the already installed API 29 test APK for each round.
+# Diagnostic only. Gradle uninstalls instrumentation after its test run.
 set -euo pipefail
+
+apk_dir=mobile/build/outputs/apk
+adb install -r "$apk_dir/standard/debug/mobile-standard-debug.apk"
+adb install -r "$apk_dir/androidTest/standard/debug/mobile-standard-debug-androidTest.apk"
 
 log_dir=mobile/build/webview-rotation
 test_class=net.activitywatch.android.NativeWindowInsetsTest
