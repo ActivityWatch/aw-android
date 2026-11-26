@@ -435,6 +435,7 @@ jobs:
       fail-fast: false
       matrix:
         api-level: [29]
+        renderer: [swiftshader_indirect, lavapipe]
     steps:
 
     - uses: actions/checkout@v4
@@ -518,7 +519,7 @@ jobs:
         api-level: ${{ matrix.api-level }}
         target: default
         arch: x86_64
-        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -memory 2048
+        emulator-options: -no-window -gpu ${{ matrix.renderer }} -noaudio -no-boot-anim -no-snapshot-save -memory 2048
         disable-animations: true
         script: >-
           bash -o pipefail -c 'set +e; make test-e2e; test_status=$?;
@@ -530,13 +531,17 @@ jobs:
           adb pull /sdcard/screenshot.png . || true;
           mkdir -p mobile/build;
           adb logcat -d > mobile/build/logcat.log || true;
-          exit "$test_status"'
+          if adb shell pm list instrumentation | grep -F net.activitywatch.android.debug.test/ > /dev/null;
+          then bash scripts/measure-webview-rotation.sh; rotation_status=$?;
+          else rotation_status=1; fi;
+          if [ "$test_status" -ne 0 ]; then exit "$test_status"; fi;
+          exit "$rotation_status"'
 
     - name: Upload screenshot
       uses: actions/upload-artifact@v4
       if: ${{ always() }}
       with:
-        name: emulator-screenshot
+        name: emulator-screenshot-${{ matrix.renderer }}
         path: screenshot.png
         if-no-files-found: ignore
 
@@ -544,8 +549,10 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: logcat
-        path: mobile/build/logcat.log
+        name: logcat-${{ matrix.renderer }}
+        path: |
+          mobile/build/logcat.log
+          mobile/build/webview-rotation
         if-no-files-found: ignore
 
     #- name: Publish Test Report
