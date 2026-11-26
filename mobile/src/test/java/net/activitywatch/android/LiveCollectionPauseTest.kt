@@ -423,8 +423,120 @@ class LiveCollectionPauseTest {
         assertTrue(store.recordResume(700_000L))
         val afterResume = store.loadOrMigrate(false, 800_000L)
         assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 560_000L))
-        assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 400_000L))
+        // Same exclusion a successful rollback write would have produced: from epoch.
+        assertTrue(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 400_000L))
         assertFalse(net.activitywatch.android.watcher.PauseIntervals.isExcluded(afterResume, 750_000L))
+    }
+
+    @Test
+    fun failedRollbackWriteDuringResumeIsPersistedByTheNextResume() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        val store = PauseIntervalStore(context)
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir())
+        try {
+            assertFalse(store.recordResume(550_000L))
+        } finally {
+            tmp.delete()
+        }
+        assertTrue(store.recordResume(700_000L))
+        // Check the file itself: the process may die before any import runs.
+        val saved = org.json.JSONObject(file.readText()).getJSONArray("intervals")
+        assertEquals(1, saved.length())
+        assertEquals(0L, saved.getJSONObject(0).getLong("startMs"))
+        assertEquals(700_000L, saved.getJSONObject(0).getLong("endMs"))
+    }
+
+    @Test
+    fun resumeWritesARollbackThatAnImportCouldNotPersist() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.delete()
+        val store = PauseIntervalStore(context, wallClockMs = { 550_000L })
+        assertTrue(store.recordPause(600_000L))
+        assertTrue(tmp.mkdir())
+        try {
+            assertEquals(0L, store.loadOrMigrate(false, 550_000L).single().startMs)
+        } finally {
+            tmp.delete()
+        }
+        assertTrue(store.recordResume(700_000L))
+        // No import between the resume and this read: the file alone must exclude it.
+        val saved = org.json.JSONObject(file.readText()).getJSONArray("intervals")
+        assertEquals(0L, saved.getJSONObject(0).getLong("startMs"))
+        assertEquals(700_000L, saved.getJSONObject(0).getLong("endMs"))
+    }
+
+    @Test
+    fun failedRollbackAfterAFailedMigrationKeepsTheExclusionAndResumeFloor() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.deleteRecursively()
+        val store = PauseIntervalStore(context)
+        assertTrue(tmp.mkdir())
+        File(tmp, "keep").writeText("")
+        try {
+            assertEquals(0L, store.loadOrMigrate(true, 600_000L).single().startMs)
+            assertFalse(store.recordResume(550_000L))
+        } finally {
+            tmp.deleteRecursively()
+        }
+        assertTrue(store.recordResume(700_000L))
+        val intervals = store.loadOrMigrate(false, 800_000L)
+        assertEquals(0L, intervals.single().startMs)
+        assertEquals(700_000L, intervals.single().endMs)
+    }
+
+    @Test
+    fun failedRollbackAfterAFailedMigrationKeepsTheResumeFloor() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.deleteRecursively()
+        val store = PauseIntervalStore(context)
+        assertTrue(tmp.mkdir())
+        File(tmp, "keep").writeText("")
+        try {
+            assertEquals(0L, store.loadOrMigrate(true, 600_000L).single().startMs)
+            assertFalse(store.recordResume(550_000L))
+        } finally {
+            tmp.deleteRecursively()
+        }
+        // Storage works again, but the clock has not passed the original pause start.
+        assertFalse(store.recordResume(560_000L))
+        assertTrue(store.recordResume(700_000L))
+    }
+
+    @Test
+    fun retriedMigrationAfterAFailedRollbackKeepsTheResumeFloor() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = File(context.filesDir, PauseIntervalStore.FILE_NAME)
+        val tmp = File(context.filesDir, PauseIntervalStore.FILE_NAME + ".tmp")
+        file.delete()
+        tmp.deleteRecursively()
+        val store = PauseIntervalStore(context)
+        assertTrue(tmp.mkdir())
+        File(tmp, "keep").writeText("")
+        try {
+            assertEquals(0L, store.loadOrMigrate(true, 600_000L).single().startMs)
+            assertFalse(store.recordResume(550_000L))
+            // A second failed migration must not forget the floor either.
+            assertEquals(0L, store.loadOrMigrate(true, 555_000L).single().startMs)
+        } finally {
+            tmp.deleteRecursively()
+        }
+        assertEquals(0L, store.loadOrMigrate(true, 560_000L).single().startMs)
+        assertFalse(PauseIntervalStore(context).recordResume(580_000L))
+        assertTrue(store.recordResume(700_000L))
     }
 
     @Test

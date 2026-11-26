@@ -40,25 +40,31 @@ internal class PauseIntervalStore(
         private val lock = Any()
 
         /**
-         * Earliest pause boundary observed by a migration attempt that could not be
-         * persisted (process-wide, like [lock]). A later successful write must start the
-         * durable exclusion at this boundary, never at its own retry time: storage that
-         * recovers between attempts must not resurrect the private gap in between.
+         * Earliest start of an exclusion that could not be persisted (process-wide, like
+         * [lock]): the boundary of a failed migration, or 0 for a failed rollback widening.
+         * The next successful write must start the durable exclusion here, never at its own
+         * retry time: storage that recovers between attempts must not resurrect the private
+         * gap in between.
          */
         @Volatile
         private var earliestUnpersistedPauseStart: Long = Long.MAX_VALUE
+
+        /** Resume refusal floor belonging to a rollback widening that could not be persisted. */
+        private var unpersistedResumeFloor: Long = 0L
 
         private fun rememberUnpersistedPauseStart(atMs: Long) {
             if (atMs < earliestUnpersistedPauseStart) earliestUnpersistedPauseStart = atMs
         }
 
-        /** Consumes the pending boundary: the attempt that finally persists it owns it. */
-        private fun takeUnpersistedPauseStart(): Long? = when (val pending = earliestUnpersistedPauseStart) {
-            Long.MAX_VALUE -> null
-            else -> {
-                earliestUnpersistedPauseStart = Long.MAX_VALUE
-                pending
-            }
+        private fun rememberUnpersistedRollback(resumeFloorMs: Long) {
+            rememberUnpersistedPauseStart(0L)
+            unpersistedResumeFloor = maxOf(unpersistedResumeFloor, resumeFloorMs)
+        }
+
+        /** Call only once the pending exclusion is durable. */
+        private fun forgetUnpersistedPause() {
+            earliestUnpersistedPauseStart = Long.MAX_VALUE
+            unpersistedResumeFloor = 0L
         }
 
         /**
@@ -99,33 +105,39 @@ internal class PauseIntervalStore(
     /** Close the open interval at [atMs]. No-op (true) when nothing is open. */
     fun recordResume(atMs: Long): Boolean = synchronized(lock) {
         val stored = read() ?: return@synchronized false
-        // A migration that failed to persist left the observed pause only in memory. It
-        // must be written, closed, before the caller clears the flag: afterwards neither
-        // the missing file nor the flag would tell an import that the window was private.
+        // An exclusion that failed to persist exists only in memory. This resume must write
+        // it before the caller clears the flag: the process may die before any import runs.
         val unsavedStart = earliestUnpersistedPauseStart
-        val restoring = !file.exists() && unsavedStart != Long.MAX_VALUE
-        val current = if (restoring) listOf(PauseInterval(unsavedStart)) else stored
+        // A failed migration leaves no file at all.
+        val current = if (!file.exists() && unsavedStart != Long.MAX_VALUE) {
+            listOf(PauseInterval(unsavedStart))
+        } else stored
         val openIndex = current.indexOfFirst { it.endMs == null }
         if (openIndex < 0) return@synchronized true
         val open = current[openIndex]
-        val resumeFloor = maxOf(open.startMs, rollbackResumeFloor())
+        val resumeFloor = maxOf(open.startMs, rollbackResumeFloor(), unpersistedResumeFloor)
         val end = if (atMs > resumeFloor) atMs else null
         if (end == null) {
             // A backwards clock jump cannot close this wall-clock interval safely.
             // Retain this rollback observation before a later catch-up/resume hides it
             // from the importers. Match loadOrMigrate's conservative exclusion and keep
-            // the original resume floor. A failed write still cannot promise restart-safe
-            // recovery; the caller must keep collectors paused either way.
+            // the original resume floor. A failed write is remembered for this process
+            // only; the caller must keep collectors paused either way.
             if (atMs < open.startMs) {
                 val expanded = current.filter { it.endMs != null } + PauseInterval(0L)
-                write(expanded, resumeFloor)
+                if (write(expanded, resumeFloor)) {
+                    forgetUnpersistedPause()
+                } else {
+                    rememberUnpersistedRollback(resumeFloor)
+                }
             }
             false
         } else {
             // The refusal floor belongs only to this open pause. Retain its exclusion,
             // but do not apply the completed pause's clock floor to a later pause.
-            val saved = write(current.toMutableList().also { it[openIndex] = open.copy(endMs = end) }, resumeAfterMs = 0L)
-            if (saved && restoring) takeUnpersistedPauseStart()
+            val closed = PauseInterval(minOf(open.startMs, unsavedStart), end)
+            val saved = write(current.toMutableList().also { it[openIndex] = closed }, resumeAfterMs = 0L)
+            if (saved) forgetUnpersistedPause()
             saved
         }
     }
@@ -157,44 +169,31 @@ internal class PauseIntervalStore(
             // events. Preserve closed evidence too: after resume an older closed interval
             // can extend beyond the newly closed epoch-based exclusion.
             val expanded = normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
-            if (!write(expanded, maxOf(open.startMs, rollbackResumeFloor()))) {
+            val floor = maxOf(open.startMs, rollbackResumeFloor())
+            if (!write(expanded, floor)) {
                 // The widened exclusion exists only in memory. Fail closed and remember
-                // the earliest observed boundary: a later successful write must never
-                // start the durable exclusion at its own retry time.
-                rememberUnpersistedPauseStart(observedNow)
+                // it: a later successful write must not be narrower than this one.
+                rememberUnpersistedRollback(floor)
                 return@synchronized listOf(PauseInterval(0L))
             }
-            // The widened exclusion is durable now: no pending boundary may outlive it
-            // and reopen a pause the user has since completed.
-            takeUnpersistedPauseStart()
+            // The widened exclusion is durable now: nothing pending may outlive it.
+            forgetUnpersistedPause()
             return@synchronized expanded
         }
         if (file.exists()) {
-            // A pending boundary means an earlier attempt observed a private window it
-            // could not persist. The clock may have caught up past the open interval's
-            // start since then, so the rollback branch above no longer fires — but the
-            // exclusion still has to be written before an import can treat that window as
-            // public. Consuming it here is the only retry path left once the file exists.
+            // An earlier attempt observed a private window it could not persist. The clock
+            // may have caught up past the open interval's start since then, so the rollback
+            // branch above no longer fires: write it before an import can treat that window
+            // as public. Only an open pause can have one, because a resume writes it too.
             val pending = earliestUnpersistedPauseStart
-            if (pending != Long.MAX_VALUE) {
-                val widened = if (open != null) {
-                    normalizeForStorage(current.filter { it.endMs != null } + PauseInterval(0L))
-                } else {
-                    // The pause was completed before the pending boundary could be
-                    // persisted. Reopening it would suppress every later import. The
-                    // boundary cannot say which closed pause it belongs to, and storage
-                    // may have merged that pause into an earlier one, so exclude
-                    // everything from the boundary through the latest recorded pause end.
-                    val latestEnd = current.mapNotNull { it.endMs }.maxOrNull()
-                    if (latestEnd == null || latestEnd <= pending) {
-                        return@synchronized listOf(PauseInterval(0L))
-                    }
-                    current + PauseInterval(pending, latestEnd)
-                }
-                val floor = maxOf(open?.startMs ?: 0L, rollbackResumeFloor())
+            if (open != null && pending != Long.MAX_VALUE) {
+                val widened = normalizeForStorage(
+                    current.filter { it.endMs != null } + PauseInterval(minOf(open.startMs, pending))
+                )
+                val floor = maxOf(open.startMs, rollbackResumeFloor())
                 if (!write(widened, floor)) return@synchronized listOf(PauseInterval(0L))
-                takeUnpersistedPauseStart()
-                return@synchronized normalizeForStorage(widened)
+                forgetUnpersistedPause()
+                return@synchronized widened
             }
             // Once the file exists it is authoritative: a caller may have sampled a stale
             // paused flag just before a resume closed the interval.
@@ -205,10 +204,10 @@ internal class PauseIntervalStore(
         if (!flagPaused) return@synchronized current
 
         // A later successful write starts at the earliest attempt, never at the retry.
-        val start = minOf(nowMs, takeUnpersistedPauseStart() ?: nowMs)
+        val start = minOf(nowMs, earliestUnpersistedPauseStart)
         val migrated = current + PauseInterval(startMs = start, endMs = null)
         Log.i(TAG, "Migrated an open pause interval from the live-collection flag at $start")
-        if (!write(migrated)) {
+        if (!write(migrated, unpersistedResumeFloor)) {
             // The interval exists only in memory: the file still has no boundary, so a
             // later import would see an empty history and backfill the private window.
             // Fail closed exactly as an unreadable file does, and remember the earliest
@@ -219,6 +218,7 @@ internal class PauseIntervalStore(
             rememberUnpersistedPauseStart(start)
             return@synchronized listOf(PauseInterval(0L))
         }
+        forgetUnpersistedPause()
         PauseIntervals.normalize(migrated)
     }
 
