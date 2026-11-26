@@ -290,10 +290,12 @@ object SanitizedHostnameMigration {
                     // sync. `-synced-from-` is a reserved token in aw-sync's ID
                     // grammar and marks remote-origin buckets (aw-server-rust
                     // aw-sync `is_synced_bucket` / `get_or_create_sync_bucket`).
+                    // That public bucket ID is stored in `name`; `id` is only
+                    // the numeric SQLite row key.
                     val stmt =
                         db.compileStatement(
                             "UPDATE buckets SET hostname = ? " +
-                                "WHERE hostname = ? AND id NOT LIKE '%-synced-from-%'"
+                                "WHERE hostname = ? AND name NOT LIKE '%-synced-from-%'"
                         )
                     try {
                         stmt.bindString(1, currentHostname)

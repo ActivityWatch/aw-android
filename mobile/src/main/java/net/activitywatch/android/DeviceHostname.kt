@@ -25,8 +25,20 @@ internal fun rawDeviceName(context: Context): String? =
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
 
+/**
+ * Sanitized [deviceName], or the sanitized [buildDevice] when the name is missing or
+ * has nothing that survives sanitization (`小米手机`, `Телефон`, `📱`). `"unknown"` only
+ * when both are unusable (ActivityWatch/aw-android#402).
+ *
+ * Devices previously stored as `"unknown"` migrate through the existing one-shot
+ * paths: `"unknown"` is always a [SanitizedHostnameMigration.legacyHostnames] candidate.
+ */
+internal fun resolveDeviceHostname(deviceName: String?, buildDevice: String?): String =
+    sanitizeDeviceHostname(deviceName).takeIf { it != "unknown" }
+        ?: sanitizeDeviceHostname(buildDevice)
+
 internal fun deviceHostname(context: Context): String =
-    sanitizeDeviceHostname(rawDeviceName(context) ?: android.os.Build.DEVICE)
+    resolveDeviceHostname(rawDeviceName(context), android.os.Build.DEVICE)
 
 internal fun legacyDeviceHostnames(context: Context): List<String> =
     SanitizedHostnameMigration.legacyHostnames(
