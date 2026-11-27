@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -63,7 +64,9 @@ class BackgroundService : Service() {
     // onStartCommand can run more than once per launch (activity start plus a
     // sticky/boot restart). The migrations below are blocking datastore-worker
     // commands; queueing them twice doubled the startup stall in aw-android#261.
-    private var migrationsQueued = false
+    // Retry unfinished steps on a later start, but not on every rapid activity start
+    // when a persistent failure (e.g. overlapping legacy events) cannot make progress.
+    private val migrationRetry = StartupMigrationRetry()
 
     // Set in onDestroy. The server start runs on an IO coroutine that can outlive
     // the call to onStartCommand, so it re-checks this before opening the
@@ -168,28 +171,37 @@ class BackgroundService : Service() {
         // Run hostname + legacy-bucket migrations off the main thread — both are blocking JNI.
         // Only mark as migrated on success so a retry is possible if the server wasn't ready yet.
         // Watcher-bucket migration must follow hostname migration so IDs are stable first.
-        val needsHostnameMigration = !prefs.hasMigratedHostname()
-        val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
-        val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
-        if ((needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) &&
-            !migrationsQueued) {
-            migrationsQueued = true
-            CoroutineScope(Dispatchers.IO).launch {
-                val ri = awaitRustInterface() ?: return@launch
-                if (needsHostnameMigration) {
-                    val hostname = ri.getDeviceName(this@BackgroundService)
-                    val result = ri.migrateHostname(hostname)
-                    Log.i(TAG, "Hostname migration result: $result")
-                    if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
-                        prefs.setHostnameMigrated()
+        // Acquire before reading prefs so a finishing run's successes are visible.
+        if (migrationRetry.tryQueue(SystemClock.elapsedRealtime())) {
+            val needsHostnameMigration = !prefs.hasMigratedHostname()
+            val needsWatcherBucketMigration = !prefs.hasMigratedWatcherAndroidBucketNames()
+            val needsNotifyOptInMigration = !prefs.hasMigratedNotifyOptIn()
+            if (needsHostnameMigration || needsWatcherBucketMigration || needsNotifyOptInMigration) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val ri = awaitRustInterface() ?: return@launch
+                        if (needsHostnameMigration) {
+                            val hostname = ri.getDeviceName(this@BackgroundService)
+                            val result = ri.migrateHostname(hostname)
+                            Log.i(TAG, "Hostname migration result: $result")
+                            if (migrationSucceeded(result, "Migrated hostname for", "Hostname")) {
+                                prefs.setHostnameMigrated()
+                            }
+                        }
+                        if (needsWatcherBucketMigration) {
+                            migrateWatcherAndroidTestBuckets(prefs, ri)
+                        }
+                        if (needsNotifyOptInMigration) {
+                            migrateNotifyOptIn(prefs, ri)
+                        }
+                    } finally {
+                        // Success is recorded in prefs, so a retry reruns only the failed steps.
+                        // Without this, one failure kept NotifyWorker gated until the service was recreated.
+                        migrationRetry.finished(SystemClock.elapsedRealtime())
                     }
                 }
-                if (needsWatcherBucketMigration) {
-                    migrateWatcherAndroidTestBuckets(prefs, ri)
-                }
-                if (needsNotifyOptInMigration) {
-                    migrateNotifyOptIn(prefs, ri)
-                }
+            } else {
+                migrationRetry.finished(SystemClock.elapsedRealtime())
             }
         }
 
