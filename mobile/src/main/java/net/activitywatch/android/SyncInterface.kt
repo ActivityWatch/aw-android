@@ -221,6 +221,9 @@ class SyncInterface(context: Context) {
                     "${result.failed} legacy-folder migration action(s) failed; " +
                         "retrying on the next sync",
                 )
+                // Never publish a journaled temporary, but a failed stale-folder
+                // cleanup must not prevent an otherwise usable native sync.
+                if (result.recoveryPending) throw IOException("Legacy sync-folder rename incomplete")
             }
         }
     }
@@ -506,7 +509,7 @@ class SyncInterface(context: Context) {
         val manifestFile = File(appContext.filesDir, SAF_MIRROR_MANIFEST)
         val previous = loadSafMirrorManifest(manifestFile, uriStr)
         val written = HashMap<String, SafMirrorStamp>()
-        mirrorDirectory(File(syncDir), safDir, "", previous, written, counts)
+        val mirroredDirectories = mirrorDirectory(File(syncDir), safDir, "", previous, written, counts)
         // Saved before the error checks below so a partial pass still records what it wrote.
         saveSafMirrorManifest(manifestFile, uriStr, written)
         Log.i(TAG, "SAF mirror: copied=${counts[0]} skipped=${counts[1]} unchanged=${counts[2]} → $uriStr")
@@ -522,13 +525,20 @@ class SyncInterface(context: Context) {
         // partial mirror could drop data the local copy still holds. If the
         // local legacy folder could not be renamed, it is deleted here each run
         // after being mirrored, so the Syncthing-visible fork stays gone.
-        deleteStaleSafDatabaseFiles(safDir)
-        deleteStaleSafHostnameDirs(safDir)
+        val hostname = getDeviceName()
+        val hostnameNames = mirroredDirectories.keys.filterTo(mutableSetOf()) { '/' !in it }
+        val ownHostnameName = mirroredHostnameName(hostnameNames, hostname) {
+            SanitizedHostnameMigration.isCaseFoldedSameDir(File(syncDir), it, hostname)
+        } ?: return
+        val ownHostnameDir = mirroredDirectories.getValue(ownHostnameName)
+        deleteStaleSafDatabaseFiles(mirroredDirectories, ownHostnameName)
+        deleteStaleSafHostnameDirs(safDir, ownHostnameDir)
     }
 
     /**
      * Recursively mirror [sourceDir] into [destDir], creating subdirectories as needed so the
      * `<device_id>/` layout aw-sync produces is reproduced verbatim in the SAF tree.
+     * Returns actual destinations keyed by their source-relative directory paths.
      */
     private fun mirrorDirectory(
         sourceDir: File,
@@ -537,22 +547,31 @@ class SyncInterface(context: Context) {
         previous: Map<String, SafMirrorStamp>,
         written: MutableMap<String, SafMirrorStamp>,
         counts: IntArray,
-    ) {
-        val entries = sourceDir.listFiles() ?: return
+    ): Map<String, DocumentFile> {
+        val entries = sourceDir.listFiles() ?: throw IOException("Could not list ${sourceDir.path}")
         // One listing per directory. DocumentFile.findFile() re-lists the directory and
         // queries every child's name on each call, which made each entry cost a full scan.
         val destEntries = destDir.listFiles().associateBy { it.name }
+        val matches = SafMirrorCleanup.matchChildren(
+            entries.map { it.name },
+            destEntries.keys.filterNotNull(),
+            destEntries.filterValues { it.isDirectory }.keys.filterNotNull(),
+            entries.filter { it.isDirectory }.map { it.name },
+        )
+        val mirroredDirs = mutableMapOf<String, DocumentFile>()
 
         for (entry in entries) {
             if (cancelRequested) {
                 Log.i(TAG, "SAF mirror cancelled; stopping before ${entry.name}")
-                return
+                return mirroredDirs
             }
             try {
                 if (entry.isDirectory) {
                     // Reuse an existing subdirectory if present; otherwise create it. A
                     // non-directory of the same name cannot be mirrored into.
-                    val existing = destEntries[entry.name]
+                    // Fall back to a case-only variant: case-insensitive
+                    // storage would otherwise uniquify the new name (#402).
+                    val existing = matches[entry.name]?.let { destEntries[it] }
                     val subDir = when {
                         existing != null && existing.isDirectory -> existing
                         existing != null -> {
@@ -567,7 +586,26 @@ class SyncInterface(context: Context) {
                         counts[1]++
                         continue
                     }
-                    mirrorDirectory(entry, subDir, "$relativeDir${entry.name}/", previous, written, counts)
+                    // Providers may alias a requested name or silently uniquify it.
+                    // Fail rather than merge two source trees or report a misleading success.
+                    if ((existing == null && subDir.name != entry.name) ||
+                        mirroredDirs.values.any { it.uri == subDir.uri } ||
+                        matches.any { (source, dest) ->
+                            source != entry.name && destEntries[dest]?.uri == subDir.uri
+                        }
+                    ) {
+                        Log.w(TAG, "SAF cannot represent distinct directory ${entry.name}")
+                        // SAF has no atomic delete-if-empty operation. A peer can
+                        // populate even a fresh directory after we list it, and
+                        // DocumentFile.delete() may recursively delete its files.
+                        // Leave rejected directories rather than risk peer data.
+                        counts[1]++
+                        continue
+                    }
+                    mirroredDirs[relativeDir + entry.name] = subDir
+                    mirroredDirs.putAll(
+                        mirrorDirectory(entry, subDir, "$relativeDir${entry.name}/", previous, written, counts)
+                    )
                 } else {
                     // Reuse an existing file if present; otherwise create a new one. A
                     // same-named DIRECTORY must be rejected rather than written into: an
@@ -622,6 +660,7 @@ class SyncInterface(context: Context) {
                 counts[1]++
             }
         }
+        return mirroredDirs
     }
 
     fun getSyncDirectory(): String = syncDir
@@ -649,10 +688,13 @@ class SyncInterface(context: Context) {
     /**
      * Remove database files that the additive SAF mirror left behind in this device's directory.
      *
-     * The hostname and device-id lookups deliberately descend to exactly one locally owned
-     * directory. Peer hostname and device-id directories are never enumerated or mutated.
+     * Use the actual mirrored destination for exactly one locally owned directory,
+     * including case-only device-id matches. Peer directories are never cleaned.
      */
-    private fun deleteStaleSafDatabaseFiles(safDir: DocumentFile) {
+    private fun deleteStaleSafDatabaseFiles(
+        mirroredDirectories: Map<String, DocumentFile>,
+        ownHostnameName: String,
+    ) {
         val hostname = getDeviceName()
         val deviceId = localDeviceId()
         if (deviceId == null) {
@@ -676,8 +718,9 @@ class SyncInterface(context: Context) {
                 ?: throw IOException("Could not list local own-device sync directory")
         val localFileNames = localEntries.filter { it.isFile }.mapTo(mutableSetOf()) { it.name }
 
-        val safHostnameDir = safDir.findFile(hostname)?.takeIf { it.isDirectory } ?: return
-        val safDeviceDir = safHostnameDir.findFile(deviceId)?.takeIf { it.isDirectory } ?: return
+        val safDeviceDir = mirroredDeviceDirectory(mirroredDirectories, ownHostnameName, deviceId) {
+            SanitizedHostnameMigration.isCaseFoldedSameDir(File(syncDir, ownHostnameName), it, deviceId)
+        } ?: return
         if (cancelRequested) throw IOException("SAF mirror cancelled")
         val safFiles =
             safDeviceDir.listFiles().filter { !it.isDirectory && it.name != null }.associateBy {
@@ -694,7 +737,7 @@ class SyncInterface(context: Context) {
         }
     }
 
-    private fun deleteStaleSafHostnameDirs(safDir: DocumentFile) {
+    private fun deleteStaleSafHostnameDirs(safDir: DocumentFile, mirroredHostnameDir: DocumentFile) {
         val current = getDeviceName()
         val legacy =
             SanitizedHostnameMigration.legacyHostnames(
@@ -703,9 +746,10 @@ class SyncInterface(context: Context) {
                 android.os.Build.MODEL,
             )
         val deviceId = localDeviceId()
-        for (name in legacy) {
+        val mirroredName = mirroredHostnameDir.name ?: return
+        for (name in SafMirrorCleanup.staleSafHostnames(legacy, mirroredName)) {
             val stale = safDir.findFile(name) ?: continue
-            if (!stale.isDirectory) continue
+            if (!stale.isDirectory || stale.uri == mirroredHostnameDir.uri) continue
             val removed =
                 if (deviceId != null) {
                     // Scoped deletion: only remove this device's subdirectory, and
@@ -743,6 +787,27 @@ class SyncInterface(context: Context) {
         File(appContext.filesDir, "device_id").takeIf { it.isFile }?.readText()?.trim()?.takeIf {
             it.isNotEmpty()
         }
+}
+
+/** Resolve the listed local hostname, but never conflate two real case variants. */
+internal fun mirroredHostnameName(
+    listed: Set<String>,
+    hostname: String,
+    isSameLocalDirectory: (String) -> Boolean,
+): String? = if (hostname in listed) hostname else listed.singleOrNull(isSameLocalDirectory)
+
+/** Resolve an own-device destination using its listed local directory identity. */
+internal fun <T> mirroredDeviceDirectory(
+    directories: Map<String, T>,
+    hostname: String,
+    deviceId: String,
+    isSameLocalDirectory: (String) -> Boolean,
+): T? {
+    val prefix = "$hostname/"
+    val deviceNames = directories.keys.filter { it.startsWith(prefix) }
+        .map { it.removePrefix(prefix) }.filterTo(mutableSetOf()) { '/' !in it }
+    val listedName = mirroredHostnameName(deviceNames, deviceId, isSameLocalDirectory) ?: return null
+    return directories[prefix + listedName]
 }
 
 private const val SAF_MIRROR_MANIFEST = "saf_mirror_manifest.json"

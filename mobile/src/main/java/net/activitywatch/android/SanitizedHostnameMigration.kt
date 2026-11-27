@@ -3,7 +3,13 @@ package net.activitywatch.android
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.util.Log
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
+import java.util.UUID
 
 /**
  * One-shot repair for ActivityWatch/aw-android#272: sanitizing the device hostname
@@ -163,7 +169,11 @@ object SanitizedHostnameMigration {
                         renameDir(File(syncDir, action.from), File(syncDir, action.to))
                     is FolderAction.MoveDeviceDir -> {
                         val destHost = File(syncDir, action.toHostname)
-                        if (!destHost.exists() && !destHost.mkdirs()) {
+                        if (isCaseFoldedSameDir(syncDir, action.fromHostname, action.toHostname)) {
+                            // Case-insensitive storage: the legacy dir already is the
+                            // current hostname dir, so the device dir is in place (#402).
+                            true
+                        } else if (!destHost.exists() && !destHost.mkdirs()) {
                             warn("Could not create ${destHost.path}")
                             false
                         } else {
@@ -214,6 +224,9 @@ object SanitizedHostnameMigration {
         localDeviceId: String?,
     ): MigrationResult {
         if (!syncDir.isDirectory) return MigrationResult(0, 0)
+        // Only the separate journal identifies a temporary we created. Raw legacy
+        // hostnames may themselves be named .<hostname>.aw-rename.
+        if (!recoverCaseRename(syncDir)) return MigrationResult(0, 1, recoveryPending = true)
         val deviceIdsByHostname = linkedMapOf<String, Set<String>>()
         val hostnameDirs = mutableSetOf<String>()
         val unmanagedEntryDirs = mutableSetOf<String>()
@@ -248,7 +261,7 @@ object SanitizedHostnameMigration {
         if (actions.isEmpty()) return MigrationResult(0, 0)
         info("Applying ${actions.size} sync-folder migration action(s) under ${syncDir.path}")
         val applied = applyFolderMigration(syncDir, actions)
-        return MigrationResult(applied, actions.size - applied)
+        return MigrationResult(applied, actions.size - applied, caseRenameJournal(syncDir).exists())
     }
 
     /**
@@ -257,7 +270,12 @@ object SanitizedHostnameMigration {
      * callers that record "migration complete" must treat [failed] > 0 as
      * not-done so the pass is retried on the next sync.
      */
-    data class MigrationResult(val moved: Int, val failed: Int)
+    data class MigrationResult(
+        val moved: Int,
+        val failed: Int,
+        // Only an unfinished journaled rename must block native sync/mirroring.
+        val recoveryPending: Boolean = false,
+    )
 
     fun rewriteBucketHostnamesInDatabase(
         dbFile: File,
@@ -319,8 +337,109 @@ object SanitizedHostnameMigration {
         }
     }
 
+    /**
+     * True when [to] "exists" only because the filesystem folds case: the names
+     * differ only in case and the parent holds no entry named exactly [to].
+     * Android external storage is case-insensitive, so `PIXEL8` -> `pixel8`
+     * (ActivityWatch/aw-android#402) sees its own source as the target.
+     */
+    internal fun isCaseFoldedSameDir(parent: File, from: String, to: String): Boolean {
+        if (from == to || !from.equals(to, ignoreCase = true)) return false
+        if (!File(parent, from).isDirectory || !File(parent, to).isDirectory) return false
+        val names = parent.list() ?: return false
+        return to !in names
+    }
+
+    // Outside the mirrored sync tree, in the app-owned parent directory.
+    internal fun caseRenameJournal(syncDir: File): File =
+        File(syncDir.parentFile, ".${syncDir.name}.aw-case-rename")
+
+    private fun recoverCaseRename(syncDir: File): Boolean {
+        val journal = caseRenameJournal(syncDir)
+        if (!journal.exists()) return true
+        try {
+            val names = DataInputStream(FileInputStream(journal)).use {
+                listOf(it.readUTF(), it.readUTF(), it.readUTF())
+            }
+            val (fromName, tempName, toName) = names
+            if (names.any { !isSafeDirName(it) } ||
+                fromName == toName || !fromName.equals(toName, ignoreCase = true) ||
+                tempName == fromName || tempName == toName
+            ) return false
+            val pending = File(syncDir, tempName)
+            val target = File(syncDir, toName)
+            if (pending.exists()) {
+                // Never overwrite a separately created target or source.
+                if (!pending.isDirectory || target.exists() || File(syncDir, fromName).exists() ||
+                    !pending.renameTo(target)
+                ) return false
+            } else if (!target.isDirectory && !File(syncDir, fromName).isDirectory &&
+                (target.exists() || File(syncDir, fromName).exists())
+            ) {
+                return false
+            }
+            // Covers a crash before the first rename or after the second rename,
+            // and an obsolete journal after the user cleared all three paths.
+            // Keep malformed journals fail-closed: without their names we cannot
+            // prove that a stranded temporary is safe to publish as a hostname.
+            return journal.delete()
+        } catch (e: IOException) {
+            warn("Could not recover case rename: ${e.message}")
+            return false
+        }
+    }
+
+    /**
+     * Rename via a journaled temporary so case-only renames apply on storage
+     * that folds case. Undo the first step if the second fails; if the process
+     * stops between steps, recover only the exact temporary named by the journal.
+     */
+    internal fun renameCaseOnly(from: File, to: File): Boolean {
+        val parent = from.parentFile ?: return false
+        if (parent != to.parentFile || !from.isDirectory || from.name == to.name ||
+            !from.name.equals(to.name, ignoreCase = true)
+        ) return false
+        if (to.exists() && !isCaseFoldedSameDir(parent, from.name, to.name)) return false
+        val journal = caseRenameJournal(parent)
+        if (journal.exists()) return false
+        val tmp = File(parent, ".aw-rename-${UUID.randomUUID()}")
+        val journalTemp = File(journal.parentFile, "${journal.name}.tmp")
+        try {
+            // Publish a complete journal atomically before moving any data. A
+            // crash while writing leaves only an unused .tmp outside the tree.
+            FileOutputStream(journalTemp).use { file ->
+                val output = DataOutputStream(file)
+                output.writeUTF(from.name)
+                output.writeUTF(tmp.name)
+                output.writeUTF(to.name)
+                output.flush()
+                file.fd.sync()
+            }
+            if (!journalTemp.renameTo(journal)) return false
+        } catch (e: IOException) {
+            warn("Could not record case rename: ${e.message}")
+            return false
+        }
+        if (!from.renameTo(tmp)) {
+            journal.delete()
+            warn("renameTo failed for ${from.path} → ${tmp.path}")
+            return false
+        }
+        if (tmp.renameTo(to)) return journal.delete()
+        warn("renameTo failed for ${tmp.path} → ${to.path}; restoring ${from.name}")
+        if (tmp.renameTo(from)) journal.delete()
+        else warn("Could not restore ${tmp.path} → ${from.path}")
+        return false
+    }
+
     private fun renameDir(from: File, to: File): Boolean {
         if (!from.exists()) return false
+        val parent = from.parentFile
+        if (parent != null && parent == to.parentFile &&
+            isCaseFoldedSameDir(parent, from.name, to.name)
+        ) {
+            return renameCaseOnly(from, to)
+        }
         if (to.exists()) {
             warn("Refusing to rename ${from.path} onto existing ${to.path}")
             return false
