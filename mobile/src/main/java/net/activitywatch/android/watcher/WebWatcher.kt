@@ -57,7 +57,12 @@ class WebWatcher : AccessibilityService() {
             return null
         }
         try {
-            val found = findNode(root) { it.viewIdResourceName == "ADDRESSBAR_URL_BOX" }
+            // Firefox puts the page ahead of the toolbar in this tree. Walking into it spent
+            // the whole node budget in binder calls on every event, causing ANRs
+            // (aw-android#421). The URL bar is never inside web content.
+            val found = findNode(root, descendInto = { it.className != "android.webkit.WebView" }) {
+                it.viewIdResourceName == "ADDRESSBAR_URL_BOX"
+            }
             val result = parseFirefoxAddressBarContentDescription(found?.contentDescription?.toString())
             if (found !== root) found?.recycle()
             return result

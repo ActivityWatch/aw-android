@@ -62,6 +62,7 @@ private fun <T : Any> traverse(
     root: T,
     ops: NodeOps<T>,
     onLimit: (String) -> Unit,
+    descendInto: (T) -> Boolean = { true },
     visit: (T, Int) -> Boolean,
 ): T? {
     if (visit(root, 0)) return root
@@ -98,6 +99,10 @@ private fun <T : Any> traverse(
             claimed = child
             break
         }
+        if (!descendInto(child)) {
+            ops.recycle(child)
+            continue
+        }
         stack.add(Frame(child, childDepth, ops.childCount(child), owned = true))
     }
 
@@ -122,13 +127,15 @@ private fun <T : Any> traverse(
 }
 
 // Depth-first search for the first node (`root` itself, or a descendant) matching
-// `predicate`. See traverse() for the bounds and the recycle contract.
+// `predicate`. A descendant for which `descendInto` returns false is still tested, but its
+// children are never fetched. See traverse() for the bounds and the recycle contract.
 internal fun <T : Any> findNodeIn(
     root: T,
     ops: NodeOps<T>,
     onLimit: (String) -> Unit,
+    descendInto: (T) -> Boolean = { true },
     predicate: (T) -> Boolean,
-): T? = traverse(root, ops, onLimit) { node, _ -> predicate(node) }
+): T? = traverse(root, ops, onLimit, descendInto) { node, _ -> predicate(node) }
 
 // Depth-first visit of `root` and every descendant. See traverse() for the bounds and the
 // recycle contract.
@@ -149,8 +156,11 @@ private val logLimit: (String) -> Unit = { Log.w(TAG, it) }
 // Depth-first search for the first descendant (including `node` itself) matching
 // `predicate`. Every rejected node visited along the way is recycled; the matching node is
 // left un-recycled for the caller to use and eventually recycle.
-internal fun findNode(node: AccessibilityNodeInfo, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? =
-    findNodeIn(node, AccessibilityNodeOps, logLimit, predicate)
+internal fun findNode(
+    node: AccessibilityNodeInfo,
+    descendInto: (AccessibilityNodeInfo) -> Boolean = { true },
+    predicate: (AccessibilityNodeInfo) -> Boolean,
+): AccessibilityNodeInfo? = findNodeIn(node, AccessibilityNodeOps, logLimit, descendInto, predicate)
 
 // Depth-first visit of `node` and every descendant. `node` itself is left for the caller to
 // recycle (they own that reference); every descendant is recycled once its own subtree has
