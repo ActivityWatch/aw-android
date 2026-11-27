@@ -1,8 +1,10 @@
 package net.activitywatch.android
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.lang.reflect.Modifier
 
 class StartupMigrationRetryTest {
     @Test
@@ -49,8 +51,27 @@ class StartupMigrationRetryTest {
         assertTrue(retry.tryQueue(next * 2))
     }
 
+    /**
+     * A recreated service must retry immediately: the cooldown lives on the service
+     * instance, not in a shared/static holder. A plain `StartupMigrationRetry()`
+     * comparison would only re-check the constructor defaults, so assert the field's
+     * shape on `BackgroundService` itself — that is what would regress if the state
+     * were moved into the companion object (where `sanitizedMigrationLock` lives).
+     */
     @Test
     fun newServiceDoesNotInheritPreviousCooldown() {
+        val field = BackgroundService::class.java.getDeclaredField("migrationRetry")
+        assertEquals(StartupMigrationRetry::class.java, field.type)
+        assertFalse(
+            "migrationRetry must be a per-instance field, not shared across service instances",
+            Modifier.isStatic(field.modifiers),
+        )
+        assertFalse(
+            "migrationRetry must not live in the companion object",
+            BackgroundService.Companion::class.java.declaredFields.any { it.name == "migrationRetry" },
+        )
+
+        // And two instances really are independent: a cooled-down one does not block a new one.
         val oldService = StartupMigrationRetry()
         assertTrue(oldService.tryQueue(0))
         oldService.finished(0)
