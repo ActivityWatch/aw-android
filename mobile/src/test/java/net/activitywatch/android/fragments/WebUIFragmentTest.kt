@@ -77,6 +77,9 @@ class WebUIFragmentTest {
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("XMLHttpRequest.prototype"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("var CHUNK = $EXPORT_BRIDGE_CHUNK_SIZE;"))
         assertTrue(EXPORT_BRIDGE_CHUNK_SIZE < 1024 * 1024)
+        // A chunk must not end on a high surrogate (#409): each chunk becomes its
+        // own Java String, so a split pair would arrive as two U+FFFD.
+        assertTrue(ANDROID_EXPORT_HOOK_JS.contains("last >= 0xD800 && last <= 0xDBFF) end--"))
         assertTrue(ANDROID_EXPORT_HOOK_JS.contains("/\\.csv$/i"))
     }
 
