@@ -96,4 +96,51 @@ class ForegroundSessionsTest {
         )
         assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
     }
+
+    @Test
+    fun earlierActivityPausingAfterSameAppResumedAgainKeepsTheSessionOpen() {
+        fun activity(type: Int, time: Long, cls: String) = UsageEvent(type, time, "chat", cls)
+        val sessions = parse(
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat.Main"),
+            // The next activity resumes before the previous one has paused.
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 30_000L, "chat.Conversation"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 30_200L, "chat.Main"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 10 * 60_000L, "chat.Conversation"),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 10 * 60_000L)), sessions)
+    }
+
+    @Test
+    fun missingPauseOfEarlierActivityIsBoundedByTheNextAppResuming() {
+        fun activity(type: Int, time: Long, pkg: String, cls: String) = UsageEvent(type, time, pkg, cls)
+        val sessions = parse(
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 0, "chat", "chat.Main"),
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 30_000L, "chat", "chat.Conversation"),
+            // chat.Main's PAUSE never arrives, so its entry stays after Conversation pauses.
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 10 * 60_000L, "chat", "chat.Conversation"),
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 10 * 60_000L + 500L, "launcher", "launcher.Home"),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 11 * 60_000L, "launcher", "launcher.Home"),
+        )
+        assertEquals(
+            listOf(
+                Triple("chat", 0L, 10 * 60_000L + 500L),
+                Triple("launcher", 10 * 60_000L + 500L, 11 * 60_000L),
+            ),
+            sessions,
+        )
+    }
+
+    @Test
+    fun twoInstancesOfOneClassShareAnEntrySoTheFirstPauseEndsTheSession() {
+        // Known limit: UsageEvents has no per-instance id, so two windows of the same
+        // activity class are one entry. Pinned so a change to this is deliberate.
+        fun activity(type: Int, time: Long) = UsageEvent(type, time, "chat", "chat.Main")
+        val sessions = parse(
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 0),
+            activity(UsageEvents.Event.ACTIVITY_RESUMED, 10_000L),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 60_000L),
+            activity(UsageEvents.Event.ACTIVITY_PAUSED, 120_000L),
+        )
+        assertEquals(listOf(Triple("chat", 0L, 60_000L)), sessions)
+    }
 }
