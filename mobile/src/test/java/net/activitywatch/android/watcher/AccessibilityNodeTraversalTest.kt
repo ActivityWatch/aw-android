@@ -136,6 +136,26 @@ class AccessibilityNodeTraversalTest {
     }
 
     @Test
+    fun `findNode does not fetch the children of a node it is told not to descend into`() {
+        // The shape of Firefox's window: a large page ahead of the toolbar (aw-android#421).
+        // The page nodes share the target's id, so visiting any of them fails the test.
+        val page = Array(MAX_TRAVERSAL_NODES * 2) { FakeNode("url_bar") }
+        val webView = FakeNode("webview", *page)
+        val urlBar = FakeNode("url_bar")
+        val toolbar = FakeNode("toolbar", urlBar)
+        val root = FakeNode("root", webView, toolbar)
+
+        val found = findNodeIn(root, ops, onLimit, descendInto = { it !== webView }) { it.id == "url_bar" }
+
+        assertSame(urlBar, found)
+        assertEquals("webview, toolbar and url bar only", 3, ops.getChildCalls)
+        assertEquals(1, webView.recycleCount)
+        assertEquals(1, toolbar.recycleCount)
+        assertEquals(0, urlBar.recycleCount)
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test
     fun `traversal skips null children`() {
         val a = FakeNode("a")
         val root = FakeNode("root", null, a, null)
